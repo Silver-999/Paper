@@ -1,0 +1,420 @@
+\documentclass[UTF8,12pt,a4paper,fontset=none]{ctexart}
+\usepackage[a4paper,left=1.82cm,right=1.82cm,top=1.72cm,bottom=1.82cm,headheight=15pt]{geometry}
+\usepackage{fontspec,xeCJK}
+\setmainfont{Liberation Serif}
+\setsansfont{DejaVu Sans}
+\setmonofont{DejaVu Sans Mono}
+\setCJKmainfont[BoldFont=Noto Serif CJK SC Bold]{Noto Serif CJK SC}
+\setCJKsansfont[BoldFont=Noto Sans CJK SC Bold]{Noto Sans CJK SC}
+\setCJKmonofont{Noto Sans Mono CJK SC}
+\usepackage{amsmath,amssymb,mathtools,bm}
+\usepackage{booktabs,longtable,tabularx,array,multirow}
+\usepackage{enumitem,xcolor}
+\usepackage[most]{tcolorbox}
+\usepackage{fancyhdr,titlesec,hyperref,cleveref,lastpage}
+\usepackage{tikz,float,caption,listings}
+\usetikzlibrary{arrows.meta,positioning,calc,fit,backgrounds,shapes.geometric}
+\definecolor{mainblue}{RGB}{39,82,138}
+\definecolor{deepblue}{RGB}{25,55,95}
+\definecolor{softblue}{RGB}{235,243,252}
+\definecolor{softgreen}{RGB}{238,248,241}
+\definecolor{softorange}{RGB}{255,246,232}
+\definecolor{softgray}{RGB}{245,246,248}
+\definecolor{warnred}{RGB}{160,48,48}
+\hypersetup{unicode=true,colorlinks=true,linkcolor=deepblue,urlcolor=mainblue,citecolor=deepblue}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.36em}
+\setlength{\tabcolsep}{5pt}
+\renewcommand{\arraystretch}{1.2}
+\allowdisplaybreaks[4]
+\emergencystretch=3em
+\sloppy
+\pagestyle{fancy}\fancyhf{}\fancyfoot[C]{\small 第 \thepage\ 页，共 \pageref{LastPage} 页}\renewcommand{\headrulewidth}{0.4pt}
+\titleformat{\section}{\Large\bfseries\color{deepblue}}{\thesection}{0.65em}{}
+\titleformat{\subsection}{\large\bfseries\color{mainblue}}{\thesubsection}{0.55em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries}{\thesubsubsection}{0.5em}{}
+\numberwithin{equation}{section}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Prob}{\mathbb{P}}
+\newcommand{\Loss}{\mathcal{L}}
+\newcommand{\norm}[1]{\left\lVert #1\right\rVert}
+\newcommand{\ip}[2]{\left\langle #1,#2\right\rangle}
+\newcommand{\tr}{\operatorname{Tr}}
+\newcommand{\diag}{\operatorname{diag}}
+\newcommand{\rank}{\operatorname{rank}}
+\newcommand{\softmax}{\operatorname{softmax}}
+\newcommand{\argmin}{\operatorname*{arg\,min}}
+\newcommand{\argmax}{\operatorname*{arg\,max}}
+\newcommand{\sg}{\operatorname{sg}}
+\newcommand{\KL}{D_{\mathrm{KL}}}
+\newcommand{\dd}{\mathrm{d}}
+\newtcolorbox{keybox}[1][]{enhanced,breakable,colback=softblue,colframe=mainblue,boxrule=0.8pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\newtcolorbox{examplebox}[1][]{enhanced,breakable,colback=softgreen,colframe=green!45!black,boxrule=0.7pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\newtcolorbox{notebox}[1][]{enhanced,breakable,colback=softorange,colframe=orange!70!black,boxrule=0.7pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\newtcolorbox{criticalbox}[1][]{enhanced,breakable,colback=red!3,colframe=warnred,boxrule=0.8pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\lstset{basicstyle=\ttfamily\small,breaklines=true,frame=single,backgroundcolor=\color{softgray},numbers=left,numberstyle=\tiny,showstringspaces=false,columns=fullflexible}
+\hypersetup{pdftitle={12 MUDDFormer 数学过程详解},pdfauthor={OpenAI}}
+\fancyhead[L]{\small 12 MUDDFormer}
+\fancyhead[R]{\small 数学过程详解}
+\setlength{\abovedisplayskip}{0.82em}
+\setlength{\belowdisplayskip}{0.82em}
+\setlength{\abovedisplayshortskip}{0.45em}
+\setlength{\belowdisplayshortskip}{0.45em}
+\begin{document}
+\begin{center}
+{\LARGE\bfseries 12\_MUDDFormer 数学过程详解}\par
+\vspace{0.35em}
+{\large 多路动态稠密连接、深度注意力类比与复杂度推导}
+\end{center}
+\vspace{0.45em}
+\begin{keybox}[本文只处理真正需要推导的部分]
+本文聚焦动态跨层权重、Q/K/V/R 四路分解、深度方向注意力类比、参数量与 FLOPs 的逐步化简。全文按“公式从哪里来--每个符号是什么--中间步骤为何成立--维度和复杂度如何核对--论文结论依赖哪些假设”的顺序展开；不复述实验表格，也不使用与论文无关的通用背景凑页数。
+\end{keybox}
+\tableofcontents
+\newpage
+
+\section{从普通残差到跨层稠密连接}
+标准 Transformer 第 $i$ 层只接收上一层表示 $X_{i-1}\in\R^{T\times D}$。MUDDFormer 保留全部历史表示
+\begin{equation}
+ X_{:i}=(X_0,X_1,\ldots,X_i),
+\end{equation}
+并在下一层输入前进行跨层加权。若使用静态权重 $a_{ij}$，则
+\begin{equation}
+ \bar X_i=\sum_{j=0}^{i}a_{ij}X_j.
+\end{equation}
+普通残差连接是特例：只令 $a_{i,i}=1$，其余为零；DenseFormer 则让 $a_{ij}$ 成为与 token 无关的可学习标量。
+
+\section{动态稠密聚合的张量公式}
+MUDD 的权重依赖当前 token 表示。对第 $i$ 层，权重生成器为
+\begin{equation}
+ A_i(X_i)=\operatorname{GELU}(\operatorname{RMSNorm}(X_i)W_1)W_2+a_i.
+\end{equation}
+维度为
+\begin{align}
+ X_i&\in\R^{T\times D},\\
+ W_1&\in\R^{D\times K_i},\\
+ W_2&\in\R^{K_i\times(i+1)},\\
+ a_i&\in\R^{i+1},\\
+ A_i&\in\R^{T\times(i+1)}.
+\end{align}
+第 $t$ 个 token 对不同深度的权重是 $A_i[t,:]$。最终聚合
+\begin{equation}
+ \boxed{\bar X_i[t,:]=\sum_{j=0}^{i}A_{ij}[t]X_j[t,:].}
+\end{equation}
+每个 token 可以选择不同深度来源，因此这是“位置相关、深度方向”的动态连接。
+
+\section{RMSNorm 与权重尺度}
+对向量 $x\in\R^D$，RMSNorm 为
+\begin{equation}
+ \operatorname{RMSNorm}(x)=g\odot\frac{x}{\sqrt{D^{-1}\sum_{d=1}^{D}x_d^2+\epsilon}}.
+\end{equation}
+若不归一化，$X_i$ 随深度幅值增长会直接放大 $W_1$ 输入，使连接权重分布随层数漂移。RMSNorm 只控制二阶尺度，不减去均值，因此比 LayerNorm 少一个中心化步骤。
+
+\section{为什么可视为深度方向注意力}
+普通自注意力在位置 $t$ 的形式为
+\begin{equation}
+ \operatorname{Attn}(x_t,x_{:t})
+ =\softmax\left(x_tW^Q(x_{:t}W^K)^\top\right)x_{:t}W^V.
+\end{equation}
+MUDD 在深度方向的对应式为
+\begin{equation}
+ \operatorname{DA}(X_i[t],X_{:i}[t])
+ =\left(\operatorname{GELU}(X_i[t]W_1)W_2+a_i\right)X_{:i}[t].
+\end{equation}
+对应关系为：
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+横向注意力 & 深度动态连接 & 差异\\
+\midrule
+查询 $x_tW^Q$ & $\operatorname{GELU}(X_i[t]W_1)$ & 查询由当前层 token 产生\\
+键 $x_{:t}W^K$ & 参数矩阵 $W_2^\top$ & 键与输入无关\\
+Softmax & GELU 后线性输出 & 权重不归一化\\
+值投影 $W^V$ & 原始 $X_j[t]$ & 无额外值投影\\
+\bottomrule
+\end{tabular}
+\end{center}
+所以它不是标准注意力的严格等价物，而是去掉 Softmax、输入依赖键和值投影后的深度线性注意力近似。
+
+\section{不使用 Softmax 的后果}
+若使用 Softmax，则
+\begin{equation}
+ \sum_{j=0}^{i}A_{ij}[t]=1,
+\end{equation}
+输出是历史表示的凸组合。MUDD 不做归一化，所以权重可为负，且总和不受限：
+\begin{equation}
+ \bar X_i[t]=\sum_j A_{ij}[t]X_j[t].
+\end{equation}
+这使模型可以执行差分、放大与抵消，但也可能导致尺度不稳定。论文通过 RMSNorm、静态先验 $a_i$ 和残差结构控制该问题。
+
+\section{Multiway：Q、K、V、R 四条深度路径}
+普通 Transformer 同一个输入同时生成查询、键、值并参与残差。MUDDFormer 解耦四路：
+\begin{equation}
+ (X_i^Q,X_i^K,X_i^V,X_i^R)
+ =\left(\operatorname{DA}_i^Q(X_{:i}),
+ \operatorname{DA}_i^K(X_{:i}),
+ \operatorname{DA}_i^V(X_{:i}),
+ \operatorname{DA}_i^R(X_{:i})\right).
+\end{equation}
+随后
+\begin{align}
+ X_A'&=\operatorname{MHA}(\operatorname{LN}X_i^Q,
+ \operatorname{LN}X_i^K,\operatorname{LN}X_i^V)+X_i^R,\\
+ X_i&=\operatorname{FFN}(\operatorname{LN}X_A')+X_A'.
+\end{align}
+四路连接权重不必相同。查询可能偏好高层语义，键可能保留低层局部模式，值和残差又可选择不同历史层。
+
+\section{动态权重生成器的参数量}
+第 $i$ 层四路连接需要输出 $4(i+1)$ 个权重，因此隐藏宽度记为
+\begin{equation}
+ K_i=4(i+1).
+\end{equation}
+主要参数为
+\begin{equation}
+ P_i=DK_i+K_i^2+K_i,
+\end{equation}
+分别来自 $W_1,W_2,a_i$。忽略偏置并对所有层求和：
+\begin{equation}
+ P_{\rm extra}=\sum_{i=1}^{L}(DK_i+K_i^2).
+\end{equation}
+标准 Transformer 每层注意力约 $4D^2$、FFN 约 $8D^2$，总参数近似
+\begin{equation}
+ P_{\rm base}=12LD^2.
+\end{equation}
+所以
+\begin{equation}
+ R_{\Delta P}=\frac{\sum_i(DK_i+K_i^2)}{12LD^2}.
+\end{equation}
+
+\section{平均层近似与论文的 $\eta/6$ 公式}
+取中间层平均隐藏维度
+\begin{equation}
+ K\approx2(L+3).
+\end{equation}
+当 $D\gg K$ 时忽略 $K^2$：
+\begin{align}
+ R_{\Delta P}
+ &\approx\frac{DK}{12D^2}\\
+ &=\frac{K}{12D}\\
+ &=\frac{2(L+3)}{12D}\\
+ &=\boxed{\frac{L+3}{6D}}.
+\end{align}
+定义深宽比
+\begin{equation}
+ \eta=\frac{L+3}{D},
+\end{equation}
+则
+\begin{equation}
+ R_{\Delta P}\approx\frac{\eta}{6}.
+\end{equation}
+这说明额外参数主要由“深度相对宽度”决定。宽模型中 $D$ 大，开销比例更小；极深窄模型中比例上升。
+
+\section{额外 FLOPs 的推导}
+第 $i$ 层生成连接权重需要
+\begin{equation}
+ 2TDK_i+2TK_i^2
+\end{equation}
+次乘加，跨层聚合再需要约
+\begin{equation}
+ 2TDK_i.
+\end{equation}
+故
+\begin{equation}
+ F_{\rm extra}=\sum_i(4TDK_i+2TK_i^2).
+\end{equation}
+标准 Transformer 预训练 FLOPs 近似
+\begin{equation}
+ F_{\rm base}=2LDT(12D+T).
+\end{equation}
+平均层近似并忽略 $K^2$：
+\begin{align}
+ R_{\Delta F}
+ &\approx\frac{4TDK}{2DT(12D+T)}\\
+ &=\frac{2K}{12D+T}\\
+ &=\frac{4(L+3)}{12D+T}.
+\end{align}
+令 $\rho=T/D$，则
+\begin{equation}
+ \boxed{R_{\Delta F}\approx\frac{\eta}{3+\rho/4}}.
+\end{equation}
+序列越长，基础注意力成本增大，MUDD 的相对开销反而下降。
+
+\section{梯度如何跨越深度}
+若
+\begin{equation}
+ \bar X_i=\sum_{j=0}^{i}A_{ij}X_j,
+\end{equation}
+则对历史层 $X_j$ 的梯度有两部分：
+\begin{equation}
+ \frac{\partial\Loss}{\partial X_j}
+ =A_{ij}\frac{\partial\Loss}{\partial\bar X_i}
+ +\frac{\partial A_i}{\partial X_j}^{\top}
+ \left(X_{:i}\frac{\partial\Loss}{\partial\bar X_i}\right).
+\end{equation}
+因为 $A_i$ 只由当前 $X_i$ 生成，$j<i$ 时第二项通常为零，历史层获得一条由 $A_{ij}$ 加权的直接梯度路径。这是缓解深层残差瓶颈的核心机制。
+
+\section{极限情形核对}
+\begin{itemize}[leftmargin=2em]
+\item 若 $A_{ii}=1$、其余为零，退化为普通逐层 Transformer；
+\item 若 $A_{ij}$ 仅是静态参数，退化为静态 DenseFormer；
+\item 若四路 $Q,K,V,R$ 共享同一 $A_i$，退化为单路动态稠密连接；
+\item 若再对 $A_i$ 做 Softmax，则输出变成深度方向凸组合，表达能力与稳定性折中改变。
+\end{itemize}
+
+\section{容易误解的地方}
+\begin{criticalbox}[“深度注意力”只是结构类比]
+MUDD 的键是参数而不是输入，权重没有 Softmax，值没有独立投影，因此不能把它当作标准自注意力直接套用概率解释。论文的参数/FLOPs 公式使用平均层与 $D\gg K$ 近似；在极深窄模型上，$K_i^2$ 项不可忽略。
+\end{criticalbox}
+\section{最终公式路线图}
+\begin{keybox}[阅读完成后应掌握]
+本文的数学主线已经被压缩为：先明确随机变量或张量的定义，再由概率分解、微分方程、优化目标或矩阵运算得到论文核心公式；最后用维度、极限情形、参数量和复杂度进行反向核验。遇到论文中的简写式，应先恢复被省略的条件变量、求和指标与归一化常数，再讨论其算法含义。
+\end{keybox}
+\clearpage
+\section{动态稠密连接的统一矩阵写法}
+设 Transformer 有 $L$ 层，隐藏状态矩阵
+\begin{equation}
+ H=[h_0,h_1,\ldots,h_{L-1}]\in\R^{d\times L}.
+\end{equation}
+第 $\ell$ 层不再只读取 $h_{\ell-1}$，而是生成深度权重
+\begin{equation}
+ a_\ell=g_\ell(h_{0:\ell-1})\in\R^{\ell},
+\end{equation}
+并聚合
+\begin{equation}
+ \widetilde h_\ell=H_{<\ell}a_\ell
+ =\sum_{j=0}^{\ell-1}a_{\ell j}h_j.
+\end{equation}
+若 Q、K、V、残差分别使用独立权重，记为 $a_\ell^Q,a_\ell^K,a_\ell^V,a_\ell^R$，则
+\begin{equation}
+ q_\ell=W_QH_{<\ell}a_\ell^Q,
+ \quad
+ k_\ell=W_KH_{<\ell}a_\ell^K,
+ \quad
+ v_\ell=W_VH_{<\ell}a_\ell^V,
+\end{equation}
+\begin{equation}
+ r_\ell=H_{<\ell}a_\ell^R.
+\end{equation}
+这就是 Multiway 的精确线性代数含义：同一组历史层状态，经过四个不同的深度方向选择器。
+
+\section{深度注意力与普通 token 注意力的对应关系}
+普通注意力对 token 维做
+\begin{equation}
+ \operatorname{Attn}(Q,K,V)=\softmax\left(\frac{QK^\top}{\sqrt d}\right)V.
+\end{equation}
+动态稠密连接则把“键值集合”换成历史层：
+\begin{equation}
+ a_{\ell j}=\frac{\exp(s_{\ell j})}{\sum_{k<\ell}\exp(s_{\ell k})},
+ \qquad
+ \widetilde h_\ell=\sum_{j<\ell}a_{\ell j}h_j.
+\end{equation}
+如果论文不使用 softmax，而直接输出实值权重，则它不再是凸组合，可能出现
+\begin{equation}
+ \sum_j a_{\ell j}\ne1,
+ \qquad a_{\ell j}<0.
+\end{equation}
+优点是能做差分和放大；缺点是范数没有天然上界。
+
+\section{RMSNorm 对深度聚合尺度的作用}
+RMSNorm 定义为
+\begin{equation}
+ \operatorname{RMSNorm}(h)=
+ \gamma\odot\frac{h}{\sqrt{d^{-1}\|h\|_2^2+\epsilon}}.
+\end{equation}
+忽略 $\epsilon$ 和逐维 $\gamma$ 时，归一化后
+\begin{equation}
+ \frac1d\|\operatorname{RMSNorm}(h)\|_2^2\approx1.
+\end{equation}
+若历史层范数随深度增长，直接计算权重可能把“尺度大”误判为“更重要”。先归一化再生成 $a_{\ell j}$，可以让权重更多反映方向和内容，而不是绝对幅值。
+
+\section{三层玩具例子的完整前向计算}
+设标量隐藏状态 $h_0=1,h_1=2,h_2=-1$。第 3 层的四组权重为
+\begin{equation}
+ a^Q=(0.2,0.5,0.3),\quad
+ a^K=(0.1,0.1,0.8),
+\end{equation}
+\begin{equation}
+ a^V=(0.6,0.2,0.2),\quad
+ a^R=(0.3,0.4,0.3).
+\end{equation}
+则
+\begin{align}
+ \widetilde h^Q&=0.2(1)+0.5(2)+0.3(-1)=0.9,\\
+ \widetilde h^K&=0.1(1)+0.1(2)+0.8(-1)=-0.5,\\
+ \widetilde h^V&=0.6(1)+0.2(2)+0.2(-1)=0.8,\\
+ r&=0.3(1)+0.4(2)+0.3(-1)=0.8.
+\end{align}
+即使来自同一历史，Q/K/V/R 看到的有效深度表示也不同。这是比单一 DenseNet 式求和更高的自由度。
+
+\section{梯度图是块下三角结构}
+第 $\ell$ 层依赖所有 $j<\ell$ 的隐藏状态，因此总 Jacobian
+\begin{equation}
+ J_{\ell j}=\frac{\partial h_\ell}{\partial h_j}
+\end{equation}
+在层索引上是严格下三角加对角结构。若
+\begin{equation}
+ h_\ell=F_\ell(\widetilde h_\ell)+r_\ell,
+\end{equation}
+则
+\begin{equation}
+ \frac{\partial h_\ell}{\partial h_j}
+ =J_F\left(a_{\ell j}I+
+ \sum_k h_k\frac{\partial a_{\ell k}}{\partial h_j}\right)
+ +a^R_{\ell j}I+
+ \sum_k h_k\frac{\partial a^R_{\ell k}}{\partial h_j}.
+\end{equation}
+第一类项是固定权重的直接路径，第二类项来自动态权重对历史状态的依赖。后者允许内容依赖的信用分配，但也引入额外二阶耦合。
+
+\section{谱范数稳定条件}
+若忽略权重生成器的导数，聚合矩阵为
+\begin{equation}
+ \widetilde H=HA.
+\end{equation}
+则
+\begin{equation}
+ \|\widetilde H\|_F\le\|H\|_F\|A\|_2.
+\end{equation}
+若每列 $a_\ell$ 是非负且和为 1，$\|A\|_1=1$，但 $\|A\|_2$ 仍可能随层数增长。无 softmax 时更需要显式正则，例如
+\begin{equation}
+ \lambda\sum_\ell\|a_\ell\|_2^2
+\end{equation}
+或门控缩放，避免历史层线性组合无限放大。
+
+\section{参数量与 FLOPs 的逐项核对}
+若每层用一个两层 MLP 从 $d$ 维状态生成长度 $m$ 的深度权重，瓶颈维度为 $r$，参数量约
+\begin{equation}
+ P_g=dr+rm+r+m.
+\end{equation}
+四路权重若完全独立，约为 $4P_g$；若共享第一层，仅分开输出头，则
+\begin{equation}
+ P_g^{\rm shared}=dr+r+4(rm+m).
+\end{equation}
+聚合本身对每个 token、每个通道需要 $m$ 次乘加，FLOPs 约
+\begin{equation}
+ C_{\rm agg}=2BTdm
+\end{equation}
+（乘和加各计一次）。当平均可见历史层数为 $\bar m$，总额外开销近似
+\begin{equation}
+ C_{\rm total}\approx 4\cdot2BTdL\bar m+C_g.
+\end{equation}
+因此论文报告的低百分比开销依赖于 $\bar m$ 的截断、权重生成器的小尺寸以及主干 FFN 的高基线 FLOPs。
+
+\section{平均层近似的误差}
+若用最近 $m$ 层均值替代动态权重，
+\begin{equation}
+ \bar h=\frac1m\sum_{j=1}^{m}h_j.
+\end{equation}
+动态聚合与均值之差
+\begin{equation}
+ \widetilde h-\bar h=
+ \sum_{j=1}^{m}\left(a_j-\frac1m\right)h_j.
+\end{equation}
+由 Cauchy--Schwarz，
+\begin{equation}
+ \|\widetilde h-\bar h\|_2
+ \le\left\|a-\frac1m\mathbf 1\right\|_2
+ \left(\sum_j\|h_j\|_2^2\right)^{1/2}.
+\end{equation}
+当动态权重接近均匀分布时，简单平均近似良好；若权重尖锐地选择某个远层，均值会严重稀释该层信息。
+\end{document}

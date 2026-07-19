@@ -1,0 +1,597 @@
+\documentclass[UTF8,12pt,a4paper,fontset=none]{ctexart}
+\usepackage[a4paper,left=1.82cm,right=1.82cm,top=1.72cm,bottom=1.82cm,headheight=15pt]{geometry}
+\usepackage{fontspec,xeCJK}
+\setmainfont{Liberation Serif}
+\setsansfont{DejaVu Sans}
+\setmonofont{DejaVu Sans Mono}
+\setCJKmainfont[BoldFont=Noto Serif CJK SC Bold]{Noto Serif CJK SC}
+\setCJKsansfont[BoldFont=Noto Sans CJK SC Bold]{Noto Sans CJK SC}
+\setCJKmonofont{Noto Sans Mono CJK SC}
+\usepackage{amsmath,amssymb,mathtools,bm}
+\usepackage{booktabs,longtable,tabularx,array,multirow}
+\usepackage{enumitem,xcolor}
+\usepackage[most]{tcolorbox}
+\usepackage{fancyhdr,titlesec,hyperref,cleveref,lastpage}
+\usepackage{tikz,float,caption,listings}
+\usetikzlibrary{arrows.meta,positioning,calc,fit,backgrounds,shapes.geometric}
+\definecolor{mainblue}{RGB}{39,82,138}
+\definecolor{deepblue}{RGB}{25,55,95}
+\definecolor{softblue}{RGB}{235,243,252}
+\definecolor{softgreen}{RGB}{238,248,241}
+\definecolor{softorange}{RGB}{255,246,232}
+\definecolor{softgray}{RGB}{245,246,248}
+\definecolor{warnred}{RGB}{160,48,48}
+\hypersetup{unicode=true,colorlinks=true,linkcolor=deepblue,urlcolor=mainblue,citecolor=deepblue}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.36em}
+\setlength{\tabcolsep}{5pt}
+\renewcommand{\arraystretch}{1.2}
+\allowdisplaybreaks[4]
+\emergencystretch=3em
+\sloppy
+\pagestyle{fancy}\fancyhf{}\fancyfoot[C]{\small 第 \thepage\ 页，共 \pageref{LastPage} 页}\renewcommand{\headrulewidth}{0.4pt}
+\titleformat{\section}{\Large\bfseries\color{deepblue}}{\thesection}{0.65em}{}
+\titleformat{\subsection}{\large\bfseries\color{mainblue}}{\thesubsection}{0.55em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries}{\thesubsubsection}{0.5em}{}
+\numberwithin{equation}{section}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Prob}{\mathbb{P}}
+\newcommand{\Loss}{\mathcal{L}}
+\newcommand{\norm}[1]{\left\lVert #1\right\rVert}
+\newcommand{\ip}[2]{\left\langle #1,#2\right\rangle}
+\newcommand{\tr}{\operatorname{Tr}}
+\newcommand{\diag}{\operatorname{diag}}
+\newcommand{\rank}{\operatorname{rank}}
+\newcommand{\softmax}{\operatorname{softmax}}
+\newcommand{\argmin}{\operatorname*{arg\,min}}
+\newcommand{\argmax}{\operatorname*{arg\,max}}
+\newcommand{\sg}{\operatorname{sg}}
+\newcommand{\KL}{D_{\mathrm{KL}}}
+\newcommand{\dd}{\mathrm{d}}
+\newtcolorbox{keybox}[1][]{enhanced,breakable,colback=softblue,colframe=mainblue,boxrule=0.8pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\newtcolorbox{examplebox}[1][]{enhanced,breakable,colback=softgreen,colframe=green!45!black,boxrule=0.7pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\newtcolorbox{notebox}[1][]{enhanced,breakable,colback=softorange,colframe=orange!70!black,boxrule=0.7pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\newtcolorbox{criticalbox}[1][]{enhanced,breakable,colback=red!3,colframe=warnred,boxrule=0.8pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\lstset{basicstyle=\ttfamily\small,breaklines=true,frame=single,backgroundcolor=\color{softgray},numbers=left,numberstyle=\tiny,showstringspaces=false,columns=fullflexible}
+\hypersetup{pdftitle={30 Back to Basics 数学过程详解},pdfauthor={OpenAI}}
+\fancyhead[L]{\small 30 Back to Basics}
+\fancyhead[R]{\small 数学过程详解}
+\setlength{\abovedisplayskip}{0.82em}
+\setlength{\belowdisplayskip}{0.82em}
+\setlength{\abovedisplayshortskip}{0.45em}
+\setlength{\belowdisplayshortskip}{0.45em}
+\begin{document}
+\begin{center}
+{\LARGE\bfseries 30\_Back to Basics 数学过程详解}\par
+\vspace{0.35em}
+{\large x/epsilon/v 参数化、流形维度与瓶颈容量}
+\end{center}
+\vspace{0.45em}
+\begin{keybox}[本文只处理真正需要推导的部分]
+本文完整推导线性加噪下三种预测目标的转换和权重，解释 x-pred + v-loss、Euler 采样、满秩噪声瓶颈、低秩 patch embedding、时间采样与误差放大。全文按“公式从哪里来--每个符号是什么--中间步骤为何成立--维度和复杂度如何核对--论文结论依赖哪些假设”的顺序展开；不复述实验表格，也不使用与论文无关的通用背景凑页数。
+\end{keybox}
+\tableofcontents
+\newpage
+
+\section{线性插值加噪与三种目标}
+论文使用
+\begin{equation}
+ z_t=tx+(1-t)\epsilon,
+ \qquad t\in[0,1],\quad \epsilon\sim\mathcal N(0,I).
+\end{equation}
+这里 $t=1$ 是干净数据，$t=0$ 是纯噪声。路径速度
+\begin{equation}
+ v=\frac{\dd z_t}{\dd t}=x-\epsilon.
+\end{equation}
+由 $z_t$ 可在三种变量间转换：
+\begin{align}
+ x&=z_t+(1-t)v,\\
+ \epsilon&=z_t-tv,\\
+ v&=\frac{x-z_t}{1-t}=\frac{z_t-\epsilon}{t}.
+\end{align}
+
+\section{网络预测空间与损失空间不是一回事}
+设网络直接输出 $x_\theta$。转换为速度
+\begin{equation}
+ v_\theta=\frac{x_\theta-z_t}{1-t}.
+\end{equation}
+于是 v-loss
+\begin{align}
+ \norm{v_\theta-v}^2
+ &=\norm{\frac{x_\theta-z_t}{1-t}-\frac{x-z_t}{1-t}}^2\\
+ &=\boxed{\frac{1}{(1-t)^2}\norm{x_\theta-x}^2}.
+\end{align}
+所以“x-prediction + v-loss”实际是按 $(1-t)^{-2}$ 加权的 x-loss，重视接近干净端点的样本。
+
+若网络预测噪声 $\epsilon_\theta$，由
+\begin{equation}
+ x_\theta=\frac{z_t-(1-t)\epsilon_\theta}{t}
+\end{equation}
+可得
+\begin{equation}
+ \norm{x_\theta-x}^2=\frac{(1-t)^2}{t^2}
+orm{\epsilon_\theta-\epsilon}^2.
+\end{equation}
+三种参数化代数等价，但同一个“未加权 MSE”在不同输出空间对应不同时间权重，因此优化难度并不等价。
+
+\section{论文最终训练算法的推导}
+网络 $\operatorname{net}_\theta(z_t,t)=x_\theta$，定义
+\begin{equation}
+ v_\theta=\frac{x_\theta-z_t}{1-t}.
+\end{equation}
+真实速度也可不显式用 $\epsilon$：
+\begin{equation}
+ v=\frac{x-z_t}{1-t}.
+\end{equation}
+损失
+\begin{equation}
+ \boxed{\Loss=\E_{t,x,\epsilon}
+orm{
+ \frac{x_\theta-z_t}{1-t}-\frac{x-z_t}{1-t}}_2^2}.
+\end{equation}
+为避免 $t=1$ 数值发散，采样分布和实现需避开精确端点或加稳定常数。
+
+\section{Euler 采样}
+从噪声端 $t_0=0$ 积分到 $t_J=1$：
+\begin{equation}
+ z_{j+1}=z_j+(t_{j+1}-t_j)v_\theta(z_j,t_j).
+\end{equation}
+若 $x_\theta$ 完美，则
+\begin{equation}
+ v_\theta=x-\epsilon
+\end{equation}
+为常量，一步 Euler 就精确到达 $x$。实际多步的必要性来自网络预测误差和条件速度随当前状态变化。
+
+\section{为什么高维噪声比干净图像更难预测}
+流形假设：干净图像位于 $D$ 维像素空间中的 $d$ 维流形 $\mathcal M$，$d\ll D$。局部可写
+\begin{equation}
+ x=g(u),\qquad u\in\R^d.
+\end{equation}
+若网络中间瓶颈宽度为 $h\ge d$，理论上可编码局部坐标 $u$ 并重构 $x$。而高斯噪声的协方差
+\begin{equation}
+ \operatorname{Cov}(\epsilon)=I_D
+\end{equation}
+满秩，任何 rank-$h$ 线性重构的最小均方误差（PCA）为
+\begin{equation}
+ \min_{\rank(P)\le h}\E\norm{\epsilon-P\epsilon}^2=D-h.
+\end{equation}
+当 $h\ll D$ 时，绝大多数噪声能量无法穿过瓶颈。这个线性结果解释了为何大 patch 下 $\epsilon$-prediction 可能灾难性失败，而 x-prediction 仍可工作。
+
+\section{速度目标也含满维噪声}
+\begin{equation}
+ v=x-\epsilon.
+\end{equation}
+即使 $x$ 位于低维流形，$v$ 的协方差
+\begin{equation}
+ \operatorname{Cov}(v)=\operatorname{Cov}(x)+I-2\operatorname{Cov}(x,\epsilon)
+ =\operatorname{Cov}(x)+I
+\end{equation}
+在独立假设下仍满秩。直接 v-prediction 要保留噪声分量；x-prediction 先输出低维结构，再通过解析式与 $z_t$ 组合得到速度，绕过了瓶颈传递全部噪声的要求。
+
+\section{线性瓶颈等价于低秩 patch embedding}
+原 patch $u\in\R^P$。两层线性嵌入
+\begin{equation}
+ h=W_2W_1u,
+ \quad W_1\in\R^{d'\times P},\quad W_2\in\R^{d\times d'}
+\end{equation}
+等效矩阵秩
+\begin{equation}
+ \rank(W_2W_1)\le d'.
+\end{equation}
+参数量
+\begin{equation}
+ P_{\rm bottleneck}=d'P+dd'
+\end{equation}
+对比直接投影 $dP$。若 $d'$ 小于 $dP/(P+d)$，参数也减少；但论文的主要作用是结构正则化，而非仅省参数。
+
+\section{SNR 与分辨率缩放}
+加噪信号和噪声能量比近似
+\begin{equation}
+ \operatorname{SNR}(t)=\frac{t^2\E\norm{x}^2}{(1-t)^2\E\norm{\epsilon}^2}.
+\end{equation}
+若图像分辨率增大且像素范围不变，信号和标准高斯噪声总能量都随维度 $D$ 线性增长，理论 SNR 不变。但 patch 内的低频自然图像结构更相关，而独立噪声维度增加；网络容量相对噪声自由度下降。论文按分辨率比例放大噪声，是经验上维持生成难度和频谱尺度，而非简单由总能量 SNR 唯一决定。
+
+\section{Logit-Normal 时间采样}
+令
+\begin{equation}
+ s\sim\mathcal N(\mu,\sigma^2),\qquad t=\operatorname{sigmoid}(s).
+\end{equation}
+其密度由变量替换得到
+\begin{equation}
+ p(t)=\frac{1}{t(1-t)\sigma\sqrt{2\pi}}
+ \exp\left[-\frac{(\log\frac{t}{1-t}-\mu)^2}{2\sigma^2}\right].
+\end{equation}
+减小 $\mu$ 把质量推向更小 $t$，即更高噪声区域。若训练损失未做 $1/p(t)$ 重要性修正，改变采样分布就等价于改变时间权重。
+
+\section{EDM 预条件与直接 x-pred 的区别}
+EDM 风格输出
+\begin{equation}
+ x_\theta=c_{\rm skip}(t)z_t+c_{\rm out}(t)\operatorname{net}_\theta(z_t,t).
+\end{equation}
+当 $c_{\rm skip}\ne0$ 时，网络直接输出的并非干净图像，而是残差。即使最终 $x_\theta$ 是 x 估计，内部网络任务仍混合了噪声输入。论文强调的“直接 x-prediction”取
+\begin{equation}
+ c_{\rm skip}=0,\qquad c_{\rm out}=1.
+\end{equation}
+这使输出空间严格受数据流形约束。
+
+\section{误差在参数化转换中的放大}
+若 x 预测误差 $e_x=x_\theta-x$，速度误差
+\begin{equation}
+ e_v=\frac{e_x}{1-t}.
+\end{equation}
+接近 $t=1$ 时被放大。反之，若速度误差 $e_v$，x 误差
+\begin{equation}
+ e_x=(1-t)e_v
+\end{equation}
+在干净端缩小。使用 x-pred + v-loss 正是在训练时补偿这一转换，使小的 x 误差在高 $t$ 仍受到足够惩罚。
+% AUGMENTED_DETAILED_MATH_2
+
+\section{三种预测目标的线性变换矩阵}
+设
+\begin{equation}
+ x_t=\alpha_t x+\sigma_t\epsilon,
+ \qquad \alpha_t^2+\sigma_t^2=1.
+\end{equation}
+定义速度
+\begin{equation}
+ v_t=\alpha_t\epsilon-\sigma_tx.
+\end{equation}
+则
+\begin{equation}
+ \begin{bmatrix}x_t\\v_t\end{bmatrix}
+ =R_t\begin{bmatrix}x\\\epsilon\end{bmatrix},
+ \qquad
+ R_t=\begin{bmatrix}\alpha_t&\sigma_t\\-\sigma_t&\alpha_t\end{bmatrix}.
+\end{equation}
+$R_t^\top R_t=I$，所以
+\begin{equation}
+ x=\alpha_tx_t-\sigma_tv_t,
+ \qquad
+ \epsilon=\sigma_tx_t+\alpha_tv_t.
+\end{equation}
+参数化在信息上等价，但网络输出误差的映射不同。若 $\widehat\epsilon=\epsilon+e_\epsilon$，则
+\begin{equation}
+ \widehat x-x=-\frac{\sigma_t}{\alpha_t}e_\epsilon.
+\end{equation}
+高噪声端 $\alpha_t\to0$ 时，噪声预测的小误差会被放大成巨大的干净图像误差。
+
+\section{损失重参数化的时间权重}
+$x$-prediction MSE
+\begin{equation}
+ \Loss_x=\E\norm{\widehat x-x}^2.
+\end{equation}
+若由噪声输出转换
+\begin{equation}
+ \widehat x=\frac{x_t-\sigma_t\widehat\epsilon}{\alpha_t},
+\end{equation}
+则
+\begin{equation}
+ \Loss_x
+ =\E\frac{\sigma_t^2}{\alpha_t^2}
+orm{\widehat\epsilon-\epsilon}^2
+ =\E\operatorname{SNR}(t)^{-1}
+orm{e_\epsilon}^2.
+\end{equation}
+因此“不加权的 $x$ MSE”和“不加权的 $\epsilon$ MSE”不是同一训练目标；要完全等价必须乘时间权重。
+
+\section{Bayes 最优去噪器是条件均值}
+对任意带噪输入 $x_t$，平方损失风险
+\begin{equation}
+ R(f)=\E\norm{f(x_t)-x}^2.
+\end{equation}
+条件分解
+\begin{equation}
+ \E[\norm{f-x}^2\mid x_t]
+ =\norm{f-\E[x\mid x_t]}^2+\operatorname{Var}(x\mid x_t).
+\end{equation}
+所以
+\begin{equation}
+ \boxed{f^*(x_t)=\E[x\mid x_t].}
+\end{equation}
+若自然图像集中在低维流形，条件均值主要需要恢复流形坐标；预测独立高维噪声则需要保留离开流形的全部随机方向。
+
+\section{高维高斯噪声的集中现象}
+若 $\epsilon\sim\mathcal N(0,I_D)$，则
+\begin{equation}
+ \norm{\epsilon}^2\sim\chi_D^2,
+ \qquad \E\norm{\epsilon}^2=D,
+ \qquad \operatorname{Var}(\norm{\epsilon}^2)=2D.
+\end{equation}
+因此
+\begin{equation}
+ \frac{\norm{\epsilon}}{\sqrt D}\xrightarrow{p}1.
+\end{equation}
+噪声几乎全部位于半径 $\sqrt D$ 的薄壳上，并占据所有 $D$ 个方向。若网络瓶颈宽度 $m<D$，线性输出矩阵秩至多 $m$，无法无损表达任意噪声向量；但若干净图像内在维度 $d_\mathcal M\ll m$，仍可能充分表示流形。
+
+\section{线性瓶颈的最优误差}
+考虑线性编码解码
+\begin{equation}
+ \widehat y=BAy,
+ \qquad A\in\R^{m\times D},\ B\in\R^{D\times m}.
+\end{equation}
+矩阵 $BA$ 秩至多 $m$。对零均值数据协方差 $\Sigma$，最小重建误差由 PCA 给出
+\begin{equation}
+ \min_{\rank(P)\le m}\E\norm{y-Py}^2
+ =\sum_{j>m}\lambda_j(\Sigma).
+\end{equation}
+对于白噪声 $\Sigma=I$，误差为 $D-m$；对于低维流形附近数据，协方差谱快速衰减，尾和可以很小。这给出论文“欠容量网络仍能预测干净数据、却难预测噪声”的线性原型。
+
+\section{patch 维度与网络宽度}
+边长 $p$、通道 $C$ 的原始像素 patch 维度
+\begin{equation}
+ D_p=p^2C.
+\end{equation}
+patch embedding
+\begin{equation}
+ h=W_px,
+ \qquad W_p\in\R^{m\times D_p}
+\end{equation}
+当 $m<D_p$ 时是严格瓶颈。对噪声 patch，最优线性重建丢失至少 $D_p-m$ 个单位方差方向；对自然 patch，若主要能量集中在前 $m$ 个主成分，损失仍可小。大 patch 使 $D_p$ 快速增大，因此对 $\epsilon/v$ 预测更不利。
+
+\section{SNR 与目标难度}
+信噪比
+\begin{equation}
+ \operatorname{SNR}(t)=\frac{\alpha_t^2}{\sigma_t^2}.
+\end{equation}
+高 SNR 时 $x_t$ 接近干净图像，$x$ 预测容易；低 SNR 时后验 $p(x\mid x_t)$ 更宽，条件均值趋向数据先验平均。噪声预测则相反：
+\begin{equation}
+ \epsilon=\frac{x_t-\alpha_tx}{\sigma_t}.
+\end{equation}
+低噪声端 $\sigma_t\to0$ 时，从两个接近量之差恢复噪声数值条件差。因此不同目标的误差重点分布在不同时间区域。
+
+\section{Logit-Normal 时间采样与重要性权重}
+若先采样
+\begin{equation}
+ z\sim\mathcal N(\mu,s^2),
+ \qquad t=\sigma(z)=\frac1{1+e^{-z}},
+\end{equation}
+则 $t$ 的密度
+\begin{equation}
+ p(t)=\frac1{t(1-t)s\sqrt{2\pi}}
+ \exp\left[-\frac{(\log\frac{t}{1-t}-\mu)^2}{2s^2}\right].
+\end{equation}
+若希望优化均匀时间目标
+\begin{equation}
+ \int_0^1\ell(t)\dd t,
+\end{equation}
+却从 $p(t)$ 采样，严格无偏估计需权重 $1/p(t)$：
+\begin{equation}
+ \E_{t\sim p}\frac{\ell(t)}{p(t)}=\int_0^1\ell(t)\dd t.
+\end{equation}
+论文直接改变采样分布相当于重新定义训练时间权重，集中资源到中等噪声区域。
+
+\section{Euler 采样与 $x$ 预测器}
+若模型给出 $\widehat x(x_t,t)$，论文线性路径下速度可写为
+\begin{equation}
+ \widehat v(x_t,t)=\frac{x_t-\widehat x}{t}.
+\end{equation}
+反向 Euler
+\begin{equation}
+ x_{t-h}=x_t-h\widehat v(x_t,t)
+ =\left(1-\frac ht\right)x_t+\frac ht\widehat x.
+\end{equation}
+当 $h=t$ 时一步直接得到
+\begin{equation}
+ x_0=\widehat x.
+\end{equation}
+多步时每一步是当前状态与干净预测的凸组合，数值稳定性取决于 $h/t\le1$ 和 $\widehat x$ 的 Lipschitz 性。
+
+\section{EDM 预条件为何改变直接输出空间}
+EDM 形式
+\begin{equation}
+ D_\theta(x,\sigma)
+ =c_{\mathrm{skip}}(\sigma)x
+ +c_{\mathrm{out}}(\sigma)F_\theta(c_{\mathrm{in}}x,c_{\mathrm{noise}}).
+\end{equation}
+即使 $D_\theta$ 最终表示去噪图像，网络主干直接输出的是残差量 $F_\theta$。其目标梯度
+\begin{equation}
+ \nabla_{F}\Loss
+ =2c_{\mathrm{out}}[D_\theta-x_0]
+\end{equation}
+被 $c_{\mathrm{out}}$ 缩放。论文强调 direct $x$-prediction，是要避免网络主干被要求表示高维噪声混合量，而不仅是最终公式中出现 $x_0$。
+\clearpage
+\section{三种预测目标的精确线性变换}
+采用方差保持参数化
+\begin{equation}
+ x_t=\alpha_t x+\sigma_t\epsilon,
+ \qquad \alpha_t^2+\sigma_t^2=1.
+\end{equation}
+定义速度
+\begin{equation}
+ v_t=\alpha_t\epsilon-\sigma_t x.
+\end{equation}
+矩阵形式
+\begin{equation}
+ \begin{pmatrix}x_t\\v_t\end{pmatrix}
+ =R_t\begin{pmatrix}x\\\epsilon\end{pmatrix},
+ \qquad
+ R_t=\begin{pmatrix}\alpha_t&\sigma_t\\-\sigma_t&\alpha_t\end{pmatrix}.
+\end{equation}
+$R_t^\top R_t=I$，故
+\begin{equation}
+ x=\alpha_tx_t-\sigma_tv_t,
+ \qquad
+ \epsilon=\sigma_tx_t+\alpha_tv_t.
+\end{equation}
+若网络预测 $\widehat x$，对应噪声预测
+\begin{equation}
+ \widehat\epsilon=\frac{x_t-\alpha_t\widehat x}{\sigma_t}.
+\end{equation}
+
+\section{预测误差在参数化转换中的放大}
+设 $x$ 预测误差 $e_x=\widehat x-x$。由上式
+\begin{equation}
+ e_\epsilon=\widehat\epsilon-\epsilon
+ =-\frac{\alpha_t}{\sigma_t}e_x.
+\end{equation}
+因此
+\begin{equation}
+ \|e_\epsilon\|^2=\frac{\alpha_t^2}{\sigma_t^2}\|e_x\|^2
+ =\mathrm{SNR}(t)\|e_x\|^2.
+\end{equation}
+高 SNR、低噪声时，微小 $x$ 误差会被放大成很大噪声误差。反过来
+\begin{equation}
+ e_x=-\frac{\sigma_t}{\alpha_t}e_\epsilon,
+\end{equation}
+低 SNR 时噪声预测误差对 $x$ 重建被放大。
+
+\section{不同损失的等价时间权重}
+噪声 MSE
+\begin{equation}
+ \Loss_\epsilon=\E\|\widehat\epsilon-\epsilon\|^2
+\end{equation}
+等价为
+\begin{equation}
+ \Loss_\epsilon=
+ \E\left[\frac{\alpha_t^2}{\sigma_t^2}
+ \|\widehat x-x\|^2\right]
+ =\E[\mathrm{SNR}(t)\|e_x\|^2].
+\end{equation}
+所以“预测对象不同”即使可以代数互换，也隐含不同的时间权重。直接 $x$-prediction 使用近似均匀的 $x$ 空间误差，而 $\epsilon$-prediction 强调高 SNR 时刻。
+
+\section{Bayes 最优去噪器是条件均值}
+给定带噪观测 $x_t$，平方误差最优去噪器
+\begin{equation}
+ f^*(x_t,t)=\argmin_f
+ \E[\|f(x_t,t)-x\|^2\mid x_t]
+\end{equation}
+满足
+\begin{equation}
+ \boxed{f^*(x_t,t)=\E[x\mid x_t].}
+\end{equation}
+证明同条件期望的正交投影：
+\begin{equation}
+ \E\|f-x\|^2
+ =\E\|f-\E[x\mid x_t]\|^2+
+ \E\|x-\E[x\mid x_t]\|^2.
+\end{equation}
+如果条件分布多模态，条件均值可能位于数据流形之间；但生成 ODE/SDE 通过多个时刻的去噪场组合，不等于直接输出单次条件均值作为最终样本。
+
+\section{Tweedie 公式连接去噪器与 score}
+高斯加噪
+\begin{equation}
+ y=x+\sigma\epsilon.
+\end{equation}
+边缘密度
+\begin{equation}
+ p_\sigma(y)=\int p(x)\mathcal N(y;x,\sigma^2I)\dd x.
+\end{equation}
+对 $y$ 求梯度：
+\begin{align}
+ \nabla_y p_\sigma(y)
+ &=\int p(x)\mathcal N(y;x,\sigma^2I)
+ \frac{x-y}{\sigma^2}\dd x.
+\end{align}
+除以 $p_\sigma(y)$：
+\begin{equation}
+ \nabla_y\log p_\sigma(y)
+ =\frac{\E[x\mid y]-y}{\sigma^2}.
+\end{equation}
+因此
+\begin{equation}
+ \boxed{\E[x\mid y]=y+\sigma^2\nabla_y\log p_\sigma(y).}
+\end{equation}
+直接 $x$ 预测器与 score 预测器在 Bayes 最优时可相互转换。
+
+\section{高维高斯噪声的集中现象}
+若 $\epsilon\sim\mathcal N(0,I_D)$，则
+\begin{equation}
+ \|\epsilon\|^2\sim\chi_D^2,
+ \qquad
+ \E\|\epsilon\|^2=D,
+ \quad
+ \operatorname{Var}(\|\epsilon\|^2)=2D.
+\end{equation}
+相对标准差
+\begin{equation}
+ \frac{\sqrt{2D}}{D}=\sqrt{\frac2D}\to0.
+\end{equation}
+所以噪声几乎都落在半径 $\sqrt D$ 的薄壳上，覆盖所有 $D$ 个方向。若网络输出维度小于 patch 像素维度，准确重构任意噪声向量需要高秩通道；而自然图像若近似位于低维流形，预测干净图像只需保留流形坐标。
+
+\section{线性瓶颈的最优重建误差}
+设 patch 向量 $x\in\R^D$，线性编码宽度 $d<D$，重建
+\begin{equation}
+ \widehat x=VUx,
+ \qquad U\in\R^{d\times D},\ V\in\R^{D\times d}.
+\end{equation}
+对零均值数据协方差 $\Sigma$，最优 rank-$d$ 线性自编码器等价 PCA，最小均方误差
+\begin{equation}
+ \min_{U,V}\E\|x-VUx\|^2
+ =\sum_{j>d}\lambda_j(\Sigma).
+\end{equation}
+自然图像若特征值快速衰减，小 $d$ 仍可重建；各向同性噪声 $\Sigma=I$ 时
+\begin{equation}
+ \sum_{j>d}\lambda_j=D-d,
+\end{equation}
+瓶颈会丢失大量噪声能量。这是论文流形论点的线性版本。
+
+\section{Patch 维度与网络宽度的数值例子}
+RGB patch 大小 $p\times p$，输入维度
+\begin{equation}
+ D=3p^2.
+\end{equation}
+$p=16$ 时
+\begin{equation}
+ D=3\times256=768.
+\end{equation}
+若 Transformer 宽度 $d=384$，patch embedding 是从 768 到 384 的瓶颈。对任意噪声，线性层最多保留 384 维子空间；对自然图像 patch，如果主要变化集中在纹理、边缘和颜色等更低维因素，瓶颈仍可能足够。
+
+\section{Logit-Normal 时间采样与重要性加权}
+令
+\begin{equation}
+ z\sim\mathcal N(\mu,s^2),
+ \qquad t=\sigma(z)=\frac1{1+e^{-z}}.
+\end{equation}
+变量变换密度
+\begin{equation}
+ p(t)=\frac1{t(1-t)s\sqrt{2\pi}}
+ \exp\left[-\frac{(\log\frac{t}{1-t}-\mu)^2}{2s^2}\right].
+\end{equation}
+若目标原本是 $t\sim\operatorname{Uniform}(0,1)$ 的期望，但训练改用 $p(t)$ 采样，要保持无偏需权重
+\begin{equation}
+ w(t)=\frac1{p(t)}.
+\end{equation}
+实践常不做该校正，因此时间采样分布本身就是重新加权训练目标，而非纯粹的方差降低技巧。
+
+\section{从 $x$ 预测器构造 ODE 速度}
+对于线性路径 $x_t=\alpha_tx+\sigma_t\epsilon$，若预测 $\widehat x$，估计噪声
+\begin{equation}
+ \widehat\epsilon=\frac{x_t-\alpha_t\widehat x}{\sigma_t}.
+\end{equation}
+路径速度
+\begin{equation}
+ \dot x_t=\dot\alpha_t x+\dot\sigma_t\epsilon.
+\end{equation}
+代入估计得到
+\begin{equation}
+ \widehat v_t=
+ \dot\alpha_t\widehat x+
+ \frac{\dot\sigma_t}{\sigma_t}
+ (x_t-\alpha_t\widehat x).
+\end{equation}
+整理
+\begin{equation}
+ \widehat v_t=
+ \frac{\dot\sigma_t}{\sigma_t}x_t+
+ \left(\dot\alpha_t-
+ \frac{\dot\sigma_t}{\sigma_t}\alpha_t\right)\widehat x.
+\end{equation}
+所以直接预测干净图像仍可用于 ODE 采样，网络输出与积分速度由解析系数连接。
+
+\section{Euler 误差与网络误差分离}
+数值更新
+\begin{equation}
+ x_{t-h}^{\rm num}=x_t-h\widehat v(x_t,t).
+\end{equation}
+真解 Taylor 展开
+\begin{equation}
+ x(t-h)=x_t-hv(x_t,t)+\frac{h^2}{2}\ddot x(\xi).
+\end{equation}
+误差
+\begin{equation}
+ x_{t-h}^{\rm num}-x(t-h)
+ =-h(\widehat v-v)-\frac{h^2}{2}\ddot x(\xi).
+\end{equation}
+第一项是模型误差 $O(h\varepsilon)$，第二项是离散化误差 $O(h^2)$。增加采样步数只降低第二项。
+\end{document}

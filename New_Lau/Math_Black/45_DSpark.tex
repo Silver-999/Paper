@@ -1,0 +1,421 @@
+\documentclass[11pt]{article}
+\usepackage{fontspec}
+\setmainfont[
+  Path=fonts/,
+  Extension=.ttf,
+  UprightFont=*-400,
+  BoldFont=*-700
+]{NotoSerifSC}
+\setsansfont[
+  Path=fonts/,
+  Extension=.ttf,
+  UprightFont=*-400,
+  BoldFont=*-700
+]{NotoSerifSC}
+\XeTeXlinebreaklocale "zh"
+\XeTeXlinebreakskip=0pt plus 1pt
+\usepackage[a4paper,margin=1.70cm]{geometry}
+\usepackage{amsmath,amssymb,mathtools,bm}
+\usepackage{booktabs,longtable,array}
+\usepackage{enumitem}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\setlist{nosep,leftmargin=2em}
+\allowdisplaybreaks[3]
+\numberwithin{equation}{section}
+\pagestyle{plain}
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Pp}{\mathbb{P}}
+\newcommand{\1}{\mathbf{1}}
+\newcommand{\T}{\mathsf{T}}
+\newcommand{\F}{\mathrm{F}}
+\newcommand{\cN}{\mathcal{N}}
+\newcommand{\cL}{\mathcal{L}}
+\newcommand{\cS}{\mathcal{S}}
+\newcommand{\cH}{\mathcal{H}}
+\newcommand{\cA}{\mathcal{A}}
+\newcommand{\cM}{\mathcal{M}}
+\newcommand{\cT}{\mathcal{T}}
+\newcommand{\diag}{\operatorname{diag}}
+\newcommand{\tr}{\operatorname{tr}}
+\newcommand{\Var}{\operatorname{Var}}
+\newcommand{\Cov}{\operatorname{Cov}}
+\newcommand{\softmax}{\operatorname{softmax}}
+\newcommand{\KL}{D_{\mathrm{KL}}}
+\newcommand{\sg}{\operatorname{sg}}
+\begin{document}
+    \begin{center}
+      {\LARGE\bfseries 45\_DSpark}
+    \end{center}
+    \vspace{0.8em}
+
+    \section{符号与维度}
+    \begin{longtable}{>{$}l<{$} >{$}l<{$} p{10cm}}
+    \toprule
+    \text{符号} & \text{维度} & \text{含义}\\
+    \midrule
+    p,q & \Delta^{V-1} & 目标模型与草稿模型的 token 分布。\\
+        c_k,S_k & [0,1] & 第 $k$ 位接受率与前缀生存概率。\\
+        K,L & \mathbb N & 验证块长度与实际接受长度。\\
+        R(K,B) & \R_{>0} & 批大小 $B$ 下的验证吞吐 profile。\\
+    \bottomrule
+    \end{longtable}
+
+    所有向量默认是列向量；未特别说明时，期望同时对数据、噪声和采样时刻取值。下文只展开论文中承担方法逻辑的公式，并把所需假设写在推导发生的位置。
+
+\section{前缀接受长度的概率恒等式}
+
+草稿模型一次提出 $K$ 个 token，令 $A_j$ 表示第 $j$ 个 token 在此前均被接受条件下也被接受。
+连续接受前缀长度 $L\in\{0,1,\ldots,K\}$ 满足
+\begin{equation}
+ \{L\ge\ell\}=A_1\cap\cdots\cap A_\ell.
+\end{equation}
+任意非负整数变量的尾和公式
+\begin{equation}
+ \E L=\sum_{\ell=1}^{K}\Pp(L\ge\ell)
+\end{equation}
+可由
+\begin{align}
+ \E L
+ &=\sum_{l=0}^{K}l\Pp(L=l)
+ =\sum_{l=0}^{K}\sum_{\ell=1}^{l}\Pp(L=l)\\
+ &=\sum_{\ell=1}^{K}\sum_{l=\ell}^{K}\Pp(L=l)
+ =\sum_{\ell=1}^{K}\Pp(L\ge\ell)
+\end{align}
+得到。若每个条件接受概率同为 $a$，则
+\begin{equation}
+ \Pp(L\ge\ell)=a^\ell,\qquad
+ \E L=\sum_{\ell=1}^{K}a^\ell
+ =\frac{a(1-a^K)}{1-a}.
+\end{equation}
+$a\to1$ 时极限为 $K$，$a$ 较小时增加 $K$ 收益很快饱和。
+
+\section{精确 speculative sampling 的接受率}
+
+目标模型分布 $p(x)$、草稿分布 $q(x)$。候选 $x\sim q$ 的接受概率
+\begin{equation}
+ \alpha(x)=\min\left(1,\frac{p(x)}{q(x)}\right).
+\end{equation}
+总接受率
+\begin{align}
+ A&=\sum_xq(x)\min\left(1,\frac{p(x)}{q(x)}\right)\\
+ &=\sum_x\min(p(x),q(x)).
+\end{align}
+利用
+\begin{equation}
+ \min(p,q)=\frac12(p+q-|p-q|),
+\end{equation}
+得到
+\begin{equation}
+ \boxed{A=1-\operatorname{TV}(p,q),
+ \quad \operatorname{TV}(p,q)=\frac12\sum_x|p(x)-q(x)|.}
+\end{equation}
+由 Pinsker 不等式
+\begin{equation}
+ \operatorname{TV}(p,q)
+ \le\sqrt{\frac12D_{\rm KL}(p\|q)},
+\end{equation}
+因此较小 KL 给出较高接受率的下界，但 KL 的方向和支撑条件必须匹配。
+
+拒绝时从残差分布
+\begin{equation}
+ r(x)=\frac{[p(x)-q(x)]_+}{\sum_y[p(y)-q(y)]_+}
+\end{equation}
+采样。候选被接受后贡献概率 $\min(p,q)$；拒绝概率为
+$1-A=\sum[p-q]_+$，乘残差 $r$ 贡献 $[p-q]_+$。总输出概率
+\begin{equation}
+ \min(p(x),q(x))+[p(x)-q(x)]_+=p(x),
+\end{equation}
+证明校正后的单步分布与目标模型完全一致。
+
+\section{验证并行与每轮产出}
+
+目标模型一次前向并行验证 $K$ 个草稿 token，并通常在首次拒绝处再从目标/残差采一个 token。
+若每轮输出 token 数近似 $Y=L+1$，则
+\begin{equation}
+ \E Y=1+\sum_{\ell=1}^{K}\Pp(L\ge\ell).
+\end{equation}
+若条件接受率恒为 $a$，
+\begin{equation}
+ \E Y=1+\frac{a(1-a^K)}{1-a}.
+\end{equation}
+设草稿生成 $K$ token 时间 $T_d(K)$，目标验证时间 $T_v(K)$，其他开销 $T_o$，
+吞吐率
+\begin{equation}
+ \operatorname{TPS}(K)=
+ \frac{\E Y(K)}{T_d(K)+T_v(K)+T_o}.
+\end{equation}
+最优 $K$ 不一定最大：分子随 $K$ 饱和，分母仍增长。
+
+与目标逐 token 时间 $T_p$ 比，理论加速
+\begin{equation}
+ S(K)=\frac{T_p\E Y(K)}{T_d(K)+T_v(K)+T_o}.
+\end{equation}
+即使接受率高，若草稿模型太慢或验证 kernel 未能并行利用硬件，也可能 $S\le1$。
+
+\section{位置相关接受概率}
+
+实际条件接受率依赖位置，记
+\begin{equation}
+ a_j=\Pp(A_j\mid A_1,\ldots,A_{j-1}).
+\end{equation}
+链式法则给出
+\begin{equation}
+ \Pp(L\ge\ell)=\prod_{j=1}^{\ell}a_j,
+\end{equation}
+所以
+\begin{equation}
+ \boxed{\E L=\sum_{\ell=1}^{K}\prod_{j=1}^{\ell}a_j.}
+\end{equation}
+早期 $a_j$ 的改善会乘法影响所有更长前缀，比同等幅度改善末端接受率更重要。
+对 $a_j$ 的偏导
+\begin{equation}
+ \frac{\partial\E L}{\partial a_j}
+ =\sum_{\ell=j}^{K}\prod_{\substack{h=1\\h\ne j}}^{\ell}a_h.
+\end{equation}
+
+\section{草稿训练损失与接受率的关系}
+
+以目标分布为软标签训练草稿，token 级交叉熵
+\begin{equation}
+ \cL_{\rm KD}=-\E_{c}\sum_xp(x\mid c)\log q_\phi(x\mid c)
+\end{equation}
+分解为
+\begin{equation}
+ \cL_{\rm KD}=H(p)+D_{\rm KL}(p\|q_\phi).
+\end{equation}
+目标熵 $H(p)$ 与 $\phi$ 无关，所以最小化蒸馏交叉熵等价于最小化正向 KL。
+结合 Pinsker，
+\begin{equation}
+ A(c)=1-\operatorname{TV}(p,q_\phi)
+ \ge1-\sqrt{\frac12D_{\rm KL}(p\|q_\phi)}.
+\end{equation}
+这提供训练损失与单步接受率的保守联系。
+
+若只用目标模型 argmax 的硬标签，优化的是
+\begin{equation}
+ -\log q_\phi(x^*\mid c),\qquad x^*=\arg\max_xp(x\mid c),
+\end{equation}
+它不约束其余概率质量，可能有很高 top-1 一致率却有较大总变差，影响采样式接受率。
+
+\section{多 token 预测头的联合梯度}
+
+若共享骨干表示 $h_t$ 同时预测未来 $K$ 个 token，损失
+\begin{equation}
+ \cL=\sum_{k=1}^{K}\lambda_k
+ [-\log p_{\theta,k}(y_{t+k}\mid h_t)].
+\end{equation}
+骨干梯度为
+\begin{equation}
+ \nabla_{h_t}\cL=
+ \sum_{k=1}^{K}\lambda_k\nabla_{h_t}\cL_k.
+\end{equation}
+若不同未来步梯度冲突，内积
+\begin{equation}
+ \langle\nabla\cL_j,\nabla\cL_k\rangle<0
+\end{equation}
+会降低合成梯度对各单任务的下降量；权重 $\lambda_k$ 需要在更长预测能力与当前 token 建模之间折衷。
+
+\section{自回归似然与 token 梯度}
+
+对序列 $x_{1:T}$，因果语言模型按概率链式法则分解
+\begin{equation}
+ p_\theta(x_{1:T})=\prod_{t=1}^{T}p_\theta(x_t\mid x_{<t}).
+\end{equation}
+负对数似然
+\begin{equation}
+ \cL_{\rm NLL}=-\sum_{t=1}^{T}\log p_\theta(x_t\mid x_{<t}).
+\end{equation}
+若第 $t$ 步 logits 为 $z_t\in\R^{V}$，概率
+$p_{tj}=e^{z_{tj}}/\sum_ke^{z_{tk}}$，真实 token 索引 $y_t$，则
+\begin{equation}
+ \ell_t=-z_{t,y_t}+\log\sum_ke^{z_{tk}},
+\end{equation}
+逐 logit 梯度
+\begin{equation}
+ \frac{\partial\ell_t}{\partial z_{tj}}
+ =p_{tj}-\1\{j=y_t\}.
+\end{equation}
+Hessian 正是 softmax Jacobian
+\begin{equation}
+ \nabla_z^2\ell_t=\diag(p_t)-p_tp_t^T\succeq0.
+\end{equation}
+所以交叉熵关于 logits 凸，但关于深网参数并不凸。
+
+对非 padding token 集合 $\mathcal I$，平均损失和困惑度
+\begin{equation}
+ \bar L=\frac1{|\mathcal I|}\sum_{t\in\mathcal I}\ell_t,
+ \qquad \operatorname{PPL}=e^{\bar L}.
+\end{equation}
+因此 PPL 是真实 token 概率倒数的几何平均：
+\begin{equation}
+ \operatorname{PPL}=\left(
+ \prod_{t\in\mathcal I}\frac1{p_\theta(x_t\mid x_{<t})}
+ \right)^{1/|\mathcal I|}.
+\end{equation}
+不同 tokenizer 的 token 粒度不同，PPL 不能不经换算直接横向比较。
+
+\section{旋转位置编码的相对位置恒等式}
+
+对二维坐标对，定义旋转
+\begin{equation}
+ R(m\omega)=
+ \begin{bmatrix}
+ \cos(m\omega)&-\sin(m\omega)\\
+ \sin(m\omega)&\cos(m\omega)
+ \end{bmatrix}.
+\end{equation}
+位置 $m,n$ 的 query、key 分别为
+$q_m=R(m\omega)q$、$k_n=R(n\omega)k$。内积
+\begin{align}
+ q_m^Tk_n
+ &=q^TR(m\omega)^TR(n\omega)k\\
+ &=q^TR((n-m)\omega)k.
+\end{align}
+第二步用到 $R(a)^T=R(-a)$ 和 $R(a)R(b)=R(a+b)$。
+所以绝对位置旋转后的内积只依赖相对距离 $n-m$。
+
+在 $d_h$ 维中对相邻坐标对使用频率
+\begin{equation}
+ \omega_j=\theta^{-2j/d_h},\qquad j=0,\ldots,d_h/2-1.
+\end{equation}
+低 $j$ 频率高、分辨近距离，高 $j$ 频率低、覆盖远距离。若推理长度远超训练长度，
+相位 $m\omega_j$ 的外推和周期混叠会改变注意力几何；位置插值本质上是重新缩放这些相位。
+
+\section{RMSNorm 的 Jacobian}
+
+忽略可学习增益，RMSNorm
+\begin{equation}
+ y=\frac{x}{s},\qquad
+ s=\sqrt{\frac1d x^Tx+\epsilon}.
+\end{equation}
+微分
+\begin{equation}
+ ds=\frac{x^Tdx}{d s},
+\end{equation}
+因此
+\begin{align}
+ dy&=\frac1s dx-\frac{x}{s^2}ds\\
+ &=\left(\frac1sI-\frac{xx^T}{d s^3}\right)dx.
+\end{align}
+故
+\begin{equation}
+ J_{\rm RMS}=\frac1sI-\frac{xx^T}{d s^3}.
+\end{equation}
+与 LayerNorm 相比，它没有去均值投影
+$I-d^{-1}\1\1^T$，因此不消除常数方向。加上逐坐标增益 $g$ 后，
+Jacobain 左乘 $\diag(g)$。
+
+谱上，对任意 $v\perp x$，$Jv=v/s$；沿 $x$ 方向
+\begin{equation}
+ Jx=\left(\frac1s-\frac{\|x\|^2}{d s^3}\right)x
+ =\frac{\epsilon}{s^3}x.
+\end{equation}
+当 $\epsilon$ 很小，径向尺度方向被强烈压制，而切向方向按 $1/s$ 缩放。
+
+\section{SwiGLU 前馈层的逐项梯度}
+
+SwiGLU 可写
+\begin{equation}
+ a=xW_a,\qquad b=xW_b,\qquad
+ h=\operatorname{swish}(a)\odot b,\qquad
+ y=hW_o,
+\end{equation}
+其中
+\begin{equation}
+ \operatorname{swish}(a)=a\sigma(a).
+\end{equation}
+其导数
+\begin{align}
+ \frac d{da}[a\sigma(a)]
+ &=\sigma(a)+a\sigma(a)(1-\sigma(a)).
+\end{align}
+令 $g_h=\partial\cL/\partial h$，则
+\begin{align}
+ g_a&=g_h\odot b\odot
+ [\sigma(a)+a\sigma(a)(1-\sigma(a))],\\
+ g_b&=g_h\odot\operatorname{swish}(a),\\
+ \nabla_{W_a}\cL&=x^Tg_a,\qquad
+ \nabla_{W_b}\cL=x^Tg_b,\\
+ \nabla_x\cL&=g_aW_a^T+g_bW_b^T.
+\end{align}
+门分支 $b$ 同时调制激活和 $a$ 分支梯度，故两个投影不是可独立解释的普通 MLP。
+
+\section{MoE 路由与负载}
+
+对 token $x_i$，router logits $r_i=W_rx_i$，概率
+\begin{equation}
+ p_{ie}=\frac{e^{r_{ie}}}{\sum_{j=1}^{E}e^{r_{ij}}}.
+\end{equation}
+若 top-$k$ 专家集合 $S_i$，归一化门
+\begin{equation}
+ \widetilde p_{ie}=\frac{p_{ie}\1\{e\in S_i\}}
+ {\sum_{j\in S_i}p_{ij}},
+ \qquad
+ y_i=\sum_{e\in S_i}\widetilde p_{ie}F_e(x_i).
+\end{equation}
+固定集合 $S_i$ 内可正常求导；集合边界的 arg-top-$k$ 不连续，几乎处处把未选专家梯度置零。
+
+令软重要性
+\begin{equation}
+ P_e=\frac1N\sum_ip_{ie},
+\end{equation}
+硬负载
+\begin{equation}
+ F_e=\frac1N\sum_i\1\{e\in S_i\}/k.
+\end{equation}
+常见平衡项
+\begin{equation}
+ L_{\rm bal}=E\sum_eP_eF_e
+\end{equation}
+在均匀 $P_e=F_e=1/E$ 时等于 $1$。把硬 $F_e$ 停止梯度后，
+router 梯度只通过 $P_e$，会降低当前过载专家的概率；它是训练启发式，不等同于严格容量约束。
+
+若每专家容量为
+\begin{equation}
+ C_e=\left\lceil\frac{Nk}{E}\,c_{\rm cap}\right\rceil,
+\end{equation}
+超过容量的 token 必须丢弃或转送。即使平均负载均匀，局部批次方差仍可能溢出。
+
+\section{低秩 KV 潜变量的吸收}
+
+设 key/value 由共享潜变量
+\begin{equation}
+ c_t=W_cx_t\in\R^{d_c},\qquad
+ k_t=W_kc_t,\qquad v_t=W_vc_t.
+\end{equation}
+注意力 logit
+\begin{equation}
+ q_s^Tk_t=q_s^TW_kc_t=(W_k^Tq_s)^Tc_t.
+\end{equation}
+因此解码时可把 $W_k$ 吸收到 query 投影，缓存 $c_t$ 而非完整 $k_t$。
+若 value 聚合
+\begin{equation}
+ o_s=\sum_tp_{st}W_vc_t=W_v\left(\sum_tp_{st}c_t\right),
+\end{equation}
+$W_v$ 可放到加权和之后。缓存从每 token 的 $d_k+d_v$ 降为 $d_c$，
+前提是位置编码等操作不破坏这些线性交换关系；对只作用在部分 key 维度的 RoPE，需把旋转部分另行缓存或重构。
+
+\section{多 token 预测的联合似然}
+
+若同一隐藏状态 $h_t$ 用 $K$ 个头预测 $x_{t+1},\ldots,x_{t+K}$，
+\begin{equation}
+ \cL_t=\sum_{k=1}^{K}\lambda_k
+ [-\log p_{\theta,k}(x_{t+k}\mid h_t)].
+\end{equation}
+共享骨干梯度
+\begin{equation}
+ \nabla_{h_t}\cL_t=\sum_{k=1}^{K}\lambda_k g_{t,k}.
+\end{equation}
+其平方范数精确展开
+\begin{equation}
+ \left\|\sum_k\lambda_kg_{t,k}\right\|^2
+ =\sum_k\lambda_k^2\|g_{t,k}\|^2
+ +2\sum_{j<k}\lambda_j\lambda_k g_{t,j}^Tg_{t,k}.
+\end{equation}
+交叉内积为负时存在任务冲突；辅助头退火相当于训练后期逐渐去掉这些交叉项，
+使最终目标回到下一 token 似然。
+
+\end{document}

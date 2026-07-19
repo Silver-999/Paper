@@ -1,0 +1,633 @@
+\documentclass[UTF8,12pt,a4paper,fontset=none]{ctexart}
+\usepackage[a4paper,left=1.82cm,right=1.82cm,top=1.72cm,bottom=1.82cm,headheight=15pt]{geometry}
+\usepackage{fontspec,xeCJK}
+\setmainfont{Liberation Serif}
+\setsansfont{DejaVu Sans}
+\setmonofont{DejaVu Sans Mono}
+\setCJKmainfont[BoldFont=Noto Serif CJK SC Bold]{Noto Serif CJK SC}
+\setCJKsansfont[BoldFont=Noto Sans CJK SC Bold]{Noto Sans CJK SC}
+\setCJKmonofont{Noto Sans Mono CJK SC}
+\usepackage{amsmath,amssymb,mathtools,bm}
+\usepackage{booktabs,longtable,tabularx,array,multirow}
+\usepackage{enumitem,xcolor}
+\usepackage[most]{tcolorbox}
+\usepackage{fancyhdr,titlesec,hyperref,cleveref,lastpage}
+\usepackage{tikz,float,caption,listings}
+\usetikzlibrary{arrows.meta,positioning,calc,fit,backgrounds,shapes.geometric}
+\definecolor{mainblue}{RGB}{39,82,138}
+\definecolor{deepblue}{RGB}{25,55,95}
+\definecolor{softblue}{RGB}{235,243,252}
+\definecolor{softgreen}{RGB}{238,248,241}
+\definecolor{softorange}{RGB}{255,246,232}
+\definecolor{softgray}{RGB}{245,246,248}
+\definecolor{warnred}{RGB}{160,48,48}
+\hypersetup{unicode=true,colorlinks=true,linkcolor=deepblue,urlcolor=mainblue,citecolor=deepblue}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.36em}
+\setlength{\tabcolsep}{5pt}
+\renewcommand{\arraystretch}{1.2}
+\allowdisplaybreaks[4]
+\emergencystretch=3em
+\sloppy
+\pagestyle{fancy}\fancyhf{}\fancyfoot[C]{\small 第 \thepage\ 页，共 \pageref{LastPage} 页}\renewcommand{\headrulewidth}{0.4pt}
+\titleformat{\section}{\Large\bfseries\color{deepblue}}{\thesection}{0.65em}{}
+\titleformat{\subsection}{\large\bfseries\color{mainblue}}{\thesubsection}{0.55em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries}{\thesubsubsection}{0.5em}{}
+\numberwithin{equation}{section}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Prob}{\mathbb{P}}
+\newcommand{\Loss}{\mathcal{L}}
+\newcommand{\norm}[1]{\left\lVert #1\right\rVert}
+\newcommand{\ip}[2]{\left\langle #1,#2\right\rangle}
+\newcommand{\tr}{\operatorname{Tr}}
+\newcommand{\diag}{\operatorname{diag}}
+\newcommand{\rank}{\operatorname{rank}}
+\newcommand{\softmax}{\operatorname{softmax}}
+\newcommand{\argmin}{\operatorname*{arg\,min}}
+\newcommand{\argmax}{\operatorname*{arg\,max}}
+\newcommand{\sg}{\operatorname{sg}}
+\newcommand{\KL}{D_{\mathrm{KL}}}
+\newcommand{\dd}{\mathrm{d}}
+\newtcolorbox{keybox}[1][]{enhanced,breakable,colback=softblue,colframe=mainblue,boxrule=0.8pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\newtcolorbox{examplebox}[1][]{enhanced,breakable,colback=softgreen,colframe=green!45!black,boxrule=0.7pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\newtcolorbox{notebox}[1][]{enhanced,breakable,colback=softorange,colframe=orange!70!black,boxrule=0.7pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\newtcolorbox{criticalbox}[1][]{enhanced,breakable,colback=red!3,colframe=warnred,boxrule=0.8pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\lstset{basicstyle=\ttfamily\small,breaklines=true,frame=single,backgroundcolor=\color{softgray},numbers=left,numberstyle=\tiny,showstringspaces=false,columns=fullflexible}
+\hypersetup{pdftitle={42 ChordEdit 数学过程详解},pdfauthor={OpenAI}}
+\fancyhead[L]{\small 42 ChordEdit}
+\fancyhead[R]{\small 数学过程详解}
+\setlength{\abovedisplayskip}{0.82em}
+\setlength{\belowdisplayskip}{0.82em}
+\setlength{\abovedisplayshortskip}{0.45em}
+\setlength{\belowdisplayshortskip}{0.45em}
+\begin{document}
+\begin{center}
+{\LARGE\bfseries 42\_ChordEdit 数学过程详解}\par
+\vspace{0.35em}
+{\large 动态最优传输、Chord 控制场与一步稳定性}
+\end{center}
+\vspace{0.45em}
+\begin{keybox}[本文只处理真正需要推导的部分]
+本文逐步推导连续性方程、Benamou--Brenier 动能、局部严格凸估计、Chord 公式、核平滑偏差--方差、Jensen 能量收缩、Euler 误差与投影解释。。全文按“公式从哪里来--每个符号是什么--中间步骤为何成立--维度和复杂度如何核对--论文结论依赖哪些假设”的顺序展开；不复述实验表格，也不使用与论文无关的通用背景凑页数。
+\end{keybox}
+\tableofcontents
+\newpage
+
+\section{从条件流差到编辑控制场}
+设源提示和目标提示对应的连续流速度分别为
+\begin{equation}
+ v(x,t,c_{\mathrm{src}}),\qquad v(x,t,c_{\mathrm{tar}}).
+\end{equation}
+理想的瞬时编辑控制为
+\begin{equation}
+ \Delta v(x_t,t)
+ =v(x_t,t,c_{\mathrm{tar}})-v(x_t,t,c_{\mathrm{src}}).
+\end{equation}
+但一阶生成器通常只能在合成噪声状态 $z\sim K_t(\cdot\mid x_\tau)$ 上查询。令模型可观测输出为 $Q(z,t,c)$，用时间相关线性映射 $B_t$ 转为统一速度单位，则代理场
+\begin{equation}
+ \boxed{
+ R(x_\tau,t)
+ =\E_{z\sim K_t(\cdot\mid x_\tau)}
+ \left[B_t\{Q(z,t,c_{\mathrm{tar}})-Q(z,t,c_{\mathrm{src}})\}\right].
+ }
+\end{equation}
+论文把它建模为
+\begin{equation}
+ R(x_\tau,t)=u_t(x_\tau)+\varepsilon_t,
+ \qquad \E\varepsilon_t=0,
+\end{equation}
+其中 $u_t$ 是真实编辑控制场，$\varepsilon_t$ 是查询噪声与模型误差。
+
+\section{Benamou--Brenier 动态最优传输}
+令 $\rho_t(x)$ 表示图像分布沿编辑时间演化的密度。质量守恒要求
+\begin{equation}
+ \boxed{
+ \partial_t\rho_t(x)+\nabla_x\cdot(\rho_t(x)u_t(x))=0.
+ }
+\end{equation}
+其来源可由任意区域 $\Omega$ 的质量守恒推导：
+\begin{align}
+ \frac{\dd}{\dd t}\int_\Omega\rho_t(x)\dd x
+ &=-\int_{\partial\Omega}\rho_tu_t\cdot n\dd S\\
+ &=-\int_\Omega\nabla\cdot(\rho_tu_t)\dd x.
+\end{align}
+因为对任意 $\Omega$ 都成立，得到连续性方程。动态 OT 选择满足边界分布的最低动能路径：
+\begin{equation}
+ \boxed{
+ \min_{\rho,u}\int_0^1\int\frac12\norm{u_t(x)}_2^2\rho_t(x)\dd x\dd t
+ \quad\text{s.t. continuity equation}.
+ }
+\end{equation}
+这解释了“低能量”不是经验形容词，而是速度平方关于运输质量的积分。
+
+\section{局部二次估计问题}
+直接取 $u_t^{\mathrm{nai}}=R_t$ 会把高频噪声完整带入一步积分。ChordEdit 在窗口 $[t-\delta,t]$ 内把控制近似为常向量 $u$，并最小化
+\begin{equation}
+ \Phi_t(u;x_\tau)
+ =t\norm{u-\widehat u_{t-\delta}(x_\tau)}_2^2
+ +\int_{t-\delta}^{t}\norm{u-R(x_\tau,\xi)}_2^2\dd\xi.
+\end{equation}
+对 $u$ 求梯度：
+\begin{align}
+ \nabla_u\Phi_t
+ &=2t(u-\widehat u_{t-\delta})
+ +2\int_{t-\delta}^{t}(u-R_\xi)\dd\xi\\
+ &=2(t+\delta)u
+ -2t\widehat u_{t-\delta}
+ -2\int_{t-\delta}^{t}R_\xi\dd\xi.
+\end{align}
+令梯度为零，唯一极小点为
+\begin{equation}
+ \boxed{
+ u_t^*(x_\tau)
+ =\frac{t}{t+\delta}\widehat u_{t-\delta}(x_\tau)
+ +\frac1{t+\delta}\int_{t-\delta}^{t}R(x_\tau,\xi)\dd\xi.
+ }
+\end{equation}
+Hessian 为
+\begin{equation}
+ \nabla_u^2\Phi_t=2(t+\delta)I\succ0,
+\end{equation}
+故该解确为严格凸问题的唯一全局最优解。
+
+\section{实用 Chord Control 公式}
+采用一阶因果近似
+\begin{equation}
+ \widehat u_{t-\delta}\approx R(x_\tau,t-\delta),
+ \qquad
+ \int_{t-\delta}^{t}R(x_\tau,\xi)\dd\xi
+ \approx\delta R(x_\tau,t),
+\end{equation}
+得到
+\begin{equation}
+ \boxed{
+ \widehat u_t(x_\tau)
+ =\frac{tR(x_\tau,t-\delta)+\delta R(x_\tau,t)}{t+\delta}.
+ }
+\end{equation}
+权重
+\begin{equation}
+ \lambda_1=\frac{t}{t+\delta},\qquad
+ \lambda_2=\frac{\delta}{t+\delta}
+\end{equation}
+非负且和为一，所以 $\widehat u_t$ 是两个代理场的凸组合。$\delta=0$ 时退化为 naive field；$\delta$ 增大时平滑增强，但语义响应可能变弱。
+
+\section{核平滑解释}
+一般形式可写为单边因果卷积
+\begin{equation}
+ \widehat u(t)=(K_\delta*R)(t)
+ =\int_0^\delta K_\delta(s)R(t-s)\dd s,
+\end{equation}
+其中
+\begin{equation}
+ K_\delta(s)\ge0,
+ \qquad \int_0^\delta K_\delta(s)\dd s=1.
+\end{equation}
+若 $R$ 二阶可微，Taylor 展开
+\begin{equation}
+ R(t-s)=R(t)-sR'(t)+\frac{s^2}{2}R''(t)+O(s^3).
+\end{equation}
+代回得偏差
+\begin{equation}
+ \operatorname{Bias}[\widehat u]
+ =-\mu_1(K_\delta)R'(t)
+ +\frac{\mu_2(K_\delta)}2R''(t)+O(\delta^3),
+\end{equation}
+其中 $\mu_j=\int s^jK_\delta(s)\dd s$。单边核一般有一阶偏差 $O(\delta)$；若构造一阶矩为零的二阶核，则偏差变为 $O(\delta^2)$，平方偏差为 $O(\delta^4)$。
+
+若观测噪声方差为 $\sigma^2$，独立采样密度与窗口宽度成正比，则平滑方差近似
+\begin{equation}
+ \operatorname{Var}(\widehat u)=O\!\left(\frac{\sigma^2}{\delta}\right).
+\end{equation}
+二阶核的均方误差
+\begin{equation}
+ \operatorname{MSE}(\delta)
+ \approx C_1\delta^4+C_2\frac{\sigma^2}{\delta}.
+\end{equation}
+求导并令零：
+\begin{equation}
+ 4C_1\delta^3-C_2\frac{\sigma^2}{\delta^2}=0,
+\end{equation}
+故
+\begin{equation}
+ \boxed{\delta^*\asymp\sigma^{2/5}.}
+\end{equation}
+这给出窗口宽度的偏差--方差平衡。
+
+\section{$L^2$ 能量收缩的完整证明}
+对固定 $t$，把 $S\sim K_\delta$ 看成随机变量，则
+\begin{equation}
+ \widehat u(t)=\E_S[R(t-S)].
+\end{equation}
+平方范数是凸函数，由 Jensen 不等式
+\begin{equation}
+ \norm{\widehat u(t)}_2^2
+ \le\E_S\norm{R(t-S)}_2^2.
+\end{equation}
+对 $t$ 积分并用 Fubini/Tonelli 交换积分次序：
+\begin{align}
+ \int\norm{\widehat u(t)}^2\dd t
+ &\le\int\int K_\delta(s)\norm{R(t-s)}^2\dd s\dd t\\
+ &=\int K_\delta(s)\left[\int\norm{R(\tau)}^2\dd\tau\right]\dd s\\
+ &=\int\norm{R(\tau)}^2\dd\tau.
+\end{align}
+因此
+\begin{equation}
+ \boxed{\norm{K_\delta*R}_{L^2}\le\norm{R}_{L^2}.}
+\end{equation}
+若核不是 Dirac 脉冲且 $R$ 在核支持内并非常值，平方范数严格凸，故不等号严格。乘以非负密度 $\rho_t(x)$ 并对 $x$ 积分，同样得到 Benamou--Brenier 动能不增。
+
+\section{导数范数与一致性误差}
+微分与卷积可交换：
+\begin{equation}
+ \partial_t\widehat u=K_\delta*(\partial_tR),
+ \qquad
+ \nabla_x\widehat u=K_\delta*(\nabla_xR).
+\end{equation}
+由单位质量非负核
+\begin{equation}
+ \norm{\partial_t\widehat u}_\infty
+ \le\norm{\partial_tR}_\infty,
+ \qquad
+ \norm{\nabla_x\widehat u}_\infty
+ \le\norm{\nabla_xR}_\infty.
+\end{equation}
+显式 Euler 解
+\begin{equation}
+ \dot x=u(x,t),\qquad
+ x_{n+1}^{E}=x_n+h u(x_n,t_n)
+\end{equation}
+的局部截断误差由轨迹二阶导控制：
+\begin{equation}
+ \ddot x=\partial_tu+(\nabla_xu)u.
+\end{equation}
+故
+\begin{equation}
+ \norm{\tau_{n+1}}
+ \le\frac{h^2}{2}
+ \left(\norm{\partial_tu}_\infty
+ +\norm{\nabla_xu}_\infty\norm{u}_\infty\right).
+\end{equation}
+定义一致性代理
+\begin{equation}
+ C(u)=\norm{\partial_tu}_\infty
+ +\norm{\nabla_xu}_\infty\norm{u}_\infty,
+\end{equation}
+则平滑后 $C(\widehat u)\le C(R)$，因此同样的一步步长下局部误差上界更小。
+
+\section{一步稳定性}
+若 $u$ 关于 $x$ 的 Lipschitz 常数为 $L=\norm{\nabla_xu}_\infty$，两个 Euler 轨迹误差满足
+\begin{equation}
+ \norm{e_{n+1}}
+ \le(1+hL)\norm{e_n}+\norm{\tau_{n+1}}.
+\end{equation}
+递推得到全局误差 $O(h)$，常数随 $e^{LT}$ 增长。Chord 平滑不增大 $L$，因此稳定裕度不差于 naive field。这里“可以一步走完”并非 Euler 阶数提高，而是同一一阶离散在更平滑、更低能量场上的误差常数下降。
+
+\section{投影与最低能量解释}
+把可实现控制限制在局部 chord 子空间 $\mathcal U_\delta$，令 $P_\delta$ 为 $L^2(\rho)$ 正交投影，则
+\begin{equation}
+ \widehat u=P_\delta R.
+\end{equation}
+正交分解
+\begin{equation}
+ R=P_\delta R+(I-P_\delta)R
+\end{equation}
+给出 Pythagoras 恒等式
+\begin{equation}
+ \norm{R}_{L^2(\rho)}^2
+ =\norm{\widehat u}_{L^2(\rho)}^2
+ +\norm{(I-P_\delta)R}_{L^2(\rho)}^2.
+\end{equation}
+因此在同一可实现子空间中，投影具有最小平方误差和不高于原场的能量；被去掉的正是与平滑 chord 不相容的高频分量。
+% AUGMENTED_DETAILED_MATH_2
+
+\section{连续性方程的弱形式}
+对任意光滑测试函数 $\varphi(x,t)$，连续性方程
+\begin{equation}
+ \partial_t\rho+\nabla\cdot(\rho u)=0
+\end{equation}
+乘 $\varphi$ 并分部积分得到
+\begin{equation}
+ \int_0^1\int
+ [\partial_t\varphi+\nabla\varphi\cdot u]\rho\dd x\dd t
+ +\int\varphi(x,0)\rho_0\dd x
+ -\int\varphi(x,1)\rho_1\dd x=0.
+\end{equation}
+弱形式允许密度不光滑，也是动态 OT 数值离散的基础。
+
+\section{Benamou--Brenier 的动量变量凸化}
+令动量
+\begin{equation}
+ m=\rho u.
+\end{equation}
+连续性约束变成线性
+\begin{equation}
+ \partial_t\rho+\nabla\cdot m=0.
+\end{equation}
+动能
+\begin{equation}
+ \frac12\int\frac{\norm m^2}{\rho}\dd x\dd t
+\end{equation}
+对 $(\rho,m)$ 是凸的（perspective of quadratic）。这解释了动态 OT 虽同时优化密度和速度，经过变量替换可形成凸问题。
+
+\section{两点 Chord 公式的能量上界}
+实用场
+\begin{equation}
+ \widehat u=\lambda R_1+(1-\lambda)R_2,
+ \qquad 0\le\lambda\le1.
+\end{equation}
+平方范数恒等式
+\begin{equation}
+ \norm{\lambda a+(1-\lambda)b}^2
+ =\lambda\norm a^2+(1-\lambda)\norm b^2
+ -\lambda(1-\lambda)\norm{a-b}^2.
+\end{equation}
+所以不仅有 Jensen 上界，还得到明确能量下降量
+\begin{equation}
+ \lambda(1-\lambda)\norm{R_1-R_2}^2.
+\end{equation}
+两个时间点代理场差异越大，平均带来的高频能量削减越明显。
+
+\section{噪声方差下降}
+测量
+\begin{equation}
+ R_i=u_i+\epsilon_i,
+ \qquad \E\epsilon_i=0.
+\end{equation}
+两点加权估计噪声
+\begin{equation}
+ \epsilon_c=\lambda\epsilon_1+(1-\lambda)\epsilon_2.
+\end{equation}
+若独立同方差 $\sigma^2I$，
+\begin{equation}
+ \operatorname{Var}(\epsilon_c)
+ =[\lambda^2+(1-\lambda)^2]\sigma^2I.
+\end{equation}
+$\lambda=1/2$ 时方差减半。若两次查询噪声相关系数 $\rho$，则
+\begin{equation}
+ \operatorname{Var}(\epsilon_c)
+ =[\lambda^2+(1-\lambda)^2+2\rho\lambda(1-\lambda)]\sigma^2.
+\end{equation}
+高度相关时平滑的降噪收益变小。
+
+\section{一阶积分近似的误差}
+论文用
+\begin{equation}
+ \int_{t-\delta}^{t}R(\xi)\dd\xi
+ \approx\delta R(t).
+\end{equation}
+Taylor 展开
+\begin{equation}
+ R(t-s)=R(t)-sR'(t)+\frac{s^2}{2}R''(\xi_s).
+\end{equation}
+积分得
+\begin{equation}
+ \int_{t-\delta}^{t}R(\xi)\dd\xi
+ =\delta R(t)-\frac{\delta^2}{2}R'(t)+O(\delta^3).
+\end{equation}
+所以右端点矩形公式误差为 $O(\delta^2)$。若用梯形公式
+\begin{equation}
+ \frac\delta2[R(t-\delta)+R(t)]
+\end{equation}
+积分误差可降为 $O(\delta^3)$，但论文的递归先验权重使最终公式不是简单等权梯形。
+
+\section{局部凸目标的 Bayesian 解释}
+目标
+\begin{equation}
+ t\norm{u-u_{prev}}^2+\int\norm{u-R_\xi}^2\dd\xi
+\end{equation}
+可解释为高斯 MAP。先验
+\begin{equation}
+ u\sim\mathcal N(u_{prev},(2t)^{-1}I),
+\end{equation}
+观测
+\begin{equation}
+ R_\xi\mid u\sim\mathcal N(u,\frac12I)
+\end{equation}
+的负对数后验正比于该目标。解是按精度加权的后验均值，$t$ 越大越信任历史 chord，$\delta$ 越大越信任新窗口观测总量。
+
+\section{显式 Euler 全局误差常数}
+误差递推
+\begin{equation}
+ e_{n+1}\le(1+hL)e_n+\frac{h^2}{2}M.
+\end{equation}
+从 $e_0=0$ 迭代 $N=T/h$ 步
+\begin{align}
+ e_N
+ &\le\frac{h^2M}{2}\sum_{j=0}^{N-1}(1+hL)^j\\
+ &=\frac{hM}{2L}[(1+hL)^N-1]\\
+ &\le\frac{hM}{2L}(e^{LT}-1).
+\end{align}
+Chord 同时降低 $L=\norm{\nabla u}_\infty$ 和 $M=\norm{\partial_tu+(\nabla u)u}_\infty$，所以减少的不只是步长稳定阈值，也包括全局误差常数。
+
+\section{Proximal refinement 的数学位置}
+传输一步得到 $x_{pred}$ 后，论文可选用目标条件模型做
+\begin{equation}
+ x_{prox}=B_{t_c}Q(x_{pred},t_c,c_{tar}).
+\end{equation}
+可把它视为近端映射
+\begin{equation}
+ \operatorname{prox}_{\lambda F}(x)
+ =\argmin_y\left[F(y)+\frac1{2\lambda}\norm{y-x}^2\right].
+\end{equation}
+它在保持靠近 $x_{pred}$ 的同时下降目标语义能量 $F$。该步骤不属于低能量 OT 路径，因此能量评估应在 refinement 前完成，否则会混淆 transport 与语义增强。
+\clearpage
+\section{动态最优传输的 Benamou--Brenier 形式}
+给定源分布 $\rho_0$ 和目标分布 $\rho_1$，二阶 Wasserstein 距离满足
+\begin{equation}
+ W_2^2(\rho_0,\rho_1)=
+ \inf_{\rho_t,u_t}
+ \int_0^1\int\rho_t(x)\|u_t(x)\|^2\dd x\dd t,
+\end{equation}
+约束为连续性方程
+\begin{equation}
+ \partial_t\rho_t+\nabla\cdot(\rho_tu_t)=0,
+ \qquad \rho_{t=0}=\rho_0,\ \rho_{t=1}=\rho_1.
+\end{equation}
+目标最小化整个概率质量搬运的动能。ChordEdit 的低能量控制思想来自：编辑场不应只追求终点语义，还要避免剧烈、曲折的轨迹。
+
+\section{连续性方程的弱形式}
+对光滑测试函数 $\varphi(x,t)$，将连续性方程乘 $\varphi$ 并积分：
+\begin{equation}
+ \int\varphi\partial_t\rho+
+ \int\varphi\nabla\cdot(\rho u)=0.
+\end{equation}
+分部积分得到
+\begin{equation}
+ \frac{\dd}{\dd t}\int\varphi(x,t)\rho_t(x)\dd x
+ =\int\left(\partial_t\varphi+
+ u_t\cdot\nabla\varphi\right)\rho_t\dd x.
+\end{equation}
+若 $X_t$ 满足 $\dot X_t=u_t(X_t)$，右侧正是
+\begin{equation}
+ \frac{\dd}{\dd t}\E[\varphi(X_t,t)].
+\end{equation}
+所以 ODE 粒子流与密度连续性方程描述同一传输。
+
+\section{动量变量使问题凸化}
+定义动量
+\begin{equation}
+ m_t=\rho_tu_t.
+\end{equation}
+目标变为
+\begin{equation}
+ \int\frac{\|m_t(x)\|^2}{\rho_t(x)}\dd x\dd t,
+\end{equation}
+约束
+\begin{equation}
+ \partial_t\rho_t+\nabla\cdot m_t=0.
+\end{equation}
+函数 $\|m\|^2/\rho$ 在 $\rho>0$ 上是 convex perspective，因此对 $(\rho,m)$ 联合凸。原变量 $(\rho,u)$ 中的 $\rho\|u\|^2$ 看似双线性，动量替换揭示了凸结构。
+
+\section{局部二次平滑问题的解析解}
+设原始编辑场观测为 $R(t)$，希望输出平滑控制 $u(t)$，考虑
+\begin{equation}
+ \min_u
+ \int\|u(t)-R(t)\|^2\dd t+
+ \lambda\int\|u'(t)\|^2\dd t.
+\end{equation}
+Euler--Lagrange 方程
+\begin{equation}
+ u-R-\lambda u''=0.
+\end{equation}
+在整条实线上，其 Fourier 变换满足
+\begin{equation}
+ \widehat u(\omega)=
+ \frac1{1+\lambda\omega^2}\widehat R(\omega).
+\end{equation}
+因此平滑器是低通滤波，高频编辑抖动被衰减。时域核为指数型
+\begin{equation}
+ K(t)=\frac1{2\sqrt\lambda}e^{-|t|/\sqrt\lambda}.
+\end{equation}
+
+\section{因果 Chord 核的归一化}
+在线编辑不能使用未来场，只能对过去做因果平均
+\begin{equation}
+ \widehat u(t)=\int_0^\delta K_\delta(s)R(t-s)\dd s,
+\end{equation}
+其中
+\begin{equation}
+ K_\delta(s)\ge0,
+ \qquad \int_0^\delta K_\delta(s)\dd s=1.
+\end{equation}
+若取均匀核
+\begin{equation}
+ K_\delta(s)=\frac1\delta\mathbf 1_{[0,\delta]}(s),
+\end{equation}
+则是最近 $\delta$ 时间的弦平均。核越宽，方差越低，但时间滞后越大。
+
+\section{$L^2$ 能量收缩的完整证明}
+对归一化非负核，Young 卷积不等式
+\begin{equation}
+ \|K*R\|_2\le\|K\|_1\|R\|_2.
+\end{equation}
+因为 $\|K\|_1=1$，
+\begin{equation}
+ \boxed{\|\widehat u\|_2\le\|R\|_2.}
+\end{equation}
+也可用 Jensen：
+\begin{align}
+ \|\widehat u(t)\|^2
+ &=\left\|\int K(s)R(t-s)\dd s\right\|^2\\
+ &\le\int K(s)\|R(t-s)\|^2\dd s.
+\end{align}
+再对 $t$ 积分并交换积分次序得到同样结论。平滑场的总动能不超过原始场。
+
+\section{独立噪声下的方差下降}
+设
+\begin{equation}
+ R_k=u+\epsilon_k,
+ \qquad \E\epsilon_k=0,
+ \quad \operatorname{Var}(\epsilon_k)=\Sigma.
+\end{equation}
+平均 $m$ 个观测
+\begin{equation}
+ \widehat u=\frac1m\sum_{k=1}^{m}R_k.
+\end{equation}
+若噪声独立，
+\begin{equation}
+ \operatorname{Var}(\widehat u)=\frac1m\Sigma.
+\end{equation}
+若相邻噪声相关，相关系数 $\rho_{ij}$，
+\begin{equation}
+ \operatorname{Var}(\widehat u)
+ =\frac1{m^2}
+ \left(m\Sigma+
+ 2\sum_{i<j}\operatorname{Cov}(\epsilon_i,\epsilon_j)\right).
+\end{equation}
+正相关会降低平均的方差收益。
+
+\section{一步 Euler 的稳定性误差}
+目标 ODE
+\begin{equation}
+ \dot x=u(x,t).
+\end{equation}
+从 $t$ 到 $t-h$ 一步
+\begin{equation}
+ \widehat x_{t-h}=x_t-h\widehat u(x_t,t).
+\end{equation}
+真解 Taylor 展开
+\begin{equation}
+ x_{t-h}=x_t-hu(x_t,t)+
+ \frac{h^2}{2}\ddot x(\xi).
+\end{equation}
+误差
+\begin{equation}
+ \widehat x_{t-h}-x_{t-h}
+ =-h(\widehat u-u)-
+ \frac{h^2}{2}\ddot x(\xi).
+\end{equation}
+平滑控制降低 $\|\widehat u-u\|$ 的随机波动，也降低 $\ddot x=\partial_tu+J_uu$ 的高频项，使大步长更稳定。
+
+\section{两点弦速度与平均速度}
+若已知轨迹两端 $x_a,x_b$，弦速度
+\begin{equation}
+ u_{\rm chord}=\frac{x_b-x_a}{b-a}.
+\end{equation}
+由基本定理
+\begin{equation}
+ x_b-x_a=\int_a^bu(x_t,t)\dd t,
+\end{equation}
+所以
+\begin{equation}
+ u_{\rm chord}=\frac1{b-a}
+ \int_a^bu(x_t,t)\dd t.
+\end{equation}
+它是沿真实轨迹的平均速度，而非端点处瞬时速度。若轨迹曲率大，弦方向可能偏离局部切向量，但用一步跨越整个区间时，弦恰好对应净位移。
+
+\section{一维 Gaussian 传输例子}
+源 $X_0\sim\mathcal N(\mu_0,\sigma_0^2)$，目标 $X_1\sim\mathcal N(\mu_1,\sigma_1^2)$。最优传输映射
+\begin{equation}
+ T(x)=\mu_1+\frac{\sigma_1}{\sigma_0}(x-\mu_0).
+\end{equation}
+位移插值
+\begin{equation}
+ X_t=(1-t)X_0+tT(X_0).
+\end{equation}
+速度
+\begin{equation}
+ u_t(X_t)=T(X_0)-X_0
+ =(\mu_1-\mu_0)+
+ \left(\frac{\sigma_1}{\sigma_0}-1\right)(X_0-\mu_0).
+\end{equation}
+这条速度在粒子路径上恒定，因此一步 Euler 精确。复杂图像编辑的困难在于真实条件分布间映射不是全局仿射，控制场会随位置和时间变化。
+
+\section{局部二次目标的 Bayesian 解释}
+若把原始场观测看成
+\begin{equation}
+ R=u+\epsilon,
+ \qquad \epsilon\sim\mathcal N(0,\sigma^2I),
+\end{equation}
+并给平滑先验
+\begin{equation}
+ p(u)\propto
+ \exp\left(-\frac\lambda2\int\|u'\|^2\dd t\right),
+\end{equation}
+则 MAP 估计最小化
+\begin{equation}
+ \frac1{2\sigma^2}\int\|R-u\|^2\dd t+
+ \frac\lambda2\int\|u'\|^2\dd t.
+\end{equation}
+因此 chord 平滑既可解释为最小能量控制，也可解释为对噪声场做 Bayesian 正则化估计。
+\end{document}

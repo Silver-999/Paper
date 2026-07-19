@@ -1,0 +1,673 @@
+\documentclass[UTF8,12pt,a4paper,fontset=none]{ctexart}
+\usepackage[a4paper,left=1.82cm,right=1.82cm,top=1.72cm,bottom=1.82cm,headheight=15pt]{geometry}
+\usepackage{fontspec,xeCJK}
+\setmainfont{Liberation Serif}
+\setsansfont{DejaVu Sans}
+\setmonofont{DejaVu Sans Mono}
+\setCJKmainfont[BoldFont=Noto Serif CJK SC Bold]{Noto Serif CJK SC}
+\setCJKsansfont[BoldFont=Noto Sans CJK SC Bold]{Noto Sans CJK SC}
+\setCJKmonofont{Noto Sans Mono CJK SC}
+\usepackage{amsmath,amssymb,mathtools,bm}
+\usepackage{booktabs,longtable,tabularx,array,multirow}
+\usepackage{enumitem,xcolor}
+\usepackage[most]{tcolorbox}
+\usepackage{fancyhdr,titlesec,hyperref,cleveref,lastpage}
+\usepackage{tikz,float,caption,listings}
+\usetikzlibrary{arrows.meta,positioning,calc,fit,backgrounds,shapes.geometric}
+\definecolor{mainblue}{RGB}{39,82,138}
+\definecolor{deepblue}{RGB}{25,55,95}
+\definecolor{softblue}{RGB}{235,243,252}
+\definecolor{softgreen}{RGB}{238,248,241}
+\definecolor{softorange}{RGB}{255,246,232}
+\definecolor{softgray}{RGB}{245,246,248}
+\definecolor{warnred}{RGB}{160,48,48}
+\hypersetup{unicode=true,colorlinks=true,linkcolor=deepblue,urlcolor=mainblue,citecolor=deepblue}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.36em}
+\setlength{\tabcolsep}{5pt}
+\renewcommand{\arraystretch}{1.2}
+\allowdisplaybreaks[4]
+\emergencystretch=3em
+\sloppy
+\pagestyle{fancy}\fancyhf{}\fancyfoot[C]{\small 第 \thepage\ 页，共 \pageref{LastPage} 页}\renewcommand{\headrulewidth}{0.4pt}
+\titleformat{\section}{\Large\bfseries\color{deepblue}}{\thesection}{0.65em}{}
+\titleformat{\subsection}{\large\bfseries\color{mainblue}}{\thesubsection}{0.55em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries}{\thesubsubsection}{0.5em}{}
+\titlespacing*{\section}{0pt}{0.72em}{0.32em}
+\titlespacing*{\subsection}{0pt}{0.55em}{0.25em}
+\setlength{\abovedisplayskip}{0.38em}
+\setlength{\belowdisplayskip}{0.38em}
+\setlength{\abovedisplayshortskip}{0.25em}
+\setlength{\belowdisplayshortskip}{0.25em}
+\numberwithin{equation}{section}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Prob}{\mathbb{P}}
+\newcommand{\Loss}{\mathcal{L}}
+\newcommand{\norm}[1]{\left\lVert #1\right\rVert}
+\newcommand{\ip}[2]{\left\langle #1,#2\right\rangle}
+\newcommand{\tr}{\operatorname{Tr}}
+\newcommand{\diag}{\operatorname{diag}}
+\newcommand{\rank}{\operatorname{rank}}
+\newcommand{\softmax}{\operatorname{softmax}}
+\newcommand{\argmin}{\operatorname*{arg\,min}}
+\newcommand{\argmax}{\operatorname*{arg\,max}}
+\newcommand{\sg}{\operatorname{sg}}
+\newcommand{\KL}{D_{\mathrm{KL}}}
+\newcommand{\dd}{\mathrm{d}}
+\newtcolorbox{keybox}[1][]{enhanced,breakable,colback=softblue,colframe=mainblue,boxrule=0.8pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\newtcolorbox{examplebox}[1][]{enhanced,breakable,colback=softgreen,colframe=green!45!black,boxrule=0.7pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\newtcolorbox{notebox}[1][]{enhanced,breakable,colback=softorange,colframe=orange!70!black,boxrule=0.7pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\newtcolorbox{criticalbox}[1][]{enhanced,breakable,colback=red!3,colframe=warnred,boxrule=0.8pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\lstset{basicstyle=\ttfamily\small,breaklines=true,frame=single,backgroundcolor=\color{softgray},numbers=left,numberstyle=\tiny,showstringspaces=false,columns=fullflexible}
+\hypersetup{pdftitle={45 DSpark 数学过程详解},pdfauthor={OpenAI}}
+\fancyhead[L]{\small 45 DSpark}
+\fancyhead[R]{\small 数学过程详解}
+\begin{document}
+\begin{center}
+{\LARGE\bfseries 45\_DSpark 数学过程详解}\par
+\vspace{0.35em}
+{\large 半自回归草稿、接受率恒等式与硬件感知调度}
+\end{center}
+\vspace{0.45em}
+\begin{keybox}[本文只处理真正需要推导的部分]
+本文完整推导无损投机采样、TV 距离与接受率、低秩顺序修正、前缀生存概率、尾和期望、吞吐优化、贪心前缀约束、校准和三项损失。。全文按“公式从哪里来--每个符号是什么--中间步骤为何成立--维度和复杂度如何核对--论文结论依赖哪些假设”的顺序展开；不复述实验表格，也不使用与论文无关的通用背景凑页数。
+\end{keybox}
+\tableofcontents
+\newpage
+
+\section{投机解码的无损接受规则}
+目标模型分布为 $p(x)$，草稿模型分布为 $q(x)$。先从 $q$ 采样候选 $x$，以
+\begin{equation}
+ a(x)=\min\left(1,\frac{p(x)}{q(x)}\right)
+\end{equation}
+接受。候选被接受并等于 $x$ 的概率为
+\begin{equation}
+ q(x)a(x)=\min\{q(x),p(x)\}.
+\end{equation}
+总接受概率
+\begin{equation}
+ A=\sum_x\min\{p(x),q(x)\}.
+\end{equation}
+利用
+\begin{equation}
+ \min(p,q)=\frac{p+q-|p-q|}{2}
+\end{equation}
+并对 $x$ 求和，得到
+\begin{equation}
+ \boxed{
+ A=1-\frac12\norm{p-q}_1
+ =1-\operatorname{TV}(p,q).
+ }
+\end{equation}
+这就是论文把总变差距离作为软接受标签的严格来源。
+
+若拒绝，则从残差分布
+\begin{equation}
+ r(x)=\frac{[p(x)-q(x)]_+}{1-A}
+\end{equation}
+补采样。最终输出分布为
+\begin{align}
+ \Pr(Y=x)
+ &=\min(p(x),q(x))+(1-A)r(x)\\
+ &=\min(p,q)+[p-q]_+=p(x),
+\end{align}
+所以接受--拒绝过程精确保持目标模型分布。
+
+\section{延迟与接受长度}
+一次投机周期的草稿延迟和验证延迟分别为 $T_{\mathrm{draft}}$、$T_{\mathrm{verify}}$，期望接受 token 数为 $\tau$。单位 token 延迟
+\begin{equation}
+ \boxed{
+ \mathcal L=\frac{T_{\mathrm{draft}}+T_{\mathrm{verify}}}{\tau}.
+ }
+\end{equation}
+因此加长草稿块有两面性：并行草稿可使 $T_{\mathrm{draft}}$ 增长缓慢，但若后缀接受率快速下降，$\tau$ 几乎不增而 $T_{\mathrm{verify}}$ 和 batch 占用上升。
+
+\section{并行骨干与半自回归修正}
+并行草稿骨干同时产生位置特征 $h_1,\ldots,h_\gamma$，朴素因子化近似
+\begin{equation}
+ q(x_{1:\gamma}\mid c)
+ \approx\prod_{k=1}^{\gamma}q_k(x_k\mid c)
+\end{equation}
+忽略块内依赖。DSpark 改为半自回归
+\begin{equation}
+ \boxed{
+ q(x_{1:\gamma}\mid c)
+ =\prod_{k=1}^{\gamma}q_k(x_k\mid c,x_{<k}),
+ }
+\end{equation}
+但只在轻量输出模块中顺序建模，昂贵骨干仍一次并行计算。
+
+\section{低秩 Markov logit 修正}
+最简单的前一 token 修正矩阵 $B\in\R^{V\times V}$ 需要 $V^2$ 参数。论文分解为
+\begin{equation}
+ \boxed{B=W_1W_2,\qquad W_1\in\R^{V\times r},\quad W_2\in\R^{r\times V}.}
+\end{equation}
+给定前 token $x_{k-1}$，其修正 logits 为
+\begin{equation}
+ B(x_{k-1},:)=W_1[x_{k-1}]W_2.
+\end{equation}
+参数量从 $V^2$ 降为
+\begin{equation}
+ 2Vr,
+\end{equation}
+压缩比约为
+\begin{equation}
+ \frac{2Vr}{V^2}=\frac{2r}{V}.
+\end{equation}
+当 $r\ll V$ 时显著降低参数和矩阵乘法成本。
+
+\section{门控递归状态}
+为超越一阶 Markov，论文维护低维状态 $s_k\in\R^r$。令输入特征 $z_k$ 包含并行位置特征和已采样 token 嵌入，门控更新为
+\begin{equation}
+ g_k=\sigma(W_gz_k),
+\end{equation}
+\begin{equation}
+ \boxed{
+ s_k=g_k\odot s_{k-1}+(1-g_k)\odot\tanh(W_cz_k).
+ }
+\end{equation}
+当 $g_k\approx1$ 时保留历史；当 $g_k\approx0$ 时用当前候选重写。顺序修正 logits 可写为
+\begin{equation}
+ b_k=W_2^\top\tanh(W_oz_k),
+\end{equation}
+最终草稿分布
+\begin{equation}
+ q_k=\softmax(\ell_k^{\mathrm{parallel}}+b_k).
+\end{equation}
+顺序复杂度约为 $O(\gamma r^2+\gamma rV)$，但主干只做一次并行前向；这正是“semi-autoregressive”的速度--依赖折中。
+
+\section{置信度软标签}
+置信头输出
+\begin{equation}
+ c_k=\sigma\left(w^\top[h_k;W_1[x_{k-1}]]\right).
+\end{equation}
+真实软标签取草稿与目标分布的理论接受率
+\begin{equation}
+ \boxed{
+ c_k^*=1-\frac12\norm{p_k^d-p_k^t}_1.
+ }
+\end{equation}
+它不是“预测 token 是否等于 argmax”，而是该位置在标准投机采样下的条件接受概率。二元交叉熵
+\begin{equation}
+ \Loss_{\mathrm{conf},k}
+ =-[c_k^*\log c_k+(1-c_k^*)\log(1-c_k)]
+\end{equation}
+对 logit $a_k$ 的梯度仍为
+\begin{equation}
+ \frac{\partial\Loss_{\mathrm{conf},k}}{\partial a_k}=c_k-c_k^*,
+\end{equation}
+软标签使梯度连续反映分布距离。
+
+\section{前缀生存概率}
+设 $c_{r,k}$ 是在前 $k-1$ 个候选均已接受条件下，第 $k$ 个被接受的概率。由链式法则
+\begin{equation}
+ \boxed{
+ a_{r,j}=\Pr(A_{r,1}\cap\cdots\cap A_{r,j})
+ =\prod_{i=1}^{j}c_{r,i}.
+ }
+\end{equation}
+因为 $0\le c_{r,i}\le1$，有
+\begin{equation}
+ a_{r,j+1}\le a_{r,j},
+\end{equation}
+这保证同一请求的候选收益沿位置单调下降。
+
+\section{期望接受长度的尾和公式}
+请求 $r$ 验证长度为 $\ell_r$，令 $L_r$ 为成功接受的草稿 token 数。对非负整数变量，尾和公式给出
+\begin{equation}
+ \E L_r=\sum_{j=1}^{\ell_r}\Pr(L_r\ge j).
+\end{equation}
+而事件 $L_r\ge j$ 等价于前 $j$ 个都接受，所以
+\begin{equation}
+ \E L_r=\sum_{j=1}^{\ell_r}a_{r,j}.
+\end{equation}
+投机验证还会产生一个 target bonus token，因此每个请求的期望输出步数为
+\begin{equation}
+ \boxed{
+ \tau_r=1+\sum_{j=1}^{\ell_r}a_{r,j}.
+ }
+\end{equation}
+全批次
+\begin{equation}
+ \tau=\sum_{r=1}^{R}\tau_r.
+\end{equation}
+
+\section{硬件感知吞吐目标}
+送入目标模型的 token batch 大小为
+\begin{equation}
+ B=\sum_{r=1}^{R}(1+\ell_r).
+\end{equation}
+预先测得硬件在 batch $B$ 下的 step-per-second 曲线 $\operatorname{SPS}(B)$，系统期望 token 吞吐为
+\begin{equation}
+ \boxed{
+ \Theta(\ell_1,\ldots,\ell_R)
+ =\left[\sum_{r=1}^{R}\left(1+\sum_{j=1}^{\ell_r}a_{r,j}\right)\right]
+ \operatorname{SPS}(B).
+ }
+\end{equation}
+固定 $B$ 时，$\operatorname{SPS}(B)$ 是常数，最大化 $\Theta$ 等价于从所有边际收益 $a_{r,j}$ 中选最大的若干项。
+
+\section{为什么全局排序自动满足前缀约束}
+若选择请求 $r$ 的第 $j$ 个 token，就必须选择 $1,\ldots,j-1$。但
+\begin{equation}
+ a_{r,1}\ge a_{r,2}\ge\cdots\ge a_{r,j}.
+\end{equation}
+因此在全局降序排序中，$a_{r,j}$ 出现之前，同请求的所有前驱必定已经出现。故对固定选取数量 $m$，取全局最大的 $m$ 个生存概率同时满足前缀约束，并由交换论证最优：若方案包含较小收益 $b$ 却遗漏较大收益 $a>b$，交换后期望接受数增加。
+
+\section{早停与单峰假设}
+沿贪心路径逐个增加验证 token，记
+\begin{equation}
+ \Theta_m=\tau_m\operatorname{SPS}(R+m).
+\end{equation}
+算法在 $\Theta_{m+1}\le\Theta_m$ 时停止。若 $\Theta_m$ 单峰，则首次下降后不会再上升，早停取得全局最优。若硬件曲线不平滑导致多峰，首次下降只给局部最优；论文因此需要实际 profiling 与工程修正。
+
+早停还有因果意义：第 $k+1$ 个置信度依赖已实例化的第 $k$ 个 token。若先查看未来候选再回溯决定是否验证较早 token，会让选择事件依赖未来随机量，破坏标准投机采样的 non-anticipating 条件。逐步生成、逐步停止避免这种信息泄漏。
+
+\section{Sequential Temperature Scaling}
+对置信 logit $a_k$ 使用温度
+\begin{equation}
+ \widetilde c_k=\sigma(a_k/T_k).
+\end{equation}
+温度变换保持排序，因为 $\sigma(\cdot/T_k)$ 单调，但改变概率幅值。前缀概率变为
+\begin{equation}
+ \widetilde a_j=\prod_{i=1}^{j}\widetilde c_i.
+\end{equation}
+论文从左到右依次选择 $T_k$，固定此前温度，使累计概率的 ECE 最小。必须校准累计概率而不只是单点概率，因为调度器使用的正是 $\prod_i c_i$。
+
+\section{三项训练损失}
+位置权重
+\begin{equation}
+ w_k=\exp\left(-\frac{k-1}{\gamma}\right)
+\end{equation}
+强调更可能被接受的前缀位置。交叉熵
+\begin{equation}
+ \Loss_{\mathrm{ce}}
+ =-\sum_{k=1}^{\gamma}w_k\log p_k^d(x_k^*).
+\end{equation}
+总变差匹配
+\begin{equation}
+ \Loss_{\mathrm{tv}}
+ =\sum_{k=1}^{\gamma}w_k\norm{p_k^d-p_k^t}_1.
+\end{equation}
+置信损失
+\begin{equation}
+ \Loss_{\mathrm{conf}}
+ =-\sum_{k=1}^{\gamma}w_k
+ [c_k^*\log c_k+(1-c_k^*)\log(1-c_k)].
+\end{equation}
+总目标
+\begin{equation}
+ \boxed{
+ \Loss=\alpha_{\mathrm{ce}}\Loss_{\mathrm{ce}}
+ +\alpha_{\mathrm{tv}}\Loss_{\mathrm{tv}}
+ +\alpha_{\mathrm{conf}}\Loss_{\mathrm{conf}}.
+ }
+\end{equation}
+$\Loss_{\mathrm{ce}}$ 保证正确 token 学习，$\Loss_{\mathrm{tv}}$ 直接提高理论接受率，$\Loss_{\mathrm{conf}}$ 让调度器能预测该接受率；三者不可简单互相替代。
+% AUGMENTED_DETAILED_MATH_2
+
+\section{多 token 投机采样的归纳正确性}
+假设前 $k-1$ 个输出已精确服从目标自回归分布。第 $k$ 个位置条件历史 $h_k$ 也是目标分布下历史。单步接受--残差采样已证明输出服从
+\begin{equation}
+ p_t(x_k\mid h_k).
+\end{equation}
+因此联合
+\begin{equation}
+ p(h_k)p_t(x_k\mid h_k)=p(x_{1:k})
+\end{equation}
+仍正确。对 $k$ 归纳，整个接受前缀和拒绝后的 bonus token 都保持目标联合分布。调度只要是 non-anticipating，就不会改变此条件分布证明。
+
+\section{TV 距离与最大耦合}
+两分布 $p,q$ 的最大耦合使两个样本相等的最大概率为
+\begin{equation}
+ 1-\operatorname{TV}(p,q).
+\end{equation}
+证明：共同质量
+\begin{equation}
+ c(x)=\min(p(x),q(x)),
+ \qquad \sum_xc(x)=1-\operatorname{TV}(p,q).
+\end{equation}
+先以该总质量从归一化 $c$ 同时采样相同 token，剩余质量分别采样，达到上界。投机采样接受规则正实现这种最大耦合，所以其单步接受率在给定 $p,q$ 下已不可提高。
+
+\section{前缀长度分布}
+验证长度 $\ell$，条件接受概率 $c_k$，生存概率
+\begin{equation}
+ a_j=\prod_{i=1}^{j}c_i.
+\end{equation}
+恰好接受 $j<\ell$ 个的概率
+\begin{equation}
+ \Pr(L=j)=a_j(1-c_{j+1}),
+\end{equation}
+全部接受
+\begin{equation}
+ \Pr(L=\ell)=a_\ell.
+\end{equation}
+直接计算期望
+\begin{align}
+ \E L
+ &=\sum_{j=0}^{\ell-1}j a_j(1-c_{j+1})+\ell a_\ell\\
+ &=\sum_{j=1}^{\ell}a_j,
+\end{align}
+与尾和公式一致。
+
+\section{置信误差对前缀概率的放大}
+真实条件概率 $c_i$，估计 $\widehat c_i=c_i+e_i$。累计乘积一阶相对误差
+\begin{equation}
+ \frac{\widehat a_j-a_j}{a_j}
+ \approx\sum_{i=1}^{j}\frac{e_i}{c_i}.
+\end{equation}
+即使每步偏差很小，长前缀误差会累加；当某 $c_i$ 小时相对误差尤其放大。这解释了为什么调度器需要 Sequential Temperature Scaling 校准累计概率，而不仅是单点分类准确率。
+
+\section{温度缩放的 logit 表达}
+原置信 $c=\sigma(a)$，温度后
+\begin{equation}
+ c_T=\sigma(a/T).
+\end{equation}
+赔率
+\begin{equation}
+ \frac{c_T}{1-c_T}
+ =\exp(a/T)
+ =\left(\frac{c}{1-c}\right)^{1/T}.
+\end{equation}
+$T>1$ 把赔率拉向 1，降低过度自信；$T<1$ 使分布更尖锐。因为变换对 $a$ 单调，token 排序不变。
+
+\section{固定 batch 下贪心最优的交换证明}
+固定总扩展 token 数 $m$，任一可行方案 $S$ 的收益
+\begin{equation}
+ V(S)=\sum_{(r,j)\in S}a_{r,j}.
+\end{equation}
+若 $S$ 未包含全局前 $m$ 大中的某项 $x$，却包含更小项 $y$，交换 $y\to x$ 增加收益。由于同请求 $a_{r,j}$ 单调，选择 $a_{r,j}$ 时其前驱值更大，必在前面已选择，所以交换不破坏前缀可行性。反复交换得到全局排序方案，故固定 $m$ 最优。
+
+\section{吞吐增量判据}
+当前期望 token 数 $\tau$、batch $B$，加入候选生存概率 $a$ 后
+\begin{equation}
+ \Theta'= (\tau+a)\operatorname{SPS}(B+1).
+\end{equation}
+加入有利当且仅当
+\begin{equation}
+ a>\tau\left[\frac{\operatorname{SPS}(B)}{\operatorname{SPS}(B+1)}-1\right].
+\end{equation}
+右侧是硬件机会成本阈值：低并发时 SPS 下降小，阈值低，可验证更多 token；高负载时增加 batch 显著降速，只保留高生存概率前缀。
+
+\section{低秩顺序头的梯度}
+logit 修正
+\begin{equation}
+ b=W_1[x_{prev}]W_2.
+\end{equation}
+设上游梯度 $g_b\in\R^V$，则
+\begin{equation}
+ \nabla_{W_2}\Loss=W_1[x_{prev}]^\top g_b,
+\end{equation}
+只更新 $W_1$ 的被查行
+\begin{equation}
+ \nabla_{W_1[x_{prev}]}\Loss=g_bW_2^\top.
+\end{equation}
+这与低秩语言模型适配类似：每个前 token 只激活一个低维状态行，避免 $V\times V$ 转移矩阵。
+
+\section{门控状态的长期梯度}
+递归
+\begin{equation}
+ s_k=g_k\odot s_{k-1}+(1-g_k)\odot\widetilde s_k.
+\end{equation}
+忽略门本身对状态的导数，直接记忆路径
+\begin{equation}
+ \frac{\partial s_k}{\partial s_{k-1}}\approx\diag(g_k).
+\end{equation}
+跨 $m$ 步梯度约乘
+\begin{equation}
+ \prod_{j=k-m+1}^{k}g_j.
+\end{equation}
+门接近 1 时保留长期依赖，接近 0 时快速遗忘；轻量串行头通过可学习门控制 suffix 依赖长度。
+
+\section{TV 损失梯度的非光滑点}
+单位置
+\begin{equation}
+ L_{tv}=\sum_x|q_x-p_x|.
+\end{equation}
+对 $q_x\ne p_x$，
+\begin{equation}
+ \frac{\partial L_{tv}}{\partial q_x}=\operatorname{sign}(q_x-p_x).
+\end{equation}
+再通过 softmax Jacobian
+\begin{equation}
+ \frac{\partial q_x}{\partial z_y}=q_x(\delta_{xy}-q_y)
+\end{equation}
+回传。$q_x=p_x$ 处取子梯度 $[-1,1]$。相比 KL，TV 对极小目标概率不产生 $1/p$ 型爆炸，且与理论接受率线性对应。
+
+\section{三项损失的职责分离}
+交叉熵最小化
+\begin{equation}
+ \KL(p_{data}\Vert q),
+\end{equation}
+保证 ground-truth token；TV 直接最小化与冻结目标模型的分布差；confidence BCE 拟合标量接受概率。只用 CE 时，两个模型都可能把真 token 排第一却在尾部分布差很大，接受率仍低；只用 TV 可蒸馏目标但不特别强调真实标签；只用 confidence 无法改善草稿本身。因此加权组合不是重复损失。
+
+\section{系统目标与离线 accepted length 的差别}
+离线常优化
+\begin{equation}
+ \E[1+L],
+\end{equation}
+但生产吞吐是
+\begin{equation}
+ \E[1+L]\cdot\operatorname{SPS}(B).
+\end{equation}
+更长 accepted length 可能需要验证更大 batch，使 SPS 降低，系统吞吐反而变差。DSpark 的数学创新之一就是把概率收益与硬件容量曲线显式相乘，而非把模型指标当作系统指标。
+\clearpage
+\section{单 token 投机采样的无损接受规则}
+目标分布 $p(x)$，草稿分布 $q(x)$。先采 $x\sim q$，以概率
+\begin{equation}
+ a(x)=\min\left(1,\frac{p(x)}{q(x)}\right)
+\end{equation}
+接受。接受某个 $x$ 的总概率
+\begin{equation}
+ q(x)a(x)=\min(q(x),p(x)).
+\end{equation}
+若拒绝，则从残差分布
+\begin{equation}
+ r(x)=\frac{[p(x)-q(x)]_+}
+ {1-\sum_y\min(p(y),q(y))}
+\end{equation}
+采样。最终输出概率
+\begin{align}
+ P_{\rm out}(x)
+ &=\min(p(x),q(x))\\
+ &\quad+
+ \left(1-\sum_y\min(p(y),q(y))\right)r(x)\\
+ &=\min(p,q)+[p-q]_+=p(x).
+\end{align}
+因此投机解码严格保持目标分布。
+
+\section{接受率与总变差距离}
+单 token 平均接受率
+\begin{equation}
+ A=\sum_x\min(p(x),q(x)).
+\end{equation}
+总变差距离
+\begin{equation}
+ \mathrm{TV}(p,q)=\frac12\sum_x|p(x)-q(x)|.
+\end{equation}
+利用恒等式
+\begin{equation}
+ \sum_x\min(p,q)=1-\mathrm{TV}(p,q),
+\end{equation}
+得到
+\begin{equation}
+ \boxed{A=1-\mathrm{TV}(p,q).}
+\end{equation}
+所以训练草稿分布的 L1/TV 损失直接提高理论最大接受率。
+
+\section{多 token 前缀接受的归纳正确性}
+草稿提出 $x_{1:K}$。目标模型并行计算每个条件分布
+\begin{equation}
+ p_k(\cdot)=p(\cdot\mid x_{<k}).
+\end{equation}
+第 1 个 token 用单步规则输出正确 $p_1$。条件在前 $k-1$ 个已接受时，前缀正是目标分布样本，因此第 $k$ 个仍可用相同接受--残差规则得到 $p_k(\cdot\mid x_{<k})$。数学归纳法说明整个输出序列分布与自回归目标模型完全一致。
+
+\section{前缀生存概率与期望接受长度}
+第 $k$ 个位置在前缀存活条件下的接受概率为 $a_k$。至少接受 $k$ 个 token 的概率
+\begin{equation}
+ S_k=\prod_{j=1}^{k}a_j.
+\end{equation}
+接受长度 $L\in\{0,1,\ldots,K\}$ 的尾和公式
+\begin{equation}
+ \E[L]=\sum_{k=1}^{K}\Pr(L\ge k)
+ =\sum_{k=1}^{K}S_k.
+\end{equation}
+后部位置的贡献被所有前部接受率相乘，因此前缀早期校准尤为重要。
+
+\section{置信度软标签的来源}
+若草稿和目标分布为 $p_k^d,p_k^t$，理论最大耦合接受率
+\begin{equation}
+ c_k^*=1-\mathrm{TV}(p_k^d,p_k^t)
+ =1-\frac12\|p_k^d-p_k^t\|_1.
+\end{equation}
+这正是置信头的软标签。它不是“草稿 top-1 概率”，而是两个完整分布能够相同采样的最大概率。
+
+\section{置信误差对前缀概率的放大}
+估计 $\widehat a_k=a_k+e_k$，前缀估计
+\begin{equation}
+ \widehat S_k=\prod_{j=1}^{k}(a_j+e_j).
+\end{equation}
+对小误差一阶展开
+\begin{equation}
+ \frac{\widehat S_k-S_k}{S_k}
+ \approx\sum_{j=1}^{k}\frac{e_j}{a_j}.
+\end{equation}
+相对误差随前缀长度累积，且当某个 $a_j$ 很小时被 $1/a_j$ 放大。因此置信头在低接受位置的校准尤其重要。
+
+\section{Sequential Temperature Scaling}
+原始置信 logit $z_k$，温度 $T_k>0$，校准概率
+\begin{equation}
+ \widehat a_k=\sigma(z_k/T_k).
+\end{equation}
+二分类负对数似然
+\begin{equation}
+ \Loss(T_k)=
+ -\sum_n[y_n\log\widehat a_{nk}+
+ (1-y_n)\log(1-\widehat a_{nk})].
+\end{equation}
+温度 $T>1$ 使概率更接近 $1/2$，降低过度自信；$T<1$ 使分布更尖。Sequential 表示每个位置可有不同温度，因为后部接受率系统性下降。
+
+\section{三项训练损失的梯度职责}
+交叉熵
+\begin{equation}
+ \Loss_{\rm ce}=-\sum_kw_k\log p_k^d(x_k^*)
+\end{equation}
+直接提高真实 token 概率。TV 对齐
+\begin{equation}
+ \Loss_{\rm tv}=
+ \sum_kw_k\|p_k^d-p_k^t\|_1
+\end{equation}
+匹配完整分布，改善接受率。置信 BCE
+\begin{equation}
+ \Loss_{\rm conf}=-\sum_kw_k
+ [c_k^*\log\widehat c_k+(1-c_k^*)\log(1-\widehat c_k)]
+\end{equation}
+训练调度器预测生存概率。三者分别对应“草稿正确性、分布接近、系统决策”。
+
+\section{TV 损失的次梯度}
+对 logit 经过 softmax 得 $p_j$，L1 项
+\begin{equation}
+ L=\sum_j|p_j-q_j|.
+\end{equation}
+对 $p_j$ 的次梯度
+\begin{equation}
+ g_j\in\begin{cases}
+ \{1\},&p_j>q_j,\\
+ [-1,1],&p_j=q_j,\\
+ \{-1\},&p_j<q_j.
+ \end{cases}
+\end{equation}
+对 logits $z_m$，
+\begin{equation}
+ \frac{\partial L}{\partial z_m}
+ =\sum_jg_jp_j(\mathbf 1[j=m]-p_m).
+\end{equation}
+L1 在相等点不光滑，但自动微分可选一个合法次梯度。
+
+\section{半自回归低秩修正}
+并行骨干给每个位置基础 logits $\ell_k^0$。顺序头利用前一草稿 token 的 embedding $e(x_{k-1})$ 做低秩修正
+\begin{equation}
+ \Delta\ell_k=W_2\sigma(W_1e(x_{k-1})),
+\end{equation}
+其中 $W_1\in\R^{r\times d},W_2\in\R^{V\times r}$。参数量
+\begin{equation}
+ P=r(d+V)
+\end{equation}
+远小于完整 $V\times d$ 输出层。它注入局部 token 依赖，同时保持大部分骨干并行。
+
+\section{门控顺序状态与长期梯度}
+若顺序状态
+\begin{equation}
+ h_k=g_k\odot h_{k-1}+(1-g_k)\odot\widetilde h_k,
+\end{equation}
+则
+\begin{equation}
+ \frac{\partial h_k}{\partial h_{k-1}}
+ =\operatorname{diag}(g_k)+
+ \text{门值依赖 $h_{k-1}$ 的附加项}.
+\end{equation}
+忽略附加项，跨 $m$ 步梯度约
+\begin{equation}
+ \prod_{j=k-m+1}^{k}\operatorname{diag}(g_j).
+\end{equation}
+若门接近 1，可保留长期状态；接近 0，则快速遗忘。
+
+\section{硬件感知调度目标}
+请求 $r$ 选择验证长度 $j$，预计产出 token 数 $Y_{rj}$，验证成本 $C_j(B)$ 依赖当前 batch 负载 $B$。系统目标可写为
+\begin{equation}
+ \max_{j_r}
+ \frac{\sum_r\E[Y_{rj_r}]}
+ {C_{\{j_r\}}(B)}.
+\end{equation}
+若把增加一个验证位置的边际收益记为
+\begin{equation}
+ \Delta Y_{rj}=S_{rj},
+\end{equation}
+边际成本 $\Delta C_{rj}$，则优先级
+\begin{equation}
+ \eta_{rj}=\frac{S_{rj}}{\Delta C_{rj}}.
+\end{equation}
+高负载时成本上升，调度器只保留高生存概率位置。
+
+\section{前缀约束下的贪心选择}
+请求若验证第 $j$ 个 token，必须验证所有 $1,\ldots,j-1$，即选择变量
+\begin{equation}
+ x_{r,j}\le x_{r,j-1}.
+\end{equation}
+若每个后续位置的边际收益非增
+\begin{equation}
+ S_{r,j+1}\le S_{r,j},
+\end{equation}
+且单位成本相同，按所有候选边际收益从大到小加入，自动不会先选后部而漏掉前部：因为同请求的前部收益更大，必先出现。这是全局排序满足前缀约束的交换论证。
+
+\section{一个接受长度数值例子}
+四个位置接受率
+\begin{equation}
+ a=(0.9,0.8,0.6,0.5).
+\end{equation}
+前缀生存
+\begin{equation}
+ S_1=0.9,
+ \quad S_2=0.72,
+ \quad S_3=0.432,
+ \quad S_4=0.216.
+\end{equation}
+期望接受长度
+\begin{equation}
+ \E[L]=0.9+0.72+0.432+0.216=2.268.
+\end{equation}
+验证第 4 个位置的边际期望收益只有 0.216；高负载时可能不值得占用 batch 容量。
+
+\section{离线 accepted length 与在线吞吐的区别}
+离线指标最大化
+\begin{equation}
+ \E[L]
+\end{equation}
+假设验证额外位置几乎免费。在线吞吐约
+\begin{equation}
+ \Theta=\frac{\text{每轮接受 token 数}}
+ {\text{草稿时间}+\text{验证时间}+\text{调度开销}}.
+\end{equation}
+更长验证块可提高分子，也会增加分母并挤占其他请求。DSpark 的调度数学重点不是单纯预测接受长度，而是根据实时系统成本选择使边际吞吐为正的前缀。
+\end{document}

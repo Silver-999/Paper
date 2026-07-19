@@ -1,0 +1,501 @@
+\documentclass[11pt]{article}
+\usepackage{fontspec}
+\setmainfont[
+  Path=fonts/,
+  Extension=.ttf,
+  UprightFont=*-400,
+  BoldFont=*-700
+]{NotoSerifSC}
+\setsansfont[
+  Path=fonts/,
+  Extension=.ttf,
+  UprightFont=*-400,
+  BoldFont=*-700
+]{NotoSerifSC}
+\XeTeXlinebreaklocale "zh"
+\XeTeXlinebreakskip=0pt plus 1pt
+\usepackage[a4paper,margin=1.70cm]{geometry}
+\usepackage{amsmath,amssymb,mathtools,bm}
+\usepackage{booktabs,longtable,array}
+\usepackage{enumitem}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\setlist{nosep,leftmargin=2em}
+\allowdisplaybreaks[3]
+\numberwithin{equation}{section}
+\pagestyle{plain}
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Pp}{\mathbb{P}}
+\newcommand{\1}{\mathbf{1}}
+\newcommand{\T}{\mathsf{T}}
+\newcommand{\F}{\mathrm{F}}
+\newcommand{\cN}{\mathcal{N}}
+\newcommand{\cL}{\mathcal{L}}
+\newcommand{\cS}{\mathcal{S}}
+\newcommand{\cH}{\mathcal{H}}
+\newcommand{\cA}{\mathcal{A}}
+\newcommand{\cM}{\mathcal{M}}
+\newcommand{\cT}{\mathcal{T}}
+\newcommand{\diag}{\operatorname{diag}}
+\newcommand{\tr}{\operatorname{tr}}
+\newcommand{\Var}{\operatorname{Var}}
+\newcommand{\Cov}{\operatorname{Cov}}
+\newcommand{\softmax}{\operatorname{softmax}}
+\newcommand{\KL}{D_{\mathrm{KL}}}
+\newcommand{\sg}{\operatorname{sg}}
+\begin{document}
+    \begin{center}
+      {\LARGE\bfseries 03\_Flow to the Mode}
+    \end{center}
+    \vspace{0.8em}
+
+    \section{符号与维度}
+    \begin{longtable}{>{$}l<{$} >{$}l<{$} p{10cm}}
+    \toprule
+    \text{符号} & \text{维度} & \text{含义}\\
+    \midrule
+    x,\epsilon,z_t & \R^d & 干净样本、基础噪声与时刻 $t$ 的中间状态。\\
+a_t,b_t & \R & 插值路径的信号与噪声系数。\\
+v^*,v_\theta & \R^d & 条件路径速度与网络速度预测。\\
+J_zv & \R^{d\times d} & 速度场对状态的 Jacobian。\\
+t,r & [0,1] & 当前时刻与区间另一端时刻。\\
+c,\hat c & \{-1,1\}^m,\R^m & 二值潜码与量化前编码。\\
+    \bottomrule
+    \end{longtable}
+
+    所有向量默认是列向量；未特别说明时，期望同时对数据、噪声和采样时刻取值。下文只展开论文中承担方法逻辑的公式，并把所需假设写在推导发生的位置。
+
+\section{条件概率路径与边缘速度场}
+
+令数据 $x_1\sim p_1$、噪声 $x_0\sim p_0$，先考虑线性插值
+\begin{equation}
+ x_t=(1-t)x_0+tx_1,\qquad t\in[0,1].
+\end{equation}
+对固定样本对，其条件速度为
+\begin{equation}
+ u_t(x_0,x_1)=\frac{d x_t}{dt}=x_1-x_0.
+\end{equation}
+但网络只观察 $(x_t,t)$，不能知道产生该点的唯一 $(x_0,x_1)$。平方损失
+\begin{equation}
+ \cL(\theta)=\E\|v_\theta(x_t,t)-u_t(x_0,x_1)\|_2^2
+\end{equation}
+的最优解是条件期望
+\begin{equation}
+ \boxed{v^*(x,t)=\E[u_t(x_0,x_1)\mid x_t=x].}
+\end{equation}
+证明令 $m(Z)=\E[U\mid Z]$，展开
+\begin{align}
+ \E\|U-f(Z)\|^2
+ &=\E\|U-m(Z)\|^2+\E\|m(Z)-f(Z)\|^2\\
+ &\quad+2\E[(U-m(Z))^\T(m(Z)-f(Z))].
+\end{align}
+最后一项在对 $Z$ 条件化后为零，故唯一的 $L^2$ 最优解是 $m$。
+
+更一般地令
+\begin{equation}
+ x_t=a(t)x_1+b(t)x_0,\qquad
+ u_t=a'(t)x_1+b'(t)x_0.
+\end{equation}
+只要 $a,b$ 可微且端点满足相应边界，这一条件期望结论不变。
+
+\subsection{为什么边缘速度满足连续性方程}
+
+对任意光滑紧支撑测试函数 $\varphi$，
+\begin{align}
+ \frac{d}{dt}\E[\varphi(x_t)]
+ &=\E[\nabla\varphi(x_t)^\T u_t]\\
+ &=\E\left[\nabla\varphi(x_t)^\T
+ \E[u_t\mid x_t]\right]\\
+ &=\int \nabla\varphi(x)^Tv^*(x,t)p_t(x)\,dx.
+\end{align}
+分部积分且边界项为零，
+\begin{equation}
+ \frac{d}{dt}\int\varphi(x)p_t(x)dx
+ =-\int\varphi(x)\nabla\!\cdot(p_t(x)v^*(x,t))dx.
+\end{equation}
+由于对任意 $\varphi$ 成立，弱形式推出
+\begin{equation}
+ \boxed{\partial_t p_t+\nabla\!\cdot(p_tv^*)=0.}
+\end{equation}
+因此回归条件速度得到的不是任意向量场，而是运输边缘分布 $p_t$ 的速度场。
+
+\section{从速度场到 ODE 采样器}
+
+给定学习场 $v_\theta$，采样解常微分方程
+\begin{equation}
+ \frac{dx}{dt}=v_\theta(x,t),\qquad x(0)\sim p_0.
+\end{equation}
+Euler 离散化为
+\begin{equation}
+ x_{j+1}=x_j+h_jv_\theta(x_j,t_j),
+ \qquad h_j=t_{j+1}-t_j.
+\end{equation}
+真解 Taylor 展开：
+\begin{align}
+ x(t+h)
+ &=x(t)+h\dot x(t)+\frac{h^2}{2}\ddot x(t)+O(h^3)\\
+ &=x(t)+hv(x,t)
+ +\frac{h^2}{2}\bigl(\partial_tv+J_xv\,v\bigr)+O(h^3).
+\end{align}
+故 Euler 局部误差为 $O(h^2)$、在 Lipschitz 条件下固定时间区间的全局误差为 $O(h)$。
+
+若 $v$ 对 $x$ 的 Lipschitz 常数为 $L$，模型场误差
+$\|v_\theta-v^*\|\le\varepsilon(t)$，则两条轨迹之差 $e(t)$ 满足
+\begin{align}
+ \frac{d}{dt}\|e(t)\|
+ &\le L\|e(t)\|+\varepsilon(t).
+\end{align}
+Grönwall 不等式给出
+\begin{equation}
+ \|e(t)\|
+ \le e^{Lt}\|e(0)\|+
+ \int_0^t e^{L(t-s)}\varepsilon(s)\,ds.
+\end{equation}
+所以速度 MSE 小只是局部条件；轨迹质量还受场的 Lipschitz 常数控制。
+
+\section{平均速度恒等式与一步映射}
+
+对任意真实轨迹，微积分基本定理给出
+\begin{equation}
+ x_r-x_t=\int_t^r v(x_\tau,\tau)d\tau.
+\end{equation}
+定义区间平均速度
+\begin{equation}
+ u(x_t,t,r)=\frac1{r-t}\int_t^r v(x_\tau,\tau)d\tau,
+ \qquad r\ne t,
+\end{equation}
+则有精确恒等式
+\begin{equation}
+ \boxed{x_r=x_t+(r-t)u(x_t,t,r).}
+\end{equation}
+一步生成取 $(t,r)=(0,1)$。注意 $u$ 依赖从 $x_t$ 出发的整段轨迹；
+把它近似为瞬时速度 $v(x_t,t)$ 会引入曲率误差。
+
+令 $h=r-t$，沿轨迹展开
+\begin{align}
+ v(x_{t+s},t+s)
+ &=v(x_t,t)+sD_tv(x_t,t)+O(s^2),\\
+ D_tv&=\partial_tv+J_xv\,v.
+\end{align}
+积分并除以 $h$：
+\begin{equation}
+ u(x_t,t,t+h)=v(x_t,t)+\frac h2D_tv(x_t,t)+O(h^2).
+\end{equation}
+这精确说明平均场比瞬时场多包含了沿轨迹变化的一阶修正。
+
+\subsection{平均场的微分恒等式}
+
+由
+\begin{equation}
+ (r-t)u(x_t,t,r)=\int_t^rv(x_\tau,\tau)d\tau
+\end{equation}
+对下端点 $t$ 沿轨迹求全导数。左侧为
+\begin{align}
+ \frac{d}{dt}[(r-t)u(x_t,t,r)]
+ &=-u+(r-t)(\partial_tu+J_xu\,v_t),
+\end{align}
+右侧由 Leibniz 法则等于 $-v_t$。故
+\begin{equation}
+ \boxed{u=v_t+(r-t)(\partial_tu+J_xu\,v_t).}
+\end{equation}
+若训练目标中出现 $J_xu\,v_t$，它是 Jacobian--vector product，而不是完整 Jacobian。
+
+\section{JVP 的链式求导与停止梯度}
+
+令网络 $u_\theta(x,t,r)$，沿方向 $(v,1,0)$ 的 JVP 为
+\begin{equation}
+ D_tu_\theta=J_xu_\theta,v+\partial_tu_\theta.
+\end{equation}
+可通过标量辅助变量 $s$ 写成
+\begin{equation}
+ D_tu_\theta
+ =\left.\frac{d}{ds}u_\theta(x+sv,t+s,r)\right|_{s=0}.
+\end{equation}
+这只需一次正向模式自动微分，存储复杂度与输出维度线性相关。
+
+若目标
+\begin{equation}
+ y_\theta=v+(r-t)D_tu_\theta
+\end{equation}
+也依赖 $\theta$，直接最小化
+$\|u_\theta-y_\theta\|^2$ 的梯度为
+\begin{equation}
+ 2(\partial_\theta u_\theta-\partial_\theta y_\theta)^T
+ (u_\theta-y_\theta).
+\end{equation}
+若使用停止梯度 $\operatorname{sg}(y_\theta)$，则
+\begin{equation}
+ \nabla_\theta\|u_\theta-\operatorname{sg}(y_\theta)\|^2
+ =2(\partial_\theta u_\theta)^T(u_\theta-y_\theta).
+\end{equation}
+两者优化的向量场不同；停止梯度把当前目标当作固定回归标签，避免模型通过同时移动等式两边得到退化方向。
+
+\section{条件引导进入速度场}
+
+对条件 $c$，设条件场 $v_c$、无条件场 $v_u$。线性引导
+\begin{equation}
+ v_w=v_u+w(v_c-v_u)
+\end{equation}
+在 ODE 中产生新轨迹。若平均场定义为区间积分，则线性性给出
+\begin{align}
+ u_w
+ &=\frac1{r-t}\int_t^r[v_u+w(v_c-v_u)]d\tau\\
+ &=u_u+w(u_c-u_u),
+\end{align}
+前提是三者沿同一条被引导轨迹计算。若分别沿各自轨迹求平均再线性组合，通常不等价，因为
+$x_\tau^{(u)}\ne x_\tau^{(c)}\ne x_\tau^{(w)}$。
+
+\section{离散量化与模式目标的梯度}
+
+若连续表征 $z$ 被量化为最近码字
+\begin{equation}
+ q(z)=e_{k^*},\qquad
+ k^*=\arg\min_k\|z-e_k\|_2^2,
+\end{equation}
+$k^*$ 对 $z$ 是分段常数，普通导数几乎处处为零。直通估计写成
+\begin{equation}
+ \widetilde z=z+\operatorname{sg}(q(z)-z),
+\end{equation}
+前向有 $\widetilde z=q(z)$，反向却有
+$\partial\widetilde z/\partial z=I$。因此它是有偏梯度估计，而不是最近邻算子的真实导数。
+
+若多个候选 $y^{(1)},\ldots,y^{(K)}$ 采用最小失真
+\begin{equation}
+ \cL_{\min}=\min_k d(y^{(k)},y^*),
+\end{equation}
+在最优索引唯一时
+\begin{equation}
+ \nabla_\theta\cL_{\min}
+ =\nabla_\theta d(y^{(k^*)},y^*).
+\end{equation}
+其余分支无梯度，目标偏向“至少一个样本命中模式”，而逐样本平均
+$K^{-1}\sum_kd(y^{(k)},y^*)$ 要求全部候选靠近同一目标，二者的统计含义不同。
+
+\section{分布推送与可测生成器}
+
+潜变量 $z\sim p_Z$，生成器 $x=G_\theta(z)$ 诱导推送分布
+\begin{equation}
+ p_\theta=(G_\theta)_\#p_Z,
+\end{equation}
+其定义是任意可测集合 $A$ 满足
+\begin{equation}
+ p_\theta(A)=p_Z(G_\theta^{-1}(A)).
+\end{equation}
+等价地，对任意可积测试函数 $\varphi$，
+\begin{equation}
+ \E_{x\sim p_\theta}\varphi(x)
+ =\E_{z\sim p_Z}\varphi(G_\theta(z)).
+\end{equation}
+若 $G:\R^d\to\R^d$ 是可逆微分同胚，变量替换给出显式密度
+\begin{equation}
+ p_\theta(x)=p_Z(G^{-1}(x))
+ \left|\det J_{G^{-1}}(x)\right|.
+\end{equation}
+取对数并用 $J_{G^{-1}}(x)=J_G(z)^{-1}$：
+\begin{equation}
+ \log p_\theta(x)=\log p_Z(z)-\log|\det J_G(z)|.
+\end{equation}
+VAE、GAN、扩散和隐式光学生成器通常不同时满足同维可逆条件，
+因此分别使用变分界、判别散度、score/flow 或样本级目标绕开直接行列式。
+
+\section{KL、JS 与总变差的关系}
+
+KL 非负可由 $-\log$ 的凸性证明：
+\begin{align}
+ D_{\rm KL}(p\|q)
+ &=\E_p\left[-\log\frac{q(X)}{p(X)}\right]\\
+ &\ge-\log\E_p\frac{q(X)}{p(X)}=-\log1=0.
+\end{align}
+等号当且仅当 $p=q$ 几乎处处。KL 不对称且当 $q=0,p>0$ 时为无穷。
+
+Jensen--Shannon 散度
+\begin{equation}
+ D_{\rm JS}(p\|q)=\frac12D_{\rm KL}(p\|m)
+ +\frac12D_{\rm KL}(q\|m),\qquad m=(p+q)/2
+\end{equation}
+总是有限，$0\le D_{\rm JS}\le\log2$。当支撑不相交时取上界，
+却对支撑间几何距离不敏感。
+
+总变差
+\begin{equation}
+ \operatorname{TV}(p,q)=\frac12\int|p-q|
+ =\sup_A|p(A)-q(A)|.
+\end{equation}
+Pinsker 不等式
+\begin{equation}
+ \operatorname{TV}(p,q)
+ \le\sqrt{\frac12D_{\rm KL}(p\|q)}
+\end{equation}
+说明小正向 KL 保证事件概率接近；逆命题没有无条件形式，因为很小区域上的密度比可极大。
+
+\section{Wasserstein 距离与 Lipschitz 测试函数}
+
+一阶 Wasserstein 距离
+\begin{equation}
+ W_1(p,q)=\inf_{\gamma\in\Pi(p,q)}
+ \E_{(X,Y)\sim\gamma}\|X-Y\|
+\end{equation}
+显式考虑搬运距离。Kantorovich--Rubinstein 对偶
+\begin{equation}
+ W_1(p,q)=\sup_{\|f\|_{\rm Lip}\le1}
+ [\E_pf(X)-\E_qf(Y)].
+\end{equation}
+因此任意 $L$-Lipschitz 评价函数满足
+\begin{equation}
+ |\E_pf-\E_qf|\le L W_1(p,q).
+\end{equation}
+如果下游感知损失近似 Lipschitz，Wasserstein 小可以控制其期望差；
+但高维下从有限样本估计 Wasserstein 有较慢的维数依赖。
+
+\section{最大均值差异}
+
+在再生核 Hilbert 空间 $\mathcal H$ 中，均值嵌入
+\begin{equation}
+ \mu_p=\E_{X\sim p}k(X,\cdot).
+\end{equation}
+MMD 定义
+\begin{equation}
+ \operatorname{MMD}^2(p,q)=\|\mu_p-\mu_q\|_{\mathcal H}^2.
+\end{equation}
+利用再生性质展开
+\begin{align}
+ \operatorname{MMD}^2
+ &=\E_{X,X'\sim p}k(X,X')
+ +\E_{Y,Y'\sim q}k(Y,Y')\\
+ &\quad-2\E_{X\sim p,Y\sim q}k(X,Y).
+\end{align}
+样本 $x_{1:n},y_{1:m}$ 的无偏估计
+\begin{align}
+ \widehat{\operatorname{MMD}}_u^2
+ &=\frac1{n(n-1)}\sum_{i\ne j}k(x_i,x_j)\\
+ &\quad+\frac1{m(m-1)}\sum_{i\ne j}k(y_i,y_j)
+ -\frac2{nm}\sum_{i,j}k(x_i,y_j).
+\end{align}
+特征核选择决定它关注的尺度；特征空间中的 MMD 小不保证像素空间逐点接近。
+
+\section{高斯特征距离与 FID}
+
+将真实、生成图像经固定特征提取器映射并近似为高斯
+$\cN(\mu_r,\Sigma_r)$、$\cN(\mu_g,\Sigma_g)$。二阶 Wasserstein 距离闭式
+\begin{equation}
+ \operatorname{FID}=
+ \|\mu_r-\mu_g\|_2^2
+ +\tr\left(\Sigma_r+\Sigma_g
+ -2(\Sigma_r^{1/2}\Sigma_g\Sigma_r^{1/2})^{1/2}\right).
+\end{equation}
+若协方差可交换，可同时对角化，第二项简化为
+\begin{equation}
+ \sum_j(\sqrt{\lambda_{r,j}}-\sqrt{\lambda_{g,j}})^2.
+\end{equation}
+样本均值和协方差是有限样本估计，矩阵平方根的非线性导致 FID 有偏；
+比较模型时必须使用相同样本数、预处理和特征网络。
+
+\section{Monte Carlo 估计与控制变量}
+
+生成目标常写成 $J(\theta)=\E_Z f_\theta(Z)$。独立样本估计
+\begin{equation}
+ \widehat J_N=\frac1N\sum_{i=1}^{N}f_\theta(Z_i)
+\end{equation}
+无偏且
+\begin{equation}
+ \Var(\widehat J_N)=\frac1N\Var(f_\theta(Z)).
+\end{equation}
+若有已知期望 $\E C=\mu_C$ 的控制变量，
+\begin{equation}
+ \widehat J_\beta=\widehat J_N-\beta(\widehat C_N-\mu_C)
+\end{equation}
+仍无偏。方差是
+\begin{equation}
+ \Var(\widehat J_\beta)
+ =\Var(\widehat J_N)+\beta^2\Var(\widehat C_N)
+ -2\beta\Cov(\widehat J_N,\widehat C_N).
+\end{equation}
+最优
+\begin{equation}
+ \beta^*=\frac{\Cov(f,C)}{\Var(C)}.
+\end{equation}
+扩散中的已知噪声、RL 中的基线和光学中的参考传播都可视为利用相关结构降方差的不同形式。
+
+\section{score matching 的分部积分}
+
+数据 score 为 $s_p(x)=\nabla_x\log p(x)$。显式 score matching
+\begin{equation}
+ J(\theta)=\frac12\E_p\|s_\theta(x)-s_p(x)\|^2.
+\end{equation}
+展开并去掉与 $\theta$ 无关的 $\E\|s_p\|^2/2$：
+\begin{equation}
+ J(\theta)=\frac12\E_p\|s_\theta\|^2-E_p[s_\theta^Ts_p]+C.
+\end{equation}
+交叉项
+\begin{align}
+ \E_p[s_\theta^Ts_p]
+ &=\int s_\theta(x)^T\nabla p(x)dx\\
+ &=-\int p(x)\nabla\cdot s_\theta(x)dx
+\end{align}
+在边界项消失时成立。故
+\begin{equation}
+ J(\theta)=\E_p\left[
+ \frac12\|s_\theta(x)\|^2+\nabla\cdot s_\theta(x)
+ \right]+C.
+\end{equation}
+去噪 score matching通过已知高斯条件 score 避免计算模型散度，并在条件期望意义下恢复边缘 score。
+
+\section{模型误差到期望指标误差}
+
+若生成样本耦合为 $X=G(Z)$、$\widehat X=\widehat G(Z)$，且评价函数
+$f$ 为 $L_f$-Lipschitz，则
+\begin{align}
+ |\E f(X)-\E f(\widehat X)|
+ &\le\E|f(X)-f(\widehat X)|\\
+ &\le L_f\E\|G(Z)-\widehat G(Z)\|.
+\end{align}
+这给出点对点生成误差控制分布指标的充分条件。但无条件生成中通常不存在已知语义配对，
+逐样本 MSE 可能强迫平均化；分布距离允许不同耦合，因而更适合多模态目标。
+
+\section{FlowMo 的量化潜变量与模式匹配}
+编码器先产生 $\hat c=e_\phi(x,c_0)\in\R^m$，逐坐标二值化
+\begin{equation}
+  c=q(\hat c)=2\,\1\{\hat c\ge0\}-1\in\{-1,1\}^m.
+\end{equation}
+直通估计把反向导数近似为 $\partial q/\partial\hat c\approx I$。对线性插值
+\begin{equation}
+  x_t=t z+(1-t)x,\qquad z\sim\cN(0,I),
+\end{equation}
+真速度是 $z-x$。论文把方向写为 $x-z$ 时，对应的是从 $t=1$ 向 $t=0$ 积分；两种写法仅是时间方向不同，必须与采样器符号一致。流匹配损失为
+\begin{equation}
+  \cL_{\rm flow}=\E\|d_\theta(x_t,c,t)-(z-x)\|_2^2.
+\end{equation}
+对任意预测 $\hat v$，由 $x_t=tz+(1-t)x$ 消去 $z$ 可得
+\begin{equation}
+  \hat x=x_t-t\hat v,
+\end{equation}
+所以感知损失可以直接施加在估计的干净图像上。
+
+\section{模式寻优后训练为何不同于逐点感知损失}
+令 $\Phi_h$ 表示一步 Euler 映射，$n$ 步重建为
+\begin{equation}
+  \hat x=\Phi_{t_n}\circ\cdots\circ\Phi_{t_1}(z;c).
+\end{equation}
+后训练目标 $d_{\rm perc}(x,\hat x)$ 的梯度包含整个离散动力系统的链式乘积
+\begin{equation}
+  \frac{\partial\hat x}{\partial\theta}
+  =\sum_{j=1}^n
+  \left(\prod_{\ell=j+1}^{n}J_z\Phi_{t_\ell}\right)
+  \frac{\partial\Phi_{t_j}}{\partial\theta}.
+\end{equation}
+它直接选择最终条件分布中靠近原图的模式；逐时刻流损失则拟合条件平均速度，二者优化对象并不相同。
+
+\section{码率与熵正则}
+若空间下采样倍率为 $s$，每个潜位置有 $m$ 个二值通道，则未压缩码率为
+\begin{equation}
+  \mathrm{BPP}=\frac{m}{s^2}.
+\end{equation}
+对单通道 Bernoulli 概率 $p$，熵
+\begin{equation}
+  H(p)=-p\log p-(1-p)\log(1-p)
+\end{equation}
+在 $p=1/2$ 最大；批量边缘熵最大化可防止某些位恒定，而样本内条件熵最小化促使二值决策确定。
+
+\end{document}

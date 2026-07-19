@@ -1,0 +1,453 @@
+\documentclass[11pt]{article}
+\usepackage{fontspec}
+\setmainfont[
+  Path=fonts/,
+  Extension=.ttf,
+  UprightFont=*-400,
+  BoldFont=*-700
+]{NotoSerifSC}
+\setsansfont[
+  Path=fonts/,
+  Extension=.ttf,
+  UprightFont=*-400,
+  BoldFont=*-700
+]{NotoSerifSC}
+\XeTeXlinebreaklocale "zh"
+\XeTeXlinebreakskip=0pt plus 1pt
+\usepackage[a4paper,margin=1.70cm]{geometry}
+\usepackage{amsmath,amssymb,mathtools,bm}
+\usepackage{booktabs,longtable,array}
+\usepackage{enumitem}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\setlist{nosep,leftmargin=2em}
+\allowdisplaybreaks[3]
+\numberwithin{equation}{section}
+\pagestyle{plain}
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Pp}{\mathbb{P}}
+\newcommand{\1}{\mathbf{1}}
+\newcommand{\T}{\mathsf{T}}
+\newcommand{\F}{\mathrm{F}}
+\newcommand{\cN}{\mathcal{N}}
+\newcommand{\cL}{\mathcal{L}}
+\newcommand{\cS}{\mathcal{S}}
+\newcommand{\cH}{\mathcal{H}}
+\newcommand{\cA}{\mathcal{A}}
+\newcommand{\cM}{\mathcal{M}}
+\newcommand{\cT}{\mathcal{T}}
+\newcommand{\diag}{\operatorname{diag}}
+\newcommand{\tr}{\operatorname{tr}}
+\newcommand{\Var}{\operatorname{Var}}
+\newcommand{\Cov}{\operatorname{Cov}}
+\newcommand{\softmax}{\operatorname{softmax}}
+\newcommand{\KL}{D_{\mathrm{KL}}}
+\newcommand{\sg}{\operatorname{sg}}
+\begin{document}
+    \begin{center}
+      {\LARGE\bfseries 44\_Mapping Networks}
+    \end{center}
+    \vspace{0.8em}
+
+    \section{符号与维度}
+    \begin{longtable}{>{$}l<{$} >{$}l<{$} p{10cm}}
+    \toprule
+    \text{符号} & \text{维度} & \text{含义}\\
+    \midrule
+    \theta & \R^P & 目标网络完整参数。\\
+        z & \R^d & 低维潜参数，$d\ll P$。\\
+        g_\psi & \R^d\to\R^P & 映射网络。\\
+        \cM & -- & 假设中的低维参数流形。\\
+        L_\theta,L_\ell & \R_{>0} & 模型和损失的 Lipschitz 常数。\\
+    \bottomrule
+    \end{longtable}
+
+    所有向量默认是列向量；未特别说明时，期望同时对数据、噪声和采样时刻取值。下文只展开论文中承担方法逻辑的公式，并把所需假设写在推导发生的位置。
+
+\section{局部坐标图与映射定理的严格构造}
+
+设 $\mathcal M\subset\R^P$ 是 $d^*$ 维 $C^2$ 嵌入流形，
+$\theta^*\in\mathcal M$。按定义，存在开集 $U\subset\R^{d^*}$、
+$0\in U$ 和局部坐标图
+\begin{equation}
+ \phi:U\to V\subset\mathcal M,\qquad
+ \phi(0)=\theta^*,\qquad \operatorname{rank}J_\phi(u)=d^*.
+\end{equation}
+若任务损失在 $B(\theta^*,r)$ 内满足
+\begin{equation}
+ |L(\theta_1)-L(\theta_2)|
+ \le L_\ell L_\theta\|\theta_1-\theta_2\|_2,
+\end{equation}
+给定 $0<\epsilon\le L_\ell L_\theta r$，令
+\begin{equation}
+ \delta=\frac{\epsilon}{L_\ell L_\theta}\le r.
+\end{equation}
+由 $\phi$ 在 $0$ 连续，存在 $\eta>0$ 使
+\begin{equation}
+ \|u\|<\eta\Rightarrow
+ \|\phi(u)-\theta^*\|<\delta.
+\end{equation}
+于是任取该邻域内 $z^*$，
+\begin{equation}
+ |L(\phi(z^*))-L(\theta^*)|
+ \le L_\ell L_\theta\|\phi(z^*)-\theta^*\|<\epsilon.
+\end{equation}
+
+论文希望得到定义在整个 $\R^{d^*}$ 上的 $C^2$ 映射。严格做法是先选
+$U_1\Subset U_2\Subset U$，$0\in U_1$，再取光滑 cutoff
+$\psi\in C_c^\infty(U_2)$ 且 $\psi=1$ 于 $U_1$。定义
+\begin{equation}
+ g(u)=
+ \begin{cases}
+ \theta^*+\psi(u)[\phi(u)-\theta^*],&u\in U_2,\\
+ \theta^*,&u\notin U_2.
+ \end{cases}
+\end{equation}
+因为 $\psi$ 在 $U_2$ 边界附近恒为零，两段及其任意阶导数平滑拼接，
+$g\in C^2(\R^{d^*},\R^P)$。这避免直接在 $U$ 外书写未定义的 $\phi(u)$。
+
+注意取 $z^*=0$ 就有
+\begin{equation}
+ g(0)=\phi(0)=\theta^*,
+\end{equation}
+损失误差严格为零。因此这个存在性定理本身来自“已知最优点位于流形并以它为坐标图中心”，
+并没有证明某个预先随机固定的网络能找到或表示该坐标图。
+
+\section{复合 Lipschitz 常数的来源}
+
+若对所有输入 $x$，
+\begin{equation}
+ \|f_{\theta_1}(x)-f_{\theta_2}(x)\|
+ \le L_\theta\|\theta_1-\theta_2\|,
+\end{equation}
+且逐样本损失对预测满足
+\begin{equation}
+ |\ell(y_1,y)-\ell(y_2,y)|\le L_\ell\|y_1-y_2\|,
+\end{equation}
+则期望任务损失
+$L(\theta)=\E_{x,y}\ell(f_\theta(x),y)$ 满足
+\begin{align}
+ |L(\theta_1)-L(\theta_2)|
+ &\le\E|\ell(f_{\theta_1}(x),y)-\ell(f_{\theta_2}(x),y)|\\
+ &\le L_\ell\E\|f_{\theta_1}(x)-f_{\theta_2}(x)\|\\
+ &\le L_\ell L_\theta\|\theta_1-\theta_2\|.
+\end{align}
+若交叉熵的预测概率可趋近零，它在概率坐标中没有全局有限 Lipschitz 常数；
+需要把 logits 或概率限制在紧集，故论文的结论是局部而非全局。
+
+\section{潜变量梯度是切空间拉回}
+
+令 $\theta=g_\psi(z)$，任务梯度 $q=\nabla_\theta L\in\R^P$。
+链式法则
+\begin{equation}
+ \boxed{\nabla_zL(g(z))=J_g(z)^Tq.}
+\end{equation}
+潜空间一步 $z^+=z-\eta J_g^Tq$ 在参数空间的一阶变化
+\begin{equation}
+ \Delta\theta
+ \approx J_g(z)(z^+-z)
+ =-\eta J_gJ_g^Tq.
+\end{equation}
+若 $J_g=U\Sigma V^T$，则
+\begin{equation}
+ J_gJ_g^T=U\Sigma^2U^T.
+\end{equation}
+所以更新只在切空间 $\operatorname{col}(J_g)$ 内，并按奇异值平方预条件。
+它通常不是欧氏正交投影；正交投影为
+\begin{equation}
+ P_T=J_g(J_g^TJ_g)^{-1}J_g^T
+\end{equation}
+（满列秩时）。若希望参数空间沿 $-P_Tq$，潜更新应使用自然梯度
+\begin{equation}
+ \Delta z=-\eta(J_g^TJ_g)^{-1}J_g^Tq.
+\end{equation}
+
+奇异值界给出
+\begin{equation}
+ \sigma_{\min}\|P_Tq\|
+ \le\|J_g^Tq\|
+ \le\sigma_{\max}\|P_Tq\|.
+\end{equation}
+小 $\sigma_{\min}$ 造成某些切向方向学习极慢，条件数
+$\kappa(J_g)=\sigma_{\max}/\sigma_{\min}$ 是低维优化是否良态的关键。
+
+\section{局部可解性的逆函数推导}
+
+设初点 $z_0$、$\theta_0=g(z_0)$，残差
+$r=\theta^*-\theta_0$。Taylor 展开
+\begin{equation}
+ g(z_0+\Delta z)=\theta_0+J\Delta z+R(\Delta z),
+ \qquad\|R(\Delta z)\|\le\frac M2\|\Delta z\|^2,
+\end{equation}
+其中 $J=J_g(z_0)$，$M$ 控制二阶导数。
+若 $r$ 位于 $\operatorname{col}(J)$，且 $J$ 满列秩，可取
+\begin{equation}
+ \Delta z=J^\dagger r,\qquad
+ \|\Delta z\|\le\frac{\|r\|}{\sigma_{\min}(J)}.
+\end{equation}
+线性项精确抵消残差，剩余
+\begin{equation}
+ \|g(z_0+\Delta z)-\theta^*\|
+ \le\frac M{2\sigma_{\min}(J)^2}\|r\|^2.
+\end{equation}
+这给出论文 $O(\|r\|^2)$ 声称所需的明确条件。
+
+若 $r$ 含法向分量 $r_\perp=(I-P_T)r\ne0$，任何一阶潜更新都无法消除它：
+\begin{equation}
+ \min_{\Delta z}\|J\Delta z-r\|=|r_\perp\|.
+\end{equation}
+因此仅假设 $\|r\|$ 小并不足以保证二次剩余；还需目标位于局部映射像，或法向残差本身为二阶小量。
+
+\section{加性权重调制的导数}
+
+映射网络权重由潜变量调制
+\begin{equation}
+ \omega(z)=\omega_0+Bz,\qquad
+ g(z)=g_{\omega(z)}(z).
+\end{equation}
+因为 $z$ 同时作为网络输入和权重来源，全导数是
+\begin{equation}
+ \boxed{\frac{dg}{dz}
+ =\frac{\partial g_\omega(z)}{\partial z}
+ +\frac{\partial g_\omega(z)}{\partial\omega}B.}
+\end{equation}
+只计算第一项会漏掉调制路径。对逐元素规则
+$\omega_{ij}\leftarrow\omega_{ij}+\alpha z_i$，矩阵 $B$ 是稀疏复制算子；
+同一 $z_i$ 调制多个权重，因此其梯度累加这些连接的贡献。
+
+加性调制仍是一个特定参数化。要声称它满足映射定理，必须证明其像包含定理构造的局部坐标图，
+或至少以所需精度逼近；仅有 $C^2$ 光滑性并不保证像经过任意 $\theta^*$。
+
+\section{稳定、平滑和对齐正则的精确含义}
+
+稳定损失
+\begin{equation}
+ L_{\rm stab}=\E_{\epsilon\sim\cN(0,\sigma^2I)}
+ \|F(z+\epsilon)-F(z)\|_2^2
+\end{equation}
+在小 $\sigma$ 下 Taylor 展开
+\begin{equation}
+ F(z+\epsilon)-F(z)=J_F(z)\epsilon+O(\|\epsilon\|^2).
+\end{equation}
+故
+\begin{align}
+ L_{\rm stab}
+ &=\E\epsilon^TJ_F^TJ_F\epsilon+O(\sigma^3)\\
+ &=\tr(J_F^TJ_F\E\epsilon\epsilon^T)+O(\sigma^3)\\
+ &=\sigma^2\|J_F(z)\|_F^2+O(\sigma^3).
+\end{align}
+它在小噪声极限等价于 Jacobian 正则。
+
+论文平滑项
+\begin{equation}
+ L_{\rm smooth}=\|J_{M_\phi}(z)\|_F^2
+\end{equation}
+只惩罚一阶导数幅值，并不单独“保证 $C^2$”。若网络激活本身不是 $C^2$（例如 ReLU），
+函数仍可能只分段光滑；要控制曲率还需 Hessian 项
+\begin{equation}
+ \|\nabla_z^2M_\phi(z)\|_F^2.
+\end{equation}
+
+余弦对齐
+\begin{equation}
+ L_{\rm align}=1-\frac{z^Tw}{\|z\|\|w\|}
+\end{equation}
+对 $z$ 的梯度
+\begin{equation}
+ \nabla_zL_{\rm align}
+ =-\frac1{\|z\|\|w\|}
+ \left(w-\frac{z^Tw}{\|z\|^2}z\right),
+\end{equation}
+它只改变方向且在 $z=0$ 奇异，实际实现需范数下界。
+
+\section{全局拓扑限制}
+
+单一坐标图只能覆盖与 $\R^d$ 开集微分同胚的局部区域。若最优参数集合是圆环、球面或多个不连通分支，
+不存在一张无奇点、单射的欧氏全局坐标图覆盖全部集合。
+连续 $g:\R^d\to\R^P$ 可以覆盖或穿过这些区域，但可能非单射，且不同潜点映射到同一参数。
+因此流形假设支持局部降维，不自动推出单个潜向量参数化整个训练轨迹的全局可学习性。
+
+\section{光滑损失的下降引理}
+
+若 $L$ 的梯度是 $\beta$-Lipschitz：
+\begin{equation}
+ \|\nabla L(x)-\nabla L(y)\|
+ \le\beta\|x-y\|,
+\end{equation}
+则沿线段积分
+\begin{align}
+ L(y)-L(x)
+ &=\int_0^1\nabla L(x+t(y-x))^T(y-x)dt\\
+ &=\nabla L(x)^T(y-x)+R,
+\end{align}
+余项满足
+\begin{align}
+ |R|
+ &\le\int_0^1\beta t\|y-x\|^2dt
+ =\frac\beta2\|y-x\|^2.
+\end{align}
+故下降引理
+\begin{equation}
+ L(y)\le L(x)+\nabla L(x)^T(y-x)
+ +\frac\beta2\|y-x\|^2.
+\end{equation}
+取梯度步 $y=x-\eta\nabla L(x)$：
+\begin{equation}
+ L(y)\le L(x)-\eta\left(1-\frac{\beta\eta}{2}\right)
+ \|\nabla L(x)\|^2.
+\end{equation}
+当 $0<\eta<2/\beta$ 时每个精确梯度步下降；深网中 $\beta$ 未知且随位置变化，
+这仍解释了学习率过大造成不稳定的局部机制。
+
+\section{二阶近似与曲率方向}
+
+在 $x$ 附近 Taylor 展开
+\begin{equation}
+ L(x+\Delta)=L(x)+g^T\Delta
+ +\frac12\Delta^TH\Delta+O(\|\Delta\|^3).
+\end{equation}
+若 $H=U\diag(\lambda_i)U^T$，在本征方向 $u_i$ 上步长 $a$ 的变化
+\begin{equation}
+ \Delta L\approx a g_i+\frac12\lambda_i a^2.
+\end{equation}
+$\lambda_i>0$ 为局部碗形，$\lambda_i<0$ 是负曲率逃离鞍点方向。
+加阻尼的 Newton 步
+\begin{equation}
+ \Delta=-(H+\lambda I)^{-1}g
+\end{equation}
+在特征方向缩放为 $-g_i/(\lambda_i+\lambda)$，避免接近零或负特征值造成巨大步长。
+
+\section{链式 Jacobian 与条件数}
+
+复合映射 $y=f_L\circ\cdots\circ f_1(x)$ 的 Jacobian
+\begin{equation}
+ J_{y\leftarrow x}=J_LJ_{L-1}\cdots J_1.
+\end{equation}
+谱范数上界
+\begin{equation}
+ \|J_{y\leftarrow x}\|_2\le\prod_{\ell=1}^{L}\|J_\ell\|_2.
+\end{equation}
+若各层最小奇异值存在，
+\begin{equation}
+ \sigma_{\min}(J_{y\leftarrow x})
+ \ge\prod_\ell\sigma_{\min}(J_\ell).
+\end{equation}
+因此条件数至多乘法累积：
+\begin{equation}
+ \kappa(J_{y\leftarrow x})
+ \le\prod_\ell\kappa(J_\ell).
+\end{equation}
+低维映射、递归模块和物理传播都面临同一问题：表示存在不代表反向梯度数值良态。
+
+\section{随机梯度的偏差与方差}
+
+设样本梯度 $g(\theta;\xi)$ 满足
+\begin{equation}
+ \E_\xi g(\theta;\xi)=\nabla L(\theta),
+ \qquad \E\|g-\nabla L\|^2\le\sigma^2.
+\end{equation}
+独立批量 $B$ 的平均
+\begin{equation}
+ \bar g_B=\frac1B\sum_{i=1}^{B}g_i
+\end{equation}
+满足
+\begin{equation}
+ \E\bar g_B=\nabla L,\qquad
+ \E\|\bar g_B-\nabla L\|^2\le\frac{\sigma^2}{B}.
+\end{equation}
+若样本相关，协方差项出现：
+\begin{equation}
+ \Var(\bar g_B)=\frac1{B^2}\left[
+ \sum_i\Var(g_i)+\sum_{i\ne j}\Cov(g_i,g_j)
+ \right].
+\end{equation}
+扩大批量只有在交叉协方差不主导时才近似按 $1/B$ 降噪。
+
+若使用有偏估计 $\E\widehat g=\nabla L+b$，均方误差分解
+\begin{equation}
+ \E\|\widehat g-\nabla L\|^2
+ =\|b\|^2+\tr\Cov(\widehat g).
+\end{equation}
+直通估计、停止梯度目标和截断反传通常以可控偏差换低方差或低内存。
+
+\section{Adam 的尺度归一化}
+
+逐坐标 Adam 更新
+\begin{align}
+ m_t&=\beta_1m_{t-1}+(1-\beta_1)g_t,\\
+ v_t&=\beta_2v_{t-1}+(1-\beta_2)g_t^2,\\
+ \widehat m_t&=m_t/(1-\beta_1^t),\\
+ \widehat v_t&=v_t/(1-\beta_2^t),\\
+ \theta_{t+1}&=\theta_t-\eta
+ \frac{\widehat m_t}{\sqrt{\widehat v_t}+\epsilon}.
+\end{align}
+若梯度长期乘常数 $c>0$，忽略 $\epsilon$ 时
+$\widehat m$ 乘 $c$、$\sqrt{\widehat v}$ 也乘 $c$，更新近似不变。
+但瞬态、符号变化和 $\epsilon$ 会破坏精确尺度不变性。
+
+AdamW 把权重衰减解耦：
+\begin{equation}
+ \theta_{t+1}=(1-\eta\lambda)\theta_t
+ -\eta\frac{\widehat m_t}{\sqrt{\widehat v_t}+\epsilon}.
+\end{equation}
+这不同于把 $\lambda\theta$ 加入梯度后再经过自适应分母；后者会按坐标二阶矩缩放正则化。
+
+\section{范数约束与投影梯度}
+
+约束集合 $\mathcal C$ 上的投影梯度
+\begin{equation}
+ \theta^+=\Pi_{\mathcal C}(\theta-\eta g),
+ \qquad
+ \Pi_{\mathcal C}(x)=\arg\min_{y\in\mathcal C}\|x-y\|^2.
+\end{equation}
+对欧氏球 $\mathcal C=\{x:\|x\|\le R\}$，
+\begin{equation}
+ \Pi_{\mathcal C}(x)=
+ \begin{cases}
+ x,&\|x\|\le R,\\
+ Rx/\|x\|,&\|x\|>R.
+ \end{cases}
+\end{equation}
+对流形约束，局部一阶步先投影到切空间，再用 retraction 回到流形；
+仅把参数写成 $g(z)$ 相当于用参数化隐式满足约束，但会引入 $J_g^TJ_g$ 的坐标度量。
+
+\section{Lipschitz 误差的层间传播}
+
+真实模块 $f_\ell$、近似模块 $\widehat f_\ell$ 满足
+\begin{equation}
+ \|f_\ell(x)-\widehat f_\ell(x)\|\le\epsilon_\ell,
+ \qquad
+ \|f_\ell(x)-f_\ell(y)\|\le L_\ell\|x-y\|.
+\end{equation}
+令真实、近似中间状态差 $e_\ell$。三角不等式给出
+\begin{align}
+ e_{\ell+1}
+ &=\|f_\ell(h_\ell)-\widehat f_\ell(\widehat h_\ell)\|\\
+ &\le L_\ell e_\ell+\epsilon_\ell.
+\end{align}
+递归展开
+\begin{equation}
+ e_L\le
+ \left(\prod_{j=0}^{L-1}L_j\right)e_0
+ +\sum_{\ell=0}^{L-1}
+ \left(\prod_{j=\ell+1}^{L-1}L_j\right)\epsilon_\ell.
+\end{equation}
+早期层误差乘更多后续 Lipschitz 因子，所以量化、低秩近似或局部训练的相同单层误差，
+放在不同深度并不等价。
+
+\section{复杂度必须区分四个量}
+
+参数量、FLOPs、激活内存和通信量是不同指标。以线性层
+$Y=XW$、$X\in\R^{B\times n}$、$W\in\R^{n\times m}$ 为例：
+\begin{align}
+ \text{参数量}&=nm,\\
+ \text{前向乘加量}&\asymp Bnm,\\
+ \text{主要激活量}&=B(n+m),\\
+ \text{数据并行梯度通信}&\asymp nm.
+\end{align}
+低秩因子可同时减少参数与乘法，但动态稀疏若实现仍做稠密 kernel，参数/FLOPs 公式不会自动转化为墙钟加速。
+冻结参数减少梯度和优化器状态，却不一定减少前向计算或输入梯度计算。
+
+\end{document}

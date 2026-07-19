@@ -1,0 +1,659 @@
+\documentclass[UTF8,12pt,a4paper,fontset=none]{ctexart}
+\usepackage[a4paper,left=1.82cm,right=1.82cm,top=1.72cm,bottom=1.82cm,headheight=15pt]{geometry}
+\usepackage{fontspec,xeCJK}
+\setmainfont{Liberation Serif}
+\setsansfont{DejaVu Sans}
+\setmonofont{DejaVu Sans Mono}
+\setCJKmainfont[BoldFont=Noto Serif CJK SC Bold]{Noto Serif CJK SC}
+\setCJKsansfont[BoldFont=Noto Sans CJK SC Bold]{Noto Sans CJK SC}
+\setCJKmonofont{Noto Sans Mono CJK SC}
+\usepackage{amsmath,amssymb,mathtools,bm}
+\usepackage{booktabs,longtable,tabularx,array,multirow}
+\usepackage{enumitem,xcolor}
+\usepackage[most]{tcolorbox}
+\usepackage{fancyhdr,titlesec,hyperref,cleveref,lastpage}
+\usepackage{tikz,float,caption,listings}
+\usetikzlibrary{arrows.meta,positioning,calc,fit,backgrounds,shapes.geometric}
+\definecolor{mainblue}{RGB}{39,82,138}
+\definecolor{deepblue}{RGB}{25,55,95}
+\definecolor{softblue}{RGB}{235,243,252}
+\definecolor{softgreen}{RGB}{238,248,241}
+\definecolor{softorange}{RGB}{255,246,232}
+\definecolor{softgray}{RGB}{245,246,248}
+\definecolor{warnred}{RGB}{160,48,48}
+\hypersetup{unicode=true,colorlinks=true,linkcolor=deepblue,urlcolor=mainblue,citecolor=deepblue}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.36em}
+\setlength{\tabcolsep}{5pt}
+\renewcommand{\arraystretch}{1.2}
+\allowdisplaybreaks[4]
+\emergencystretch=3em
+\sloppy
+\pagestyle{fancy}\fancyhf{}\fancyfoot[C]{\small 第 \thepage\ 页，共 \pageref{LastPage} 页}\renewcommand{\headrulewidth}{0.4pt}
+\titleformat{\section}{\Large\bfseries\color{deepblue}}{\thesection}{0.65em}{}
+\titleformat{\subsection}{\large\bfseries\color{mainblue}}{\thesubsection}{0.55em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries}{\thesubsubsection}{0.5em}{}
+\numberwithin{equation}{section}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Prob}{\mathbb{P}}
+\newcommand{\Loss}{\mathcal{L}}
+\newcommand{\norm}[1]{\left\lVert #1\right\rVert}
+\newcommand{\ip}[2]{\left\langle #1,#2\right\rangle}
+\newcommand{\tr}{\operatorname{Tr}}
+\newcommand{\diag}{\operatorname{diag}}
+\newcommand{\rank}{\operatorname{rank}}
+\newcommand{\softmax}{\operatorname{softmax}}
+\newcommand{\argmin}{\operatorname*{arg\,min}}
+\newcommand{\argmax}{\operatorname*{arg\,max}}
+\newcommand{\sg}{\operatorname{sg}}
+\newcommand{\KL}{D_{\mathrm{KL}}}
+\newcommand{\dd}{\mathrm{d}}
+\newtcolorbox{keybox}[1][]{enhanced,breakable,colback=softblue,colframe=mainblue,boxrule=0.8pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\newtcolorbox{examplebox}[1][]{enhanced,breakable,colback=softgreen,colframe=green!45!black,boxrule=0.7pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\newtcolorbox{notebox}[1][]{enhanced,breakable,colback=softorange,colframe=orange!70!black,boxrule=0.7pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\newtcolorbox{criticalbox}[1][]{enhanced,breakable,colback=red!3,colframe=warnred,boxrule=0.8pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\lstset{basicstyle=\ttfamily\small,breaklines=true,frame=single,backgroundcolor=\color{softgray},numbers=left,numberstyle=\tiny,showstringspaces=false,columns=fullflexible}
+\hypersetup{pdftitle={27 Optical Generative Models 数学过程详解},pdfauthor={OpenAI}}
+\fancyhead[L]{\small 27 Optical Generative Models}
+\fancyhead[R]{\small 数学过程详解}
+\setlength{\abovedisplayskip}{0.82em}
+\setlength{\belowdisplayskip}{0.82em}
+\setlength{\abovedisplayshortskip}{0.45em}
+\setlength{\belowdisplayshortskip}{0.45em}
+\begin{document}
+\begin{center}
+{\LARGE\bfseries 27\_Optical Generative Models 数学过程详解}\par
+\vspace{0.35em}
+{\large Fresnel 传播、复场相位、衍射层梯度与光学扩散}
+\end{center}
+\vspace{0.45em}
+\begin{keybox}[本文只处理真正需要推导的部分]
+本文从 Helmholtz 方程推导 Fresnel 传播，展开多层相位解码、模平方非线性、伴随梯度、衍射效率、多波长耦合、相位量化和迭代去噪。全文按“公式从哪里来--每个符号是什么--中间步骤为何成立--维度和复杂度如何核对--论文结论依赖哪些假设”的顺序展开；不复述实验表格，也不使用与论文无关的通用背景凑页数。
+\end{keybox}
+\tableofcontents
+\newpage
+
+\section{复振幅、相位调制与光强探测}
+单色相干光场写成
+\begin{equation}
+ U(x,y;z)=A(x,y;z)e^{i\phi(x,y;z)}.
+\end{equation}
+相位型 SLM 只改变相位：
+\begin{equation}
+ U_0(x,y)=A_0(x,y)e^{i\phi_{\rm seed}(x,y)}.
+\end{equation}
+传感器不能直接测复振幅，只记录
+\begin{equation}
+ \boxed{I(x,y)=|U(x,y)|^2=U(x,y)U^*(x,y)}.
+\end{equation}
+因此系统的非线性主要来自“复场传播后取模平方”，即使自由空间传播本身是线性算子。
+
+\section{Fresnel 衍射传播的推导}
+从标量 Helmholtz 方程
+\begin{equation}
+ (\nabla^2+k^2)U=0,\qquad k=2\pi/\lambda
+\end{equation}
+令 $U=e^{ikz}\psi$，在慢变包络近似 $|\partial_z^2\psi|\ll k|\partial_z\psi|$ 下得到抛物方程
+\begin{equation}
+ 2ik\frac{\partial\psi}{\partial z}+\nabla_\perp^2\psi=0.
+\end{equation}
+其自由空间解为卷积
+\begin{equation}
+ U_z(x,y)=U_0*h_z,
+\end{equation}
+Fresnel 核
+\begin{equation}
+ h_z(x,y)=\frac{e^{ikz}}{i\lambda z}
+ \exp\left[i\frac{k}{2z}(x^2+y^2)\right].
+\end{equation}
+傅里叶域传播更清楚：
+\begin{equation}
+ \widehat U_z(f_x,f_y)=\widehat U_0(f_x,f_y)H_z(f_x,f_y),
+\end{equation}
+\begin{equation}
+ H_z= e^{ikz}\exp[-i\pi\lambda z(f_x^2+f_y^2)].
+\end{equation}
+$|H_z|=1$，理想传播只旋转频率相位，不改变总能量。
+
+\section{多层衍射解码器的递推}
+第 $\ell$ 个可训练相位面
+\begin{equation}
+ T_\ell(x,y)=e^{i\theta_\ell(x,y)}.
+\end{equation}
+传播算子记为 $\mathcal P_{z_\ell}$，则
+\begin{equation}
+ U_{\ell+1}=\mathcal P_{z_\ell}(T_\ell\odot U_\ell).
+\end{equation}
+$L_o$ 层后的复场
+\begin{equation}
+ U_{\rm out}=\mathcal P_{z_{L_o}}
+ T_{L_o}\mathcal P_{z_{L_o-1}}T_{L_o-1}\cdots\mathcal P_{z_0}U_0.
+\end{equation}
+所有 $T_\ell$ 和 $\mathcal P_z$ 对复场都是线性操作，但输出强度
+\begin{equation}
+ I_{\rm out}=|U_{\rm out}|^2
+\end{equation}
+产生二次非线性，使系统能表示比单纯线性强度映射更复杂的分布。
+
+\section{数字编码器与光学解码器的联合映射}
+随机种子 $J\sim\mathcal N(0,I)$ 经过浅层数字编码器
+\begin{equation}
+ \phi_{\rm seed}=E_\psi(J),
+\end{equation}
+光学模型
+\begin{equation}
+ \widehat I=\mathcal O_\Theta(\phi_{\rm seed})
+ =\left|\mathcal P_\Theta(A_0e^{iE_\psi(J)})\right|^2.
+\end{equation}
+联合训练目标
+\begin{equation}
+ \min_{\psi,\Theta}\E_J\Loss(\widehat I(J),I_{\rm teacher}(J)).
+\end{equation}
+这不是 GAN 的 min--max；教师 DDPM 先生成配对目标，光学学生做监督蒸馏。
+
+\section{相位参数的反向梯度}
+设某层调制后 $V=T\odot U$，$T=e^{i\theta}$，则
+\begin{equation}
+ \frac{\partial V}{\partial\theta}=iT\odot U=iV.
+\end{equation}
+若输出复场 $Y=\mathcal P(V)$，实值损失 $\Loss$ 对相位的梯度可用 Wirtinger 微分写成
+\begin{equation}
+ \frac{\partial\Loss}{\partial\theta}
+ =2\operatorname{Re}\left\{
+ \left(\frac{\partial\Loss}{\partial Y^*}\right)^*
+ \mathcal P(iV)
+ \right\}.
+\end{equation}
+等价实现是把输出误差信号通过共轭传播算子 $\mathcal P^*$ 反传，再与局部场 $iV$ 相乘。由于 Fresnel 传播在理想离散化下近似酉，伴随传播就是反向距离传播。
+
+\section{输出衍射效率与质量损失}
+设目标视场区域为 $\Omega$，总传感器区域为 $\Gamma$，衍射效率
+\begin{equation}
+ \eta=\frac{\sum_{(x,y)\in\Omega}I(x,y)}
+ {\sum_{(x,y)\in\Gamma}I(x,y)}.
+\end{equation}
+联合目标可写为
+\begin{equation}
+ \Loss_{\rm total}=\Loss_{\rm image}+\lambda_\eta(1-\eta).
+\end{equation}
+梯度
+\begin{equation}
+ \nabla\Loss_{\rm total}=\nabla\Loss_{\rm image}-\lambda_\eta\nabla\eta
+\end{equation}
+体现图像保真与能量集中之间的 Pareto 权衡。$\lambda_\eta$ 过大时，模型可能把光集中到简单模式而损害细节。
+
+\section{多波长传播与共享相位面的色散}
+对波长 $\lambda_c$，传播核
+\begin{equation}
+ H_z^{(c)}(f_x,f_y)=e^{ik_cz}
+ e^{-i\pi\lambda_c z(f_x^2+f_y^2)}.
+\end{equation}
+同一物理高度 $h(x,y)$ 产生的相位
+\begin{equation}
+ \theta^{(c)}(x,y)=\frac{2\pi}{\lambda_c}[n(\lambda_c)-1]h(x,y).
+\end{equation}
+所以多色模型不能把三个通道当成完全独立参数；波长通过传播和材料色散耦合。总损失
+\begin{equation}
+ \Loss=\sum_cw_c\Loss_c
+\end{equation}
+的梯度会在共享高度参数上叠加。
+
+\section{迭代光学生成器与直接 $x_0$ 预测}
+前向加噪闭式
+\begin{equation}
+ I_t=\sqrt{\bar\alpha_t}I_0+\sqrt{1-\bar\alpha_t}\epsilon.
+\end{equation}
+迭代光学模型直接预测干净样本
+\begin{equation}
+ \widehat I_0=F_{\psi,\Theta}(I_t,t),
+\end{equation}
+训练
+\begin{equation}
+ \Loss_x=\E\norm{\widehat I_0-I_0}_2^2.
+\end{equation}
+由 $I_t$ 和 $\widehat I_0$ 可恢复噪声估计
+\begin{equation}
+ \widehat\epsilon=\frac{I_t-\sqrt{\bar\alpha_t}\widehat I_0}{\sqrt{1-\bar\alpha_t}},
+\end{equation}
+再代入 DDPM/DDIM 反向更新。直接 $x_0$ 预测让光学输出天然是非负强度图，更符合传感器物理量。
+
+\section{相位量化的误差传播}
+$b$ bit 相位器的步长
+\begin{equation}
+ \Delta_\theta=\frac{2\pi}{2^b}.
+\end{equation}
+量化误差近似均匀分布 $e\sim U[-\Delta_\theta/2,\Delta_\theta/2]$，方差
+\begin{equation}
+ \operatorname{Var}(e)=\frac{\Delta_\theta^2}{12}.
+\end{equation}
+小误差下
+\begin{equation}
+ e^{i(\theta+e)}\approx e^{i\theta}(1+ie),
+\end{equation}
+因此复场误差一阶正比于 $e$，强度误差含干涉交叉项
+\begin{equation}
+ \Delta I\approx2\operatorname{Re}(U^*\Delta U).
+\end{equation}
+这解释了低 bit 相位会通过全局干涉放大，而非仅形成局部像素误差。
+
+\section{潜空间线性插值为何不等于图像线性插值}
+种子
+\begin{equation}
+ J_\gamma=\gamma J_1+(1-\gamma)J_2
+\end{equation}
+经过非线性编码和模平方：
+\begin{equation}
+ I_\gamma=|\mathcal P(e^{iE(J_\gamma)})|^2.
+\end{equation}
+一般
+\begin{equation}
+ I_\gamma\ne\gamma I_1+(1-\gamma)I_2.
+\end{equation}
+若输出却呈语义连续变化，说明复合映射在该潜空间路径附近学习了平滑流形，而不是简单利用像素凸组合。
+% AUGMENTED_DETAILED_MATH
+
+\section{从 Helmholtz 方程到 Fresnel 传播}
+单色标量场 $U(x,y,z)$ 满足
+\begin{equation}
+ (\nabla^2+k^2)U=0,
+ \qquad k=2\pi/\lambda.
+\end{equation}
+写成缓变包络
+\begin{equation}
+ U(x,y,z)=A(x,y,z)e^{ikz}.
+\end{equation}
+代入并忽略 $\partial_z^2A$，得到抛物近似
+\begin{equation}
+ 2ik\partial_zA+\nabla_\perp^2A=0.
+\end{equation}
+对横向 Fourier 变换
+\begin{equation}
+ \widehat A(f_x,f_y,z)=\mathcal F_{xy}[A]
+\end{equation}
+后
+\begin{equation}
+ \partial_z\widehat A
+ =-i\pi\lambda(f_x^2+f_y^2)\widehat A.
+\end{equation}
+解得
+\begin{equation}
+ \widehat A(z)=\widehat A(0)
+ e^{-i\pi\lambda z(f_x^2+f_y^2)}.
+\end{equation}
+反变换即 Fresnel 传播算子。
+
+\section{Fresnel 卷积核}
+利用 Fourier 变换对偶，可写成卷积
+\begin{equation}
+ U_z(x,y)=U_0*h_z,
+\end{equation}
+其中
+\begin{equation}
+ h_z(x,y)=\frac{e^{ikz}}{i\lambda z}
+ \exp\left[i\frac{k}{2z}(x^2+y^2)
+\right].
+\end{equation}
+离散 FFT 实现
+\begin{equation}
+ U_z=\mathcal F^{-1}\left[
+ \mathcal F(U_0)H_z
+ \right].
+\end{equation}
+传播是线性酉近似，理想无孔径情况下
+\begin{equation}
+ \norm{U_z}_2\approx\norm{U_0}_2,
+\end{equation}
+能量损失主要来自有限孔径、采样截断和器件效率，而不是自由空间传播本身。
+
+\section{角谱法与传播带宽}
+更精确角谱传递函数
+\begin{equation}
+ H_z(f_x,f_y)=
+ \exp\left[i2\pi z
+ \sqrt{\lambda^{-2}-f_x^2-f_y^2}\right].
+\end{equation}
+当
+\begin{equation}
+ f_x^2+f_y^2>\lambda^{-2}
+\end{equation}
+根号变为虚数，对应倏逝波指数衰减。Fresnel 近似来自
+\begin{equation}
+ \sqrt{\lambda^{-2}-\rho^2}
+ \approx\lambda^{-1}-\frac\lambda2\rho^2,
+\end{equation}
+要求 $\lambda^2\rho^2\ll1$，即小角度、近轴条件。
+
+\section{多层衍射网络的矩阵形式}
+离散传播写成复矩阵 $P_\ell$，相位面
+\begin{equation}
+ D_\ell=\diag(e^{i\phi_{\ell,1}},\ldots,e^{i\phi_{\ell,n}}).
+\end{equation}
+多层输出
+\begin{equation}
+ U_L=P_LD_LP_{L-1}D_{L-1}\cdots P_1D_1U_0.
+\end{equation}
+探测器只测强度
+\begin{equation}
+ I_L=|U_L|^2=U_L\odot U_L^*.
+\end{equation}
+因此网络对复振幅是线性的，但从输入到测得强度是二次非线性；多层相位通过复数干涉实现高维非线性分类/生成映射。
+
+\section{相位参数的 Wirtinger 梯度}
+单个相位像素
+\begin{equation}
+ V_j=e^{i\phi_j}U_j.
+\end{equation}
+导数
+\begin{equation}
+ \frac{\partial V_j}{\partial\phi_j}=iV_j.
+\end{equation}
+设后续线性传播输出 $Y=PV$，实损失 $\Loss(Y,Y^*)$。用复数伴随变量 $g_Y=\partial\Loss/\partial Y^*$，反传到 $V$
+\begin{equation}
+ g_V=P^Hg_Y.
+\end{equation}
+相位实梯度
+\begin{equation}
+ \boxed{
+ \frac{\partial\Loss}{\partial\phi_j}
+ =2\operatorname{Re}[g_{V,j}^*iV_j]
+ =-2\operatorname{Im}[g_{V,j}^*V_j].
+ }
+\end{equation}
+这就是数字训练中“光学反向传播”的核心公式，$P^H$ 对应反向传播的共轭传播算子。
+
+\section{输出效率与归一化损失}
+目标区域 $\Omega$ 的衍射效率
+\begin{equation}
+ \eta=\frac{\sum_{j\in\Omega}|U_{L,j}|^2}
+ {\sum_j|U_{L,j}|^2}.
+\end{equation}
+若只最小化图像 MSE，模型可能用很低总光功率匹配归一化形状。可加入
+\begin{equation}
+ \Loss=\Loss_{\mathrm{img}}+\lambda(1-\eta).
+\end{equation}
+对分子 $A$、分母 $B$，商的梯度
+\begin{equation}
+ \nabla\eta=\frac{B\nabla A-A\nabla B}{B^2}.
+\end{equation}
+该项同时推动能量进入目标区并抑制背景泄漏。
+
+\section{多波长共享相位面的色散}
+物理厚度 $h(x,y)$ 产生相位
+\begin{equation}
+ \phi_\lambda(x,y)=\frac{2\pi}{\lambda}[n(\lambda)-n_0]h(x,y).
+\end{equation}
+同一器件在不同波长的相位不是独立参数。梯度对厚度
+\begin{equation}
+ \frac{\partial\Loss}{\partial h}
+ =\sum_\lambda
+ \frac{2\pi[n(\lambda)-n_0]}{\lambda}
+ \frac{\partial\Loss_\lambda}{\partial\phi_\lambda}.
+\end{equation}
+多波长训练是多个任务梯度在物理厚度上的加权和，可能发生颜色通道梯度冲突。
+
+\section{相位量化误差}
+相位量化为 $Q$ 级，步长
+\begin{equation}
+ \Delta=2\pi/Q.
+\end{equation}
+误差 $e\in[-\Delta/2,\Delta/2]$，若均匀分布
+\begin{equation}
+ \E e^2=\Delta^2/12.
+\end{equation}
+小误差下
+\begin{equation}
+ e^{i(\phi+e)}-e^{i\phi}
+ =e^{i\phi}(ie+O(e^2)),
+\end{equation}
+故单层复振幅扰动均方与 $\Delta^2$ 成正比。多层传播上界
+\begin{equation}
+ \norm{\delta U_L}
+ \lesssim\sum_{\ell}
+orm{P_LD_L\cdots P_{\ell+1}}
+ \norm{e_\ell\odot U_\ell}.
+\end{equation}
+酉传播下主要近似为各层误差线性累积。
+
+\section{采样条件与混叠}
+FFT Fresnel 传播要求空间采样间隔 $\Delta x$、窗口 $N\Delta x$ 与传播距离满足带宽约束。典型条件
+\begin{equation}
+ \Delta f=\frac1{N\Delta x},
+ \qquad
+ f_{\max}=\frac1{2\Delta x}.
+\end{equation}
+二次相位在窗口边缘的频率不能超过 Nyquist，否则产生环绕混叠。数值训练若忽略该条件，优化出的相位在模拟中有效、实物中可能完全失真。
+
+\section{噪声与器件偏差的鲁棒训练}
+实际相位
+\begin{equation}
+ \widetilde\phi=Q(\phi)+\delta\phi,
+ \qquad \delta\phi\sim\mathcal N(0,\sigma_\phi^2).
+\end{equation}
+鲁棒目标
+\begin{equation}
+ \Loss_{\mathrm{rob}}(\phi)
+ =\E_{\delta\phi}\Loss(\widetilde\phi).
+\end{equation}
+小噪声 Taylor 展开
+\begin{equation}
+ \E\Loss(\phi+\delta)
+ \approx\Loss(\phi)+\frac{\sigma_\phi^2}{2}
+ \tr(H_\phi\Loss).
+\end{equation}
+因此噪声注入近似惩罚损失曲率，偏好相位扰动不敏感的平坦解。
+\clearpage
+\section{从标量 Helmholtz 方程到角谱传播}
+单色标量场写为
+\begin{equation}
+ U(x,y,z,t)=\Re\{u(x,y,z)e^{-i\omega t}\}.
+\end{equation}
+在均匀介质中，空间复振幅满足 Helmholtz 方程
+\begin{equation}
+ \nabla^2u+k^2u=0,
+ \qquad k=\frac{2\pi n}{\lambda_0}.
+\end{equation}
+对横向坐标做二维 Fourier 变换
+\begin{equation}
+ \widehat u(f_x,f_y,z)=\iint u(x,y,z)
+ e^{-i2\pi(f_xx+f_yy)}\dd x\dd y.
+\end{equation}
+利用微分性质
+\begin{equation}
+ \mathcal F\{\partial_x^2u\}=-(2\pi f_x)^2\widehat u,
+\end{equation}
+得到关于 $z$ 的 ODE
+\begin{equation}
+ \frac{\partial^2\widehat u}{\partial z^2}
+ +k_z^2\widehat u=0,
+\end{equation}
+其中
+\begin{equation}
+ k_z=\sqrt{k^2-(2\pi f_x)^2-(2\pi f_y)^2}.
+\end{equation}
+向前传播解
+\begin{equation}
+ \boxed{\widehat u(f_x,f_y,z)=
+ \widehat u(f_x,f_y,0)e^{ik_zz}.}
+\end{equation}
+逆 Fourier 变换即角谱法传播。
+
+\section{Fresnel 近似的 Taylor 展开}
+在傍轴条件
+\begin{equation}
+ (2\pi f_x)^2+(2\pi f_y)^2\ll k^2
+\end{equation}
+下，令
+\begin{equation}
+ \eta=\lambda^2(f_x^2+f_y^2).
+\end{equation}
+则
+\begin{align}
+ k_z
+ &=k\sqrt{1-\eta}
+ \approx k\left(1-\frac\eta2\right)\\
+ &=k-\pi\lambda(f_x^2+f_y^2).
+\end{align}
+传播传递函数
+\begin{equation}
+ H_F(f_x,f_y;z)=e^{ikz}
+ e^{-i\pi\lambda z(f_x^2+f_y^2)}.
+\end{equation}
+逆变换得到 Fresnel 卷积
+\begin{equation}
+ u_z(x,y)=u_0*h_z,
+\end{equation}
+\begin{equation}
+ h_z(x,y)=\frac{e^{ikz}}{i\lambda z}
+ \exp\left[i\frac{\pi}{\lambda z}(x^2+y^2)\right].
+\end{equation}
+
+\section{离散衍射层的矩阵形式}
+把复场采样并向量化为 $u_\ell\in\mathbb C^N$。传播算子为
+\begin{equation}
+ P_\ell=F^{-1}\operatorname{diag}(H_\ell)F,
+\end{equation}
+相位调制面
+\begin{equation}
+ D_\ell=\operatorname{diag}(e^{i\phi_{\ell,1}},\ldots,e^{i\phi_{\ell,N}}).
+\end{equation}
+多层系统递推
+\begin{equation}
+ u_{\ell+1}=P_\ell D_\ell u_\ell.
+\end{equation}
+最终
+\begin{equation}
+ u_L=P_{L-1}D_{L-1}\cdots P_0D_0u_0.
+\end{equation}
+探测器只测强度
+\begin{equation}
+ I_L=|u_L|^2=u_L\odot u_L^*.
+\end{equation}
+因此相位信息通过干涉转化为强度分布。
+
+\section{相位参数的复数梯度}
+单个相位像素的调制
+\begin{equation}
+ \widetilde u_j=e^{i\phi_j}u_j.
+\end{equation}
+对实参数 $\phi_j$ 求导
+\begin{equation}
+ \frac{\partial\widetilde u_j}{\partial\phi_j}
+ =i e^{i\phi_j}u_j=i\widetilde u_j.
+\end{equation}
+若后续线性传播 $v=P\widetilde u$，实值损失 $\Loss(v,v^*)$，用 Wirtinger 微分可写
+\begin{equation}
+ \frac{\partial\Loss}{\partial\phi_j}
+ =2\Re\left\{
+ \left(\frac{\partial\Loss}{\partial\widetilde u_j^*}\right)
+ \frac{\partial\widetilde u_j^*}{\partial\phi_j}
+ \right\}
+ =2\Re\left\{-i
+ \frac{\partial\Loss}{\partial\widetilde u_j^*}
+ \widetilde u_j^*\right\}.
+\end{equation}
+等价地是前向场与反向伴随场在该像素处的相位相关量。
+
+\section{伴随法的物理意义}
+设总线性算子 $A(\phi)$，输出场 $u=A(\phi)u_0$，平方场误差
+\begin{equation}
+ \Loss=\frac12\|u-u_{\rm tar}\|_2^2.
+\end{equation}
+输出残差 $r=u-u_{\rm tar}$。对某层相位梯度，需要把残差用共轭转置传播回去：
+\begin{equation}
+ \lambda_\ell=P_\ell^*D_{\ell+1}^*\cdots P_{L-1}^*r.
+\end{equation}
+局部梯度
+\begin{equation}
+ \frac{\partial\Loss}{\partial\phi_{\ell,j}}
+ =-2\Im\{\lambda_{\ell,j}^*\widetilde u_{\ell,j}\}.
+\end{equation}
+这与神经网络反向传播完全对应：$P^*$ 是传播算子的伴随，物理上可理解为误差波前反向传播。
+
+\section{强度损失的梯度}
+若目标是强度 $I^*$，
+\begin{equation}
+ \Loss_I=\frac12\sum_j(|u_j|^2-I_j^*)^2.
+\end{equation}
+对 $u_j^*$ 的 Wirtinger 导数
+\begin{equation}
+ \frac{\partial\Loss_I}{\partial u_j^*}
+ =( |u_j|^2-I_j^*)u_j.
+\end{equation}
+当当前场 $u_j=0$ 时，即使目标强度非零，该处局部梯度也为零；需要通过邻域传播和其他像素耦合才能脱离零场。这是强度相位反演的非凸性来源之一。
+
+\section{多波长共享相位面的色散}
+物理厚度 $h(x,y)$、折射率差 $\Delta n(\lambda)$ 产生相位
+\begin{equation}
+ \phi_\lambda(x,y)=
+ \frac{2\pi}{\lambda}\Delta n(\lambda)h(x,y).
+\end{equation}
+同一器件在不同波长的相位不是同一个 $\phi$。若训练时把相位直接视为波长无关参数，会忽略
+\begin{equation}
+ \phi_{\lambda_2}
+ =\phi_{\lambda_1}
+ \frac{\lambda_1}{\lambda_2}
+ \frac{\Delta n(\lambda_2)}{\Delta n(\lambda_1)}.
+\end{equation}
+多色模型应优化物理厚度 $h$，再通过色散模型计算各波长相位。
+
+\section{相位量化误差的上界}
+$B$ bit 相位器件有 $Q=2^B$ 个等级，步长
+\begin{equation}
+ \Delta\phi=\frac{2\pi}{Q}.
+\end{equation}
+最近邻量化误差
+\begin{equation}
+ |\delta\phi|\le\frac{\Delta\phi}{2}=\frac\pi Q.
+\end{equation}
+复透射误差
+\begin{equation}
+ |e^{i(\phi+\delta\phi)}-e^{i\phi}|
+ =2\left|\sin\frac{\delta\phi}{2}\right|
+ \le|\delta\phi|\le\frac\pi Q.
+\end{equation}
+若层输入场范数为 $\|u\|_2$，单层调制误差
+\begin{equation}
+ \|\delta u\|_2\le\frac\pi Q\|u\|_2.
+\end{equation}
+多层误差还会被后续传播算子的条件数放大。
+
+\section{采样条件与频谱混叠}
+横向采样间隔 $\Delta x$ 的 Nyquist 频率
+\begin{equation}
+ |f_x|\le\frac1{2\Delta x}.
+\end{equation}
+Fresnel 核相位梯度
+\begin{equation}
+ \frac{\partial}{\partial x}
+ \left(\frac{\pi x^2}{\lambda z}\right)
+ =\frac{2\pi x}{\lambda z}.
+\end{equation}
+局部空间频率
+\begin{equation}
+ f_x(x)=\frac{x}{\lambda z}.
+\end{equation}
+在计算窗口边缘 $x_{\max}$，需要
+\begin{equation}
+ \frac{x_{\max}}{\lambda z}
+ \le\frac1{2\Delta x}.
+\end{equation}
+否则离散传播会混叠。增大传播距离或减小采样间隔可以缓解。
+
+\section{衍射效率与归一化质量的分离}
+若只比较归一化图像
+\begin{equation}
+ \widetilde I=\frac{I}{\sum_jI_j},
+\end{equation}
+模型可能把极少能量形成正确形状，仍得到较好质量损失。总效率
+\begin{equation}
+ \eta=\frac{\sum_{j\in\Omega_{\rm out}}I_j}
+ {\sum_jI_{0,j}}
+\end{equation}
+需要单独约束。组合目标
+\begin{equation}
+ \Loss=\Loss_{\rm shape}(\widetilde I,I^*)
+ +\lambda_\eta(1-\eta)
+\end{equation}
+同时控制图像形状和光能利用率。
+\end{document}

@@ -1,0 +1,645 @@
+\documentclass[UTF8,12pt,a4paper,fontset=none]{ctexart}
+\usepackage[a4paper,left=1.82cm,right=1.82cm,top=1.72cm,bottom=1.82cm,headheight=15pt]{geometry}
+\usepackage{fontspec,xeCJK}
+\setmainfont{Liberation Serif}
+\setsansfont{DejaVu Sans}
+\setmonofont{DejaVu Sans Mono}
+\setCJKmainfont[BoldFont=Noto Serif CJK SC Bold]{Noto Serif CJK SC}
+\setCJKsansfont[BoldFont=Noto Sans CJK SC Bold]{Noto Sans CJK SC}
+\setCJKmonofont{Noto Sans Mono CJK SC}
+\usepackage{amsmath,amssymb,mathtools,bm}
+\usepackage{booktabs,longtable,tabularx,array,multirow}
+\usepackage{enumitem,xcolor}
+\usepackage[most]{tcolorbox}
+\usepackage{fancyhdr,titlesec,hyperref,cleveref,lastpage}
+\usepackage{tikz,float,caption,listings}
+\usetikzlibrary{arrows.meta,positioning,calc,fit,backgrounds,shapes.geometric}
+\definecolor{mainblue}{RGB}{39,82,138}
+\definecolor{deepblue}{RGB}{25,55,95}
+\definecolor{softblue}{RGB}{235,243,252}
+\definecolor{softgreen}{RGB}{238,248,241}
+\definecolor{softorange}{RGB}{255,246,232}
+\definecolor{softgray}{RGB}{245,246,248}
+\definecolor{warnred}{RGB}{160,48,48}
+\hypersetup{unicode=true,colorlinks=true,linkcolor=deepblue,urlcolor=mainblue,citecolor=deepblue}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.36em}
+\setlength{\tabcolsep}{5pt}
+\renewcommand{\arraystretch}{1.2}
+\allowdisplaybreaks[4]
+\emergencystretch=3em
+\sloppy
+\pagestyle{fancy}\fancyhf{}\fancyfoot[C]{\small 第 \thepage\ 页，共 \pageref{LastPage} 页}\renewcommand{\headrulewidth}{0.4pt}
+\titleformat{\section}{\Large\bfseries\color{deepblue}}{\thesection}{0.65em}{}
+\titleformat{\subsection}{\large\bfseries\color{mainblue}}{\thesubsection}{0.55em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries}{\thesubsubsection}{0.5em}{}
+\numberwithin{equation}{section}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Prob}{\mathbb{P}}
+\newcommand{\Loss}{\mathcal{L}}
+\newcommand{\norm}[1]{\left\lVert #1\right\rVert}
+\newcommand{\ip}[2]{\left\langle #1,#2\right\rangle}
+\newcommand{\tr}{\operatorname{Tr}}
+\newcommand{\diag}{\operatorname{diag}}
+\newcommand{\rank}{\operatorname{rank}}
+\newcommand{\softmax}{\operatorname{softmax}}
+\newcommand{\argmin}{\operatorname*{arg\,min}}
+\newcommand{\argmax}{\operatorname*{arg\,max}}
+\newcommand{\sg}{\operatorname{sg}}
+\newcommand{\KL}{D_{\mathrm{KL}}}
+\newcommand{\dd}{\mathrm{d}}
+\newtcolorbox{keybox}[1][]{enhanced,breakable,colback=softblue,colframe=mainblue,boxrule=0.8pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\newtcolorbox{examplebox}[1][]{enhanced,breakable,colback=softgreen,colframe=green!45!black,boxrule=0.7pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\newtcolorbox{notebox}[1][]{enhanced,breakable,colback=softorange,colframe=orange!70!black,boxrule=0.7pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\newtcolorbox{criticalbox}[1][]{enhanced,breakable,colback=red!3,colframe=warnred,boxrule=0.8pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\lstset{basicstyle=\ttfamily\small,breaklines=true,frame=single,backgroundcolor=\color{softgray},numbers=left,numberstyle=\tiny,showstringspaces=false,columns=fullflexible}
+\hypersetup{pdftitle={39 Continuous Thought Machines 数学过程详解},pdfauthor={OpenAI}}
+\fancyhead[L]{\small 39 Continuous Thought Machines}
+\fancyhead[R]{\small 数学过程详解}
+\setlength{\abovedisplayskip}{0.82em}
+\setlength{\belowdisplayskip}{0.82em}
+\setlength{\abovedisplayshortskip}{0.45em}
+\setlength{\belowdisplayshortskip}{0.45em}
+\begin{document}
+\begin{center}
+{\LARGE\bfseries 39\_Continuous Thought Machines 数学过程详解}\par
+\vspace{0.35em}
+{\large 神经元历史模型、同步矩阵与确定度自适应计算}
+\end{center}
+\vspace{0.45em}
+\begin{keybox}[本文只处理真正需要推导的部分]
+本文逐式推导内部 tick、私人 NLM、同步 Gram 矩阵、指数衰减递推、pair subsampling、同步注意力、熵确定度、双 tick 损失和停机期望。全文按“公式从哪里来--每个符号是什么--中间步骤为何成立--维度和复杂度如何核对--论文结论依赖哪些假设”的顺序展开；不复述实验表格，也不使用与论文无关的通用背景凑页数。
+\end{keybox}
+\tableofcontents
+\newpage
+
+\section{CTM 的内部时间轴}
+静态输入也在内部 tick $t=1,\ldots,T$ 上迭代。神经元状态
+\begin{equation}
+ z_t\in\R^D,
+\end{equation}
+与数据注意力输出 $o_t$ 经过共享突触网络
+\begin{equation}
+ \boxed{a_t=f_{\theta_{\rm syn}}([z_t;o_t])\in\R^D}.
+\end{equation}
+最近 $M$ 个 pre-activation 组成
+\begin{equation}
+ A_t=[a_{t-M+1},\ldots,a_t]\in\R^{D\times M}.
+\end{equation}
+
+\section{每个神经元的私人时间模型}
+第 $d$ 个神经元取历史行向量 $A_t^{(d)}\in\R^M$，用独立参数
+\begin{equation}
+ z_{t+1,d}=g_{\theta_d}(A_t^{(d)}).
+\end{equation}
+若一层 MLP 宽度 $h$：
+\begin{equation}
+ g_{\theta_d}(u)=w_{2,d}^\top\sigma(W_{1,d}u+b_{1,d})+b_{2,d}.
+\end{equation}
+参数量约
+\begin{equation}
+ P_{\rm NLM}=D(hM+h+h+1)=O(DhM),
+\end{equation}
+区别于标准 RNN 的共享时间更新矩阵：CTM 的每个神经元对自己的历史有不同滤波器。
+
+\section{同步矩阵作为 latent representation}
+收集后激活历史
+\begin{equation}
+ Z_t=[z_1,z_2,\ldots,z_t]\in\R^{D\times t}.
+\end{equation}
+同步矩阵
+\begin{equation}
+ \boxed{S_t=Z_tZ_t^\top\in\R^{D\times D}},
+\end{equation}
+元素
+\begin{equation}
+ S_{t,ij}=\sum_{\tau=1}^{t}z_{\tau,i}z_{\tau,j}.
+\end{equation}
+它是未中心化时间相关矩阵。对角线是神经元历史能量，非对角线是共同激活；比单帧 $z_t$ 包含更长时间结构。
+
+\section{归一化指数衰减同步}
+每对神经元有 $r_{ij}\ge0$，权重
+\begin{equation}
+ w_\tau=e^{-r_{ij}(t-\tau)}.
+\end{equation}
+论文同步量
+\begin{equation}
+ \boxed{
+ S_{t,ij}^{(r)}=
+ \frac{\sum_{\tau=1}^{t}w_\tau z_{\tau,i}z_{\tau,j}}
+ {\sqrt{\sum_{\tau=1}^{t}w_\tau}}}.
+\end{equation}
+$r=0$ 时平等使用全历史；$r$ 大时只看最近 tick。有效时间常数约
+\begin{equation}
+ \tau_{\rm eff}\approx1/r
+\end{equation}
+（离散小 $r$ 情形）。
+
+\section{同步的递推计算}
+定义分子和归一化量
+\begin{equation}
+ P_t=\sum_{\tau=1}^{t}e^{-r(t-\tau)}z_{\tau,i}z_{\tau,j},
+ \quad Q_t=\sum_{\tau=1}^{t}e^{-r(t-\tau)}.
+\end{equation}
+则
+\begin{align}
+ P_{t+1}&=e^{-r}P_t+z_{t+1,i}z_{t+1,j},\\
+ Q_{t+1}&=e^{-r}Q_t+1.
+\end{align}
+同步量 $S_{t,ij}=P_t/\sqrt{Q_t}$。每个选中 neuron pair 每 tick 只需 $O(1)$ 更新，无需保存完整 $Z_t$。
+
+\section{Pair Subsampling 的维度}
+完整 $S_t$ 有 $D^2$ 元素。随机选 $D_{\rm action}$ 对形成
+\begin{equation}
+ s_t^{\rm action}\in\R^{D_{\rm action}},
+\end{equation}
+再投影为注意力 query
+\begin{equation}
+ q_t=W_{\rm in}s_t^{\rm action}.
+\end{equation}
+另选 $D_{\rm out}$ 对
+\begin{equation}
+ y_t=W_{\rm out}s_t^{\rm out}.
+\end{equation}
+计算从 $O(D^2t)$ 降为 $O((D_{\rm action}+D_{\rm out})t)$，但随机子采样只保留部分二阶关系。
+
+\section{同步如何驱动外部注意力}
+数据特征 $K,V=F(x)$，query 来自内部同步：
+\begin{equation}
+ o_t=\operatorname{Attention}(q_t,K,V)
+ =\softmax\left(\frac{q_tK^\top}{\sqrt d}\right)V.
+\end{equation}
+因此下一个内部状态依赖
+\begin{equation}
+ z_{t+1}=G(z_{\le t},\operatorname{Attention}(S_t,F(x))).
+\end{equation}
+注意位置不是固定扫描，而是由过去神经动态的二阶统计自适应决定。
+
+\section{确定度的熵定义}
+类别分布 $p_t=\softmax(y_t)$，熵
+\begin{equation}
+ H_t=-\sum_{c=1}^{C}p_{t,c}\log p_{t,c}.
+\end{equation}
+最大熵为 $\log C$，归一化确定度
+\begin{equation}
+ \boxed{C_t=1-\frac{H_t}{\log C}}.
+\end{equation}
+均匀分布时 $C_t=0$，one-hot 极限时 $C_t=1$。这衡量分布尖锐度，不保证预测正确。
+
+\section{双 tick 损失}
+每 tick 交叉熵
+\begin{equation}
+ L_t=-\log p_t(y).
+\end{equation}
+选择
+\begin{equation}
+ t_1=\argmin_tL_t,
+ \qquad t_2=\argmax_tC_t,
+\end{equation}
+总损失
+\begin{equation}
+ \boxed{\Loss=\frac{L_{t_1}+L_{t_2}}{2}}.
+\end{equation}
+第一项奖励任意时刻出现正确解；第二项要求“最自信的时刻也要正确”，抑制错误高置信度。
+
+\section{argmin/argmax 选择的梯度}
+选择索引视为离散常数，反向只通过两个 tick：
+\begin{equation}
+ \nabla_\theta\Loss=\frac12
+ (\nabla_\theta L_{t_1}+\nabla_\theta L_{t_2}).
+\end{equation}
+索引切换边界处损失不可微，但几乎处处可用子梯度。缺点是其它 tick 无直接监督；共享递归参数仍会通过 BPTT 间接收到梯度。
+
+\section{自适应停机}
+给定阈值 $\tau$，停机时间
+\begin{equation}
+ T_\tau=\min\{t:C_t\ge\tau\}\wedge T.
+\end{equation}
+期望计算
+\begin{equation}
+ \E[T_\tau]=\sum_{t=0}^{T-1}\Pr(T_\tau>t).
+\end{equation}
+提高 $\tau$ 通常增加计算和准确率；若确定度未校准，早停可能把自信错误提前输出。
+
+\section{与普通 RNN 的状态维度差异}
+普通 RNN 用 $z_t\in\R^D$ 作为全部状态。CTM 用同步向量，潜在二阶维度可达
+\begin{equation}
+ \frac{D(D+1)}2.
+\end{equation}
+即使只采样 $P$ 对，仍等价于从高维二阶特征映射
+\begin{equation}
+ \varphi(Z_t)=\{\ip{Z_{t,i}}{Z_{t,j}}\}_{(i,j)}
+\end{equation}
+中选坐标。这类似二次核特征，能线性读出单个神经元状态无法表示的相位/同步关系。
+
+\section{同步尺度不变性与局限}
+若所有历史状态乘 $a$，
+\begin{equation}
+ S_t\mapsto a^2S_t.
+\end{equation}
+因此同步不是幅值不变。可选的相关系数归一化
+\begin{equation}
+ \rho_{ij}=\frac{S_{ij}}{\sqrt{S_{ii}S_{jj}}}
+\end{equation}
+会去除尺度，但论文保留能量信息。其代价是激活幅值可能主导同步，需依赖归一化和训练稳定性。
+% AUGMENTED_DETAILED_MATH_2
+
+\section{私人神经元时间模型的卷积形式}
+CTM 每个神经元 $i$ 不只看当前 pre-activation，而是看长度 $M$ 的历史
+\begin{equation}
+ a_{t-M+1:t,i}.
+\end{equation}
+线性私人模型可写成一维因果卷积
+\begin{equation}
+ z_{t,i}=\sum_{m=0}^{M-1}w_{i,m}a_{t-m,i}+b_i.
+\end{equation}
+不同神经元拥有不同核 $w_i$，因此同一输入脉冲可产生不同延迟、振荡或积分响应。若再接非线性 $\phi$，
+\begin{equation}
+ z_{t,i}=\phi(w_i^\top a_{t-M+1:t,i}+b_i).
+\end{equation}
+这相当于每个神经元有私人 FIR 动力系统，而普通 MLP 神经元只对应 $M=1$。
+
+\section{时间核的频率响应}
+线性核的离散 Fourier 响应
+\begin{equation}
+ H_i(e^{i\omega})=\sum_{m=0}^{M-1}w_{i,m}e^{-i\omega m}.
+\end{equation}
+不同 $w_i$ 可形成低通、高通或带通神经元。同步表示随后计算不同频率响应之间的相关性，因此 CTM 的时间处理不只是“多迭代几次”，而是在神经元层面学习不同时间滤波器。
+
+\section{同步矩阵是 Gram 矩阵}
+收集每个神经元历史向量
+\begin{equation}
+ Z_i=[z_{1,i},\ldots,z_{t,i}]^\top.
+\end{equation}
+同步
+\begin{equation}
+ S_{ij}=Z_i^\top Z_j.
+\end{equation}
+矩阵形式
+\begin{equation}
+ S=Z^\top Z.
+\end{equation}
+因此
+\begin{equation}
+ S\succeq0,
+ \qquad \rank(S)\le t.
+\end{equation}
+对任意 $c$，
+\begin{equation}
+ c^\top Sc=\norm{Zc}^2\ge0.
+\end{equation}
+同步表示本质是神经元时间轨迹的二阶 Gram 特征。
+
+\section{指数衰减同步的归一化}
+权重
+\begin{equation}
+ w_\tau=e^{-r(t-\tau)}.
+\end{equation}
+加权内积
+\begin{equation}
+ P_{ij}=\sum_\tau w_\tau z_{\tau,i}z_{\tau,j}.
+\end{equation}
+论文除以 $\sqrt{\sum w_\tau}$ 而不是 $\sum w_\tau$：
+\begin{equation}
+ S_{ij}=P_{ij}/\sqrt{Q},
+ \qquad Q=\sum w_\tau.
+\end{equation}
+若 $z_i,z_j$ 是独立零均值、方差固定随机序列，则 $P_{ij}$ 标准差约与 $\sqrt{\sum w_\tau^2}$ 成正比；平方根归一化使统计尺度随有效窗口增长更慢，接近保持随机相关量的方差，而非计算普通加权平均。
+
+\section{递推与时间复杂度}
+令衰减因子 $\lambda=e^{-r}$，
+\begin{equation}
+ P_t=\sum_{\tau=1}^{t}\lambda^{t-\tau}z_{\tau,i}z_{\tau,j}.
+\end{equation}
+则
+\begin{equation}
+ P_{t+1}=\lambda P_t+z_{t+1,i}z_{t+1,j},
+\end{equation}
+\begin{equation}
+ Q_{t+1}=\lambda Q_t+1.
+\end{equation}
+若只采样 $P$ 对神经元，每 tick 成本 $O(P)$、状态 $O(P)$；若完整计算所有对，则成本和存储 $O(D^2)$。
+
+\section{随机 pair subsampling 的估计性质}
+完整同步特征有 $D(D+1)/2$ 个。若均匀随机采样集合 $\mathcal P$，大小 $P$，对某线性读出
+\begin{equation}
+ y=\sum_{i\le j}a_{ij}S_{ij}
+\end{equation}
+可构造无偏估计
+\begin{equation}
+ \widehat y=\frac{D(D+1)/2}{P}
+ \sum_{(i,j)\in\mathcal P}a_{ij}S_{ij}.
+\end{equation}
+方差随 $1/P$ 下降，但论文实际把采样坐标输入可训练投影，并不显式做该重要性缩放；它学习的是一个随机二阶子空间，而非完整同步读出的无偏 Monte Carlo 近似。
+
+\section{同步注意力的维度链}
+选中同步向量
+\begin{equation}
+ s_t\in\R^P,
+\end{equation}
+线性投影
+\begin{equation}
+ q_t=W_qs_t,
+ \qquad W_q\in\R^{d_k\times P}.
+\end{equation}
+外部特征 $K\in\R^{N\times d_k}$、$V\in\R^{N\times d_v}$，注意力
+\begin{equation}
+ o_t=\softmax(Kq_t/\sqrt{d_k})^\top V.
+\end{equation}
+因此外部读取位置由内部二阶历史 $s_t$ 决定，梯度链为
+\begin{equation}
+ \frac{\partial\Loss}{\partial s_t}
+ =W_q^\top
+ \frac{\partial q_t}{\partial s_t}^\top
+ \frac{\partial o_t}{\partial q_t}^\top
+ \frac{\partial\Loss}{\partial o_t}.
+\end{equation}
+同步不是仅用于最终分类，而会反向塑造每个 tick 的观察策略。
+
+\section{熵确定度的边界与梯度}
+归一化确定度
+\begin{equation}
+ C(p)=1+\frac1{\log K}\sum_{k=1}^{K}p_k\log p_k.
+\end{equation}
+由熵界 $0\le H(p)\le\log K$，有 $0\le C\le1$。对概率
+\begin{equation}
+ \frac{\partial C}{\partial p_k}
+ =\frac{\log p_k+1}{\log K}.
+\end{equation}
+通过 softmax logit $a_j$，
+\begin{equation}
+ \frac{\partial C}{\partial a_j}
+ =\sum_k\frac{\partial C}{\partial p_k}p_k(\delta_{kj}-p_j).
+\end{equation}
+高确定度只表示分布尖锐，不表示 calibration；错误 one-hot 同样有 $C=1$。
+
+\section{双 tick 选择的次梯度}
+损失
+\begin{equation}
+ \Loss=\frac12(L_{t_1}+L_{t_2}),
+ \quad t_1=\argmin_tL_t,
+ \quad t_2=\argmax_tC_t.
+\end{equation}
+在唯一极值且索引不变的邻域，
+\begin{equation}
+ \nabla\Loss=\frac12(\nabla L_{t_1}+
+abla L_{t_2}).
+\end{equation}
+当两个 tick 值相等时索引发生跳变，目标不可微，可取活跃极值集合梯度的凸包作为 Clarke 次梯度。实践的 argmin/argmax 选择等价于选择其中一个子梯度。
+
+\section{BPTT 的时间 Jacobian}
+递归状态
+\begin{equation}
+ h_{t+1}=F_\theta(h_t,o_t).
+\end{equation}
+最终损失对早期状态
+\begin{equation}
+ \frac{\partial\Loss}{\partial h_t}
+ =\prod_{s=t}^{T-1}J_{F,h}(h_s)
+ \frac{\partial\Loss}{\partial h_T}+\cdots.
+\end{equation}
+若 Jacobian 谱半径长期大于 1，梯度爆炸；小于 1，梯度消失。CTM 虽在内部引入多 tick，仍需处理普通递归网络的稳定性问题，通常依靠归一化、残差和截断 tick 数。
+
+\section{自适应停机的风险--计算目标}
+停机时间
+\begin{equation}
+ T_\tau=\min\{t:C_t\ge\tau\}\wedge T_{\max}.
+\end{equation}
+可把计算惩罚纳入训练
+\begin{equation}
+ J(\theta)=\E[L_{T_\tau}+\lambda T_\tau].
+\end{equation}
+$T_\tau$ 离散不可微，可用每 tick 停机概率 $h_t=\sigma(a_t)$ 构造可微期望
+\begin{equation}
+ \Pr(T=t)=h_t\prod_{s<t}(1-h_s),
+\end{equation}
+再优化
+\begin{equation}
+ \sum_t\Pr(T=t)(L_t+\lambda t).
+\end{equation}
+论文的阈值停机更简单，但阈值必须在验证集上校准。
+\clearpage
+\section{CTM 的双时间尺度}
+外部数据步记为 $t$，内部思考 tick 记为 $s=1,\ldots,S$。对固定输入 $x_t$，模型在内部时间上递推
+\begin{equation}
+ h^{(s+1)}=F_\theta(h^{(s)},x_t,a^{(s)}).
+\end{equation}
+输出可在任意 tick 读取
+\begin{equation}
+ y^{(s)}=G_\theta(h^{(s)}).
+\end{equation}
+因此计算图不是普通“一层一表示”，而是同一输入上形成长度 $S$ 的内部动力系统。
+
+\section{每个神经元的私人时间模型}
+设第 $i$ 个神经元接收过去 $M$ 个预激活
+\begin{equation}
+ z_i^{(s-M+1:s)}.
+\end{equation}
+私人时间模型可写为
+\begin{equation}
+ h_i^{(s)}=\phi_i\left(
+ \sum_{\tau=0}^{M-1}w_{i\tau}z_i^{(s-\tau)}+b_i
+ \right).
+\end{equation}
+不同神经元拥有不同时间核 $w_i$，相当于 depthwise temporal convolution。若再用 MLP，
+\begin{equation}
+ h_i^{(s)}=g_i(z_i^{(s-M+1:s)}),
+\end{equation}
+则每个神经元可以学习非线性时间模式。
+
+\section{时间核的频率响应}
+线性部分
+\begin{equation}
+ y_i^{(s)}=\sum_{\tau=0}^{M-1}w_{i\tau}z_i^{(s-\tau)}
+\end{equation}
+的离散频率响应
+\begin{equation}
+ H_i(e^{i\omega})=
+ \sum_{\tau=0}^{M-1}w_{i\tau}e^{-i\omega\tau}.
+\end{equation}
+某些神经元可学低通核，整合长期趋势；另一些可学高通或带通核，响应变化和振荡。CTM 的异质时间处理在数学上表现为不同 $H_i(\omega)$。
+
+\section{同步矩阵是 Gram 矩阵}
+设每个神经元在最近窗口的活动向量
+\begin{equation}
+ a_i=(h_i^{(s-M+1)},\ldots,h_i^{(s)})^\top\in\R^M.
+\end{equation}
+同步可定义为归一化内积
+\begin{equation}
+ S_{ij}=\frac{a_i^\top a_j}
+ {\|a_i\|\|a_j\|+\epsilon}.
+\end{equation}
+若先归一化 $\widetilde a_i=a_i/\|a_i\|$，则
+\begin{equation}
+ S=\widetilde A^\top\widetilde A.
+\end{equation}
+所以 $S\succeq0$，对角线为 1，秩不超过窗口长度 $M$。同步表示并非任意矩阵，而受 Gram 几何约束。
+
+\section{指数衰减同步的递推}
+对乘积 $h_i^{(s)}h_j^{(s)}$ 做指数移动平均：
+\begin{equation}
+ C_{ij}^{(s)}=\lambda C_{ij}^{(s-1)}
+ +(1-\lambda)h_i^{(s)}h_j^{(s)}.
+\end{equation}
+展开
+\begin{equation}
+ C_{ij}^{(s)}=(1-\lambda)
+ \sum_{k=0}^{s-1}\lambda^k
+ h_i^{(s-k)}h_j^{(s-k)}+
+ \lambda^sC_{ij}^{(0)}.
+\end{equation}
+有效记忆长度约
+\begin{equation}
+ \tau_{\rm eff}\approx\frac1{1-\lambda}.
+\end{equation}
+例如 $\lambda=0.99$，约整合最近 100 个 tick。
+
+\section{归一化相关系数的递推}
+同时维护
+\begin{equation}
+ V_i^{(s)}=\lambda V_i^{(s-1)}
+ +(1-\lambda)(h_i^{(s)})^2.
+\end{equation}
+归一化同步
+\begin{equation}
+ S_{ij}^{(s)}=\frac{C_{ij}^{(s)}}
+ {\sqrt{V_i^{(s)}V_j^{(s)}}+\epsilon}.
+\end{equation}
+若所有活动乘同一尺度 $c$，分子乘 $c^2$，分母也乘 $c^2$，同步近似不变。因此它主要编码共同变化方向而非绝对幅值。
+
+\section{随机 pair subsampling 的无偏估计}
+完整同步有 $n(n-1)/2$ 对，成本 $O(n^2)$. 若均匀采样 $K$ 对集合 $\mathcal P$，估计平均同步损失
+\begin{equation}
+ \widehat L=\frac{M}{K}
+ \sum_{(i,j)\in\mathcal P}\ell(S_{ij}),
+ \qquad M=\frac{n(n-1)}2.
+\end{equation}
+若无放回均匀采样，
+\begin{equation}
+ \E[\widehat L]=
+ \sum_{i<j}\ell(S_{ij})=L.
+\end{equation}
+方差随 $K$ 增大而下降。若采样概率不均匀 $p_{ij}$，需 Horvitz--Thompson 权重
+\begin{equation}
+ \widehat L=\frac1K\sum_{(i,j)\sim p}
+ \frac{\ell(S_{ij})}{p_{ij}}.
+\end{equation}
+
+\section{同步表示驱动注意力的维度链}
+选取 $K$ 个神经元对同步值组成
+\begin{equation}
+ s^{(s)}\in\R^K.
+\end{equation}
+线性投影为查询
+\begin{equation}
+ q^{(s)}=W_qs^{(s)}\in\R^{d_a}.
+\end{equation}
+外部视觉或序列 token 为
+\begin{equation}
+ X\in\R^{T\times d_x},
+\end{equation}
+键值
+\begin{equation}
+ K=XW_K\in\R^{T\times d_a},
+ \quad V=XW_V\in\R^{T\times d_v}.
+\end{equation}
+注意力
+\begin{equation}
+ a^{(s)}=\softmax\left(
+ \frac{q^{(s)}K^\top}{\sqrt{d_a}}
+ \right)V\in\R^{d_v}.
+\end{equation}
+这样内部神经同步决定下一 tick 从外部输入读取什么。
+
+\section{熵确定度的边界与梯度}
+分类概率 $p\in\Delta^{C-1}$，熵
+\begin{equation}
+ H(p)=-\sum_{c=1}^{C}p_c\log p_c.
+\end{equation}
+归一化确定度
+\begin{equation}
+ \kappa=1-\frac{H(p)}{\log C}.
+\end{equation}
+均匀分布时 $H=\log C,\kappa=0$；one-hot 时 $H=0,\kappa=1$。对 logit $z_j$，利用 softmax Jacobian可得
+\begin{equation}
+ \frac{\partial H}{\partial z_j}
+ =-p_j(\log p_j+H).
+\end{equation}
+确定度梯度为其相反数除以 $\log C$。
+
+\section{双 tick 损失与不可导选择}
+若训练选择最小损失 tick
+\begin{equation}
+ s_{\min}=\argmin_s\ell^{(s)},
+\end{equation}
+最大确定度 tick
+\begin{equation}
+ s_{\max}=\argmax_s\kappa^{(s)},
+\end{equation}
+目标
+\begin{equation}
+ \Loss=\ell^{(s_{\min})}+\ell^{(s_{\max})}.
+\end{equation}
+argmin/argmax 对参数是分段常数，反向只流过被选 tick。选择边界处梯度不连续。软替代可用
+\begin{equation}
+ w_s=\frac{e^{-\ell^{(s)}/\tau}}
+ {\sum_re^{-\ell^{(r)}/\tau}},
+ \qquad
+ \Loss_{\rm soft}=\sum_sw_s\ell^{(s)},
+\end{equation}
+温度 $\tau\to0$ 时逼近最小值。
+
+\section{BPTT 时间 Jacobian}
+内部递推 $h^{(s+1)}=F(h^{(s)})$，最终损失对早期状态
+\begin{equation}
+ \frac{\partial\Loss}{\partial h^{(s)}}
+ =\left(\prod_{r=s}^{S-1}J_r^\top\right)
+ \frac{\partial\Loss}{\partial h^{(S)}}.
+\end{equation}
+若 $\|J_r\|_2\le\rho$，
+\begin{equation}
+ \left\|\frac{\partial\Loss}{\partial h^{(s)}}\right\|
+ \le\rho^{S-s}
+ \left\|\frac{\partial\Loss}{\partial h^{(S)}}\right\|.
+\end{equation}
+$\rho<1$ 梯度衰减，$\rho>1$ 爆炸。CTM 的内部 tick 增加了自适应计算，也带来与 RNN 相同的长时梯度问题。
+
+\section{自适应停机的风险--计算目标}
+设每个 tick 的停机概率 $p_s$，首次停机分布
+\begin{equation}
+ q_s=p_s\prod_{r<s}(1-p_r).
+\end{equation}
+期望任务损失
+\begin{equation}
+ \E_q[\ell]=\sum_sq_s\ell^{(s)},
+\end{equation}
+期望计算
+\begin{equation}
+ \E_q[s]=\sum_ssq_s.
+\end{equation}
+联合目标
+\begin{equation}
+ \Loss_{\rm ACT}=\sum_sq_s\ell^{(s)}+
+ \lambda\sum_ssq_s.
+\end{equation}
+$\lambda$ 控制准确率与思考时间。仅用置信度阈值停机可能在过度自信样本上过早停止，因此需要校准。
+
+\section{三个神经元的同步数值例子}
+最近三 tick 活动
+\begin{equation}
+ a_1=(1,2,3),\quad
+ a_2=(2,4,6),\quad
+ a_3=(3,2,1).
+\end{equation}
+$a_2=2a_1$，余弦同步
+\begin{equation}
+ S_{12}=1.
+\end{equation}
+而
+\begin{equation}
+ S_{13}=\frac{1\cdot3+2\cdot2+3\cdot1}
+ {\sqrt{14}\sqrt{14}}=\frac{10}{14}\approx0.714.
+\end{equation}
+同步表示能区分“同方向不同尺度”和“相反时间趋势”。
+\end{document}

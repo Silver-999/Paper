@@ -1,0 +1,424 @@
+\documentclass[UTF8,12pt,a4paper,fontset=none]{ctexart}
+\usepackage[a4paper,left=1.82cm,right=1.82cm,top=1.72cm,bottom=1.82cm,headheight=15pt]{geometry}
+\usepackage{fontspec,xeCJK}
+\setmainfont{Liberation Serif}
+\setsansfont{DejaVu Sans}
+\setmonofont{DejaVu Sans Mono}
+\setCJKmainfont[BoldFont=Noto Serif CJK SC Bold]{Noto Serif CJK SC}
+\setCJKsansfont[BoldFont=Noto Sans CJK SC Bold]{Noto Sans CJK SC}
+\setCJKmonofont{Noto Sans Mono CJK SC}
+\usepackage{amsmath,amssymb,mathtools,bm}
+\usepackage{booktabs,longtable,tabularx,array,multirow}
+\usepackage{enumitem,xcolor}
+\usepackage[most]{tcolorbox}
+\usepackage{fancyhdr,titlesec,hyperref,cleveref,lastpage}
+\usepackage{tikz,float,caption,listings}
+\usetikzlibrary{arrows.meta,positioning,calc,fit,backgrounds,shapes.geometric}
+\definecolor{mainblue}{RGB}{39,82,138}
+\definecolor{deepblue}{RGB}{25,55,95}
+\definecolor{softblue}{RGB}{235,243,252}
+\definecolor{softgreen}{RGB}{238,248,241}
+\definecolor{softorange}{RGB}{255,246,232}
+\definecolor{softgray}{RGB}{245,246,248}
+\definecolor{warnred}{RGB}{160,48,48}
+\hypersetup{unicode=true,colorlinks=true,linkcolor=deepblue,urlcolor=mainblue,citecolor=deepblue}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.36em}
+\setlength{\tabcolsep}{5pt}
+\renewcommand{\arraystretch}{1.2}
+\allowdisplaybreaks[4]
+\emergencystretch=3em
+\sloppy
+\pagestyle{fancy}\fancyhf{}\fancyfoot[C]{\small 第 \thepage\ 页，共 \pageref{LastPage} 页}\renewcommand{\headrulewidth}{0.4pt}
+\titleformat{\section}{\Large\bfseries\color{deepblue}}{\thesection}{0.65em}{}
+\titleformat{\subsection}{\large\bfseries\color{mainblue}}{\thesubsection}{0.55em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries}{\thesubsubsection}{0.5em}{}
+\numberwithin{equation}{section}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Prob}{\mathbb{P}}
+\newcommand{\Loss}{\mathcal{L}}
+\newcommand{\norm}[1]{\left\lVert #1\right\rVert}
+\newcommand{\ip}[2]{\left\langle #1,#2\right\rangle}
+\newcommand{\tr}{\operatorname{Tr}}
+\newcommand{\diag}{\operatorname{diag}}
+\newcommand{\rank}{\operatorname{rank}}
+\newcommand{\softmax}{\operatorname{softmax}}
+\newcommand{\argmin}{\operatorname*{arg\,min}}
+\newcommand{\argmax}{\operatorname*{arg\,max}}
+\newcommand{\sg}{\operatorname{sg}}
+\newcommand{\KL}{D_{\mathrm{KL}}}
+\newcommand{\dd}{\mathrm{d}}
+\newtcolorbox{keybox}[1][]{enhanced,breakable,colback=softblue,colframe=mainblue,boxrule=0.8pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\newtcolorbox{examplebox}[1][]{enhanced,breakable,colback=softgreen,colframe=green!45!black,boxrule=0.7pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\newtcolorbox{notebox}[1][]{enhanced,breakable,colback=softorange,colframe=orange!70!black,boxrule=0.7pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\newtcolorbox{criticalbox}[1][]{enhanced,breakable,colback=red!3,colframe=warnred,boxrule=0.8pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\lstset{basicstyle=\ttfamily\small,breaklines=true,frame=single,backgroundcolor=\color{softgray},numbers=left,numberstyle=\tiny,showstringspaces=false,columns=fullflexible}
+\hypersetup{pdftitle={33 Attention Residuals 数学过程详解},pdfauthor={OpenAI}}
+\fancyhead[L]{\small 33 Attention Residuals}
+\fancyhead[R]{\small 数学过程详解}
+\setlength{\abovedisplayskip}{0.82em}
+\setlength{\belowdisplayskip}{0.82em}
+\setlength{\abovedisplayshortskip}{0.45em}
+\setlength{\belowdisplayshortskip}{0.45em}
+\begin{document}
+\begin{center}
+{\LARGE\bfseries 33\_Attention Residuals 数学过程详解}\par
+\vspace{0.35em}
+{\large 从固定残差累加到深度 Softmax 注意力}
+\end{center}
+\vspace{0.45em}
+\begin{keybox}[本文只处理真正需要推导的部分]
+本文推导标准残差展开、Jacobian 梯度、PreNorm 稀释、Full/Block AttnRes、Softmax 梯度、凸组合范数界、复杂度和有效深度。全文按“公式从哪里来--每个符号是什么--中间步骤为何成立--维度和复杂度如何核对--论文结论依赖哪些假设”的顺序展开；不复述实验表格，也不使用与论文无关的通用背景凑页数。
+\end{keybox}
+\tableofcontents
+\newpage
+
+\section{标准残差连接的展开}
+每个注意力或 MLP 子层记为 $f_l$，标准残差递推
+\begin{equation}
+ h_l=h_{l-1}+f_{l-1}(h_{l-1}).
+\end{equation}
+逐层展开：
+\begin{equation}
+ \boxed{h_l=h_1+\sum_{i=1}^{l-1}f_i(h_i)}.
+\end{equation}
+因此标准残差本质上对所有历史层输出赋固定权重 1，而不是仅仅“跳过一层”。
+
+\section{梯度高速路的乘积形式}
+由链式法则
+\begin{equation}
+ \frac{\partial h_{j+1}}{\partial h_j}=I+J_j,
+ \qquad J_j=\frac{\partial f_j}{\partial h_j}.
+\end{equation}
+于是
+\begin{equation}
+ \boxed{
+ \frac{\partial\Loss}{\partial h_l}
+ =\frac{\partial\Loss}{\partial h_L}
+ \prod_{j=l}^{L-1}(I+J_j)}.
+\end{equation}
+展开乘积必含恒等项 $I$，所以即使高阶 Jacobian 乘积很小，仍有直接梯度路径。但这不保证梯度范数绝对稳定；若 $J_j$ 的谱半径大，乘积仍可能爆炸。
+
+\section{PreNorm 的残差稀释}
+若各层输出 $v_i=f_i(h_i)$ 近似零均值且相互不相关，标准残差
+\begin{equation}
+ h_l=h_1+\sum_{i<l}v_i
+\end{equation}
+的方差
+\begin{equation}
+ \E\norm{h_l}^2\approx\E\norm{h_1}^2+
+ \sum_{i<l}\E\norm{v_i}^2=O(l).
+\end{equation}
+单个早期输出在总状态中的相对能量约
+\begin{equation}
+ \frac{\E\norm{v_i}^2}{\E\norm{h_l}^2}=O(1/l).
+\end{equation}
+这就是“dilution”：不是信息被删除，而是固定累加使每层相对贡献随深度下降。
+
+\section{Full AttnRes 的深度注意力}
+定义值
+\begin{equation}
+ v_0=h_1,
+ \qquad v_i=f_i(h_i),\ 1\le i<l.
+\end{equation}
+每层有可学习伪查询 $q_l=w_l\in\R^d$，键
+\begin{equation}
+ k_i=\operatorname{RMSNorm}(v_i).
+\end{equation}
+深度 logits
+\begin{equation}
+ s_{i\to l}=q_l^\top k_i,
+\end{equation}
+权重
+\begin{equation}
+ \boxed{\alpha_{i\to l}=
+ \frac{e^{s_{i\to l}}}{\sum_{j=0}^{l-1}e^{s_{j\to l}}}}.
+\end{equation}
+输入状态
+\begin{equation}
+ \boxed{h_l=\sum_{i=0}^{l-1}\alpha_{i\to l}v_i}.
+\end{equation}
+由于 $\alpha_i\ge0$ 且和为 1，$h_l$ 是历史输出的凸组合。
+
+\section{RMSNorm 为什么必须在 Key 上}
+若不归一化，logit
+\begin{equation}
+ s_i=q^\top v_i=\norm{q}\norm{v_i}\cos\theta_i
+\end{equation}
+同时受方向和幅值控制。深层 $\norm{v_i}$ 较大时，即使方向不匹配也会获得高权重。RMSNorm
+\begin{equation}
+ \operatorname{RMSNorm}(v)=
+ \frac{v}{\sqrt{d^{-1}\norm{v}^2+\epsilon}}
+\end{equation}
+近似消除幅值，只让查询依据方向选择深度信息。
+
+\section{Softmax 深度权重的梯度}
+对 $h=\sum_i\alpha_iv_i$、$\alpha=\softmax(s)$，有
+\begin{equation}
+ \frac{\partial h}{\partial s_j}=\alpha_j(v_j-h).
+\end{equation}
+若上游梯度为 $g=\partial\Loss/\partial h$，
+\begin{equation}
+ \boxed{
+ \frac{\partial\Loss}{\partial s_j}
+ =\alpha_j\ip{g}{v_j-h}}.
+\end{equation}
+当 $v_j$ 比当前平均 $h$ 更沿着降低损失的方向，权重增加；否则减小。深度选择因此是输入相关的，但查询本身按层共享于 token，token 差异来自 keys。
+
+\section{标准残差作为线性深度注意力}
+令未归一化核 $\phi(q,k)=1$，再不做和为 1 的归一化，得到
+\begin{equation}
+ h_l=\sum_{i<l}v_i,
+\end{equation}
+即标准残差。若做平均归一化，则是
+\begin{equation}
+ h_l=\frac1l\sum_{i<l}v_i.
+\end{equation}
+AttnRes 的数学升级是把固定线性聚合改为指数核的 Softmax 聚合。
+
+\section{Block AttnRes 的块内和块间分解}
+把 $L$ 个子层分为 $N$ 块，每块 $S=L/N$ 层。第 $n$ 块完整表示
+\begin{equation}
+ b_n=\sum_{j\in B_n}f_j(h_j).
+\end{equation}
+块内第 $i$ 层前的部分和
+\begin{equation}
+ b_n^{(i-1)}=\sum_{j\in B_n,\,j<i}f_j(h_j).
+\end{equation}
+可选值集合
+\begin{equation}
+ V=\begin{cases}
+ [b_0,b_1,\ldots,b_{n-1}]^\top,&i=1,\\
+ [b_0,b_1,\ldots,b_{n-1},b_n^{(i-1)}]^\top,&i>1,
+ \end{cases}
+\end{equation}
+其中 $b_0=h_1$。对该小集合执行同样 Softmax 深度注意力。
+
+\section{复杂度推导}
+Full AttnRes 第 $l$ 层读取 $l$ 个 $d$ 维值，总代价
+\begin{equation}
+ \sum_{l=1}^{L}O(ld)=O(L^2d),
+\end{equation}
+存储历史
+\begin{equation}
+ O(Ld).
+\end{equation}
+Block 版本每层最多读取 $N+1$ 个表示：
+\begin{equation}
+ C_{\rm block}=O(LNd),
+\end{equation}
+若只按块边界聚合查询可视为 $O(N^2d)$ 的跨块核心；通信/长期缓存为
+\begin{equation}
+ O(Nd).
+\end{equation}
+$N=L$ 恢复 Full，$N=1$ 接近标准残差。
+
+\section{凸组合给出的范数上界}
+因为 $\alpha_i\ge0$、$\sum_i\alpha_i=1$，
+\begin{equation}
+ \norm{h_l}
+ =\norm{\sum_i\alpha_iv_i}
+ \le\sum_i\alpha_i\norm{v_i}
+ \le\max_i\norm{v_i}.
+\end{equation}
+标准残差只有
+\begin{equation}
+ \norm{\sum_iv_i}\le\sum_i\norm{v_i},
+\end{equation}
+最坏随 $l$ 线性增长。AttnRes 的归一化权重从结构上抑制隐藏状态幅值无界累积。
+
+\section{查询参数量}
+若每个子层有一个伪查询 $w_l\in\R^d$，新增参数
+\begin{equation}
+ P_{\rm query}=Ld.
+\end{equation}
+相对每层 Transformer 的 $O(d^2)$ 参数，占比
+\begin{equation}
+ \frac{Ld}{Ld^2}=O(1/d).
+\end{equation}
+因此宽模型中参数开销极小；真正挑战是历史激活通信而非参数。
+
+\section{注意力饱和与有效深度}
+深度权重的熵
+\begin{equation}
+ H_l=-\sum_i\alpha_{i\to l}\log\alpha_{i\to l}
+\end{equation}
+定义有效参与层数
+\begin{equation}
+ N_{\rm eff}=e^{H_l}.
+\end{equation}
+均匀权重时 $N_{\rm eff}=l$；只选一层时为 1。该指标比“最大权重”更完整地描述模型实际使用的历史深度。
+\section{最终公式路线图}
+\begin{keybox}[阅读完成后应掌握]
+本文的数学主线已经被压缩为：先明确随机变量或张量的定义，再由概率分解、微分方程、优化目标或矩阵运算得到论文核心公式；最后用维度、极限情形、参数量和复杂度进行反向核验。遇到论文中的简写式，应先恢复被省略的条件变量、求和指标与归一化常数，再讨论其算法含义。
+\end{keybox}
+\clearpage
+\section{标准残差的完整展开与深度稀释}
+PreNorm Transformer 可写为
+\begin{equation}
+ h_{\ell+1}=h_\ell+F_\ell(\operatorname{Norm}(h_\ell)).
+\end{equation}
+递归展开
+\begin{equation}
+ h_L=h_0+\sum_{\ell=0}^{L-1}
+ F_\ell(\operatorname{Norm}(h_\ell)).
+\end{equation}
+所有层输出以固定系数 1 累加。若各增量近似独立、每维方差 $\sigma^2$，则
+\begin{equation}
+ \operatorname{Var}(h_L)\approx
+ \operatorname{Var}(h_0)+L\sigma^2.
+\end{equation}
+某一层增量占总标准差的相对量级约
+\begin{equation}
+ \frac{\sigma}{\sqrt{L}\sigma}=L^{-1/2},
+\end{equation}
+随深度被稀释。
+
+\section{Full Attention Residual 的数学定义}
+第 $\ell$ 层从历史表示 $h_0,\ldots,h_\ell$ 中注意力聚合：
+\begin{equation}
+ \widetilde h_\ell=
+ \sum_{j=0}^{\ell}a_{\ell j}h_j,
+\end{equation}
+\begin{equation}
+ a_{\ell j}=\frac{
+ \exp(q_\ell^\top k_j/\sqrt d)}
+ {\sum_{m=0}^{\ell}
+ \exp(q_\ell^\top k_m/\sqrt d)}.
+\end{equation}
+再计算
+\begin{equation}
+ h_{\ell+1}=
+ \widetilde h_\ell+F_\ell(\operatorname{Norm}(\widetilde h_\ell)).
+\end{equation}
+因为 $a_{\ell j}\ge0$ 且和为 1，$\widetilde h_\ell$ 是历史表示的凸组合。
+
+\section{凸组合的范数上界}
+由三角不等式
+\begin{equation}
+ \|\widetilde h_\ell\|
+ \le\sum_ja_{\ell j}\|h_j\|
+ \le\max_{j\le\ell}\|h_j\|.
+\end{equation}
+因此纯聚合步骤不会超过历史最大范数。标准残差求和则只有
+\begin{equation}
+ \left\|\sum_jh_j\right\|
+ \le\sum_j\|h_j\|,
+\end{equation}
+最坏可线性增长。该上界是 AttnRes 抑制隐藏状态无控制增长的核心数学性质。
+
+\section{Softmax 深度权重的梯度}
+分数 $s_j=q^\top k_j/\sqrt d$，权重 $a_j=\softmax(s)_j$。输出
+\begin{equation}
+ \widetilde h=\sum_ja_jh_j.
+\end{equation}
+对分数 $s_m$：
+\begin{align}
+ \frac{\partial\widetilde h}{\partial s_m}
+ &=\sum_j a_j(\mathbf 1[j=m]-a_m)h_j\\
+ &=a_m(h_m-\widetilde h).
+\end{align}
+如果历史状态 $h_m$ 与当前聚合输出差异大且有利于损失，分数梯度会调整其权重；若 $h_m\approx\widetilde h$，改变其权重影响小。
+
+\section{Key 归一化为何重要}
+若 key 不归一化，分数
+\begin{equation}
+ s_j=q^\top k_j=\|q\|\|k_j\|\cos\theta_j
+\end{equation}
+同时受方向相似度和 key 范数影响。深层表示范数若更大，会仅靠尺度获得更高注意力。RMSNorm 后
+\begin{equation}
+ \|\widehat k_j\|\approx\sqrt d,
+\end{equation}
+分数近似
+\begin{equation}
+ s_j\approx\|q\|\sqrt d\cos\theta_j,
+\end{equation}
+更接近纯方向相似度。
+
+\section{一个四层数值例子}
+历史标量状态
+\begin{equation}
+ h=(1,2,5,4),
+\end{equation}
+若标准残差累加，值为 12。若 AttnRes 权重
+\begin{equation}
+ a=(0.1,0.2,0.5,0.2),
+\end{equation}
+则
+\begin{equation}
+ \widetilde h=0.1+0.4+2.5+0.8=3.8.
+\end{equation}
+它位于历史最小值 1 与最大值 5 之间。权重集中在第三层，说明当前层认为第三层表示最有用，而非机械地等权累加。
+
+\section{Block AttnRes 的块级近似}
+把 $L$ 层分成 $B$ 个块，每块 $m=L/B$ 层。块摘要 $c_b$ 可由块内最后状态或可学习聚合得到。第 $b$ 块只对 $c_{0:b}$ 做深度注意力：
+\begin{equation}
+ \widetilde c_b=\sum_{j=0}^{b}a_{bj}c_j.
+\end{equation}
+缓存从所有层的 $O(Ld)$ 降为
+\begin{equation}
+ O(Bd)=O\left(\frac Lm d\right).
+\end{equation}
+如果块摘要近似块内状态 $h_{jm+r}$，误差
+\begin{equation}
+ \|h_{jm+r}-c_j\|\le\delta_j,
+\end{equation}
+则用块摘要替代精细层注意力的输出误差上界
+\begin{equation}
+ \left\|\sum_{j,r}w_{jr}h_{jm+r}-
+ \sum_j\bar w_jc_j\right\|
+ \le\sum_j\bar w_j\delta_j+
+ \text{权重聚合误差}.
+\end{equation}
+
+\section{复杂度逐项推导}
+Full AttnRes 第 $\ell$ 层对 $\ell+1$ 个历史状态计算分数，全部层深度分数数目
+\begin{equation}
+ \sum_{\ell=0}^{L-1}(\ell+1)=\frac{L(L+1)}2=O(L^2).
+\end{equation}
+每个分数是 $d$ 维点积，总成本
+\begin{equation}
+ O(L^2d).
+\end{equation}
+Block AttnRes 只有 $B=L/m$ 个块摘要，块间分数成本
+\begin{equation}
+ O(B^2d)=O\left(\frac{L^2}{m^2}d\right).
+\end{equation}
+再加块内 $O(Lmd)$ 或普通残差开销。$m$ 越大，块间成本越低，但近似更粗。
+
+\section{对查询和 Key 的梯度}
+分数 $s_j=q^\top k_j/\sqrt d$。利用
+\begin{equation}
+ \frac{\partial\widetilde h}{\partial s_j}=a_j(h_j-\widetilde h),
+\end{equation}
+有
+\begin{equation}
+ \frac{\partial\widetilde h}{\partial q}
+ =\frac1{\sqrt d}
+ \sum_ja_j(h_j-\widetilde h)k_j^\top,
+\end{equation}
+\begin{equation}
+ \frac{\partial\widetilde h}{\partial k_j}
+ =\frac{a_j}{\sqrt d}(h_j-\widetilde h)q^\top.
+\end{equation}
+如果 softmax 极度饱和，最大权重接近 1，其 $h_j-\widetilde h\approx0$，梯度反而变小，可能难以从错误的单层选择中恢复。
+
+\section{有效深度与注意力熵}
+深度权重熵
+\begin{equation}
+ H(a_\ell)=-\sum_{j\le\ell}a_{\ell j}\log a_{\ell j}.
+\end{equation}
+定义有效历史层数
+\begin{equation}
+ N_{\rm eff}=e^{H(a_\ell)}.
+\end{equation}
+若均匀关注 $m$ 层，$N_{\rm eff}=m$；若只关注一层，$N_{\rm eff}=1$。该量比最大权重更完整地描述模型实际使用的深度范围。
+
+\section{标准残差是固定权重的特殊情形吗}
+标准展开
+\begin{equation}
+ h_L=h_0+\sum_{j=0}^{L-1}F_j
+\end{equation}
+可看成对增量 $F_j$ 使用固定权重 1，但不是对历史状态 $h_j$ 的 convex attention。AttnRes 聚合的是状态而非仅增量，并带 softmax 归一化。因此标准残差并不能通过简单设置 $a_j=1$ 直接得到，因为 softmax 权重和必须为 1；二者只有在重新参数化和尺度补偿后才能对应。
+\end{document}

@@ -1,0 +1,789 @@
+\documentclass[11pt]{article}
+\usepackage{fontspec}
+\setmainfont[
+  Path=fonts/,
+  Extension=.ttf,
+  UprightFont=*-400,
+  BoldFont=*-700
+]{NotoSerifSC}
+\setsansfont[
+  Path=fonts/,
+  Extension=.ttf,
+  UprightFont=*-400,
+  BoldFont=*-700
+]{NotoSerifSC}
+\XeTeXlinebreaklocale "zh"
+\XeTeXlinebreakskip=0pt plus 1pt
+\usepackage[a4paper,margin=1.70cm]{geometry}
+\usepackage{amsmath,amssymb,mathtools,bm}
+\usepackage{booktabs,longtable,array}
+\usepackage{enumitem}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\setlist{nosep,leftmargin=2em}
+\allowdisplaybreaks[3]
+\numberwithin{equation}{section}
+\pagestyle{plain}
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Pp}{\mathbb{P}}
+\newcommand{\1}{\mathbf{1}}
+\newcommand{\T}{\mathsf{T}}
+\newcommand{\F}{\mathrm{F}}
+\newcommand{\cN}{\mathcal{N}}
+\newcommand{\cL}{\mathcal{L}}
+\newcommand{\cS}{\mathcal{S}}
+\newcommand{\diag}{\operatorname{diag}}
+\newcommand{\tr}{\operatorname{tr}}
+\newcommand{\Var}{\operatorname{Var}}
+\newcommand{\Cov}{\operatorname{Cov}}
+\newcommand{\TopK}{\operatorname{TopK}}
+\newcommand{\sgn}{\operatorname{sign}}
+
+\begin{document}
+\begin{center}
+  {\LARGE\bfseries 29\_FlyLoRA}
+\end{center}
+\vspace{0.8em}
+
+\section{符号与维度}
+
+\begin{longtable}{>{$}l<{$} >{$}l<{$} p{10cm}}
+\toprule
+\text{符号} & \text{维度} & \text{含义}\\
+\midrule
+W_0 & \R^{m\times n} & 冻结的预训练权重。\\
+x & \R^n & 单个输入 token 的列向量。\\
+A & \R^{r\times n} & 下投影；FlyLoRA 中稀疏、随机初始化并冻结。\\
+B & \R^{m\times r} & 上投影；FlyLoRA 中唯一通过梯度训练的适配器矩阵。\\
+a_i=A[i,:] & \R^{1\times n} & $A$ 的第 $i$ 行。\\
+b_i=B[:,i] & \R^{m\times 1} & $B$ 的第 $i$ 列。\\
+y=Ax & \R^r & 稀疏投影后的 rank-wise 激活。\\
+\Lambda & \R^{r\times r} & top-$k$ 二值对角掩码。\\
+\alpha/r & \R & LoRA 缩放系数，以下简记为 $c=\alpha/r$。\\
+p & \{1,\ldots,n-1\} & 每行非零位置数；稀疏率 $q=\rho=p/n$。\\
+k & \{1,\ldots,r\} & 每个样本激活的 rank-1 专家数。\\
+\delta & \R^m & 输出端反向传播向量 $\partial\cL/\partial h$。\\
+\bottomrule
+\end{longtable}
+
+所有向量默认是列向量；$\|\cdot\|_2$ 对向量表示欧氏范数、对矩阵表示谱范数，$\|\cdot\|_\F$ 表示 Frobenius 范数。
+
+\section{从 LoRA 到 rank-wise 专家}
+
+\subsection{LoRA 的基本分解}
+
+LoRA 用秩不超过 $r$ 的矩阵模拟全量更新：
+\begin{equation}
+  W'=W_0+\Delta W,
+  \qquad
+  \Delta W=cBA,
+  \qquad c=\frac{\alpha}{r}.
+  \label{eq:lora-weight}
+\end{equation}
+维度逐项检查为
+\begin{equation}
+  (m\times r)(r\times n)=m\times n,
+  \qquad
+  (m\times n)(n\times 1)=m\times 1.
+\end{equation}
+因此前向传播是
+\begin{equation}
+  f_{\mathrm{LoRA}}(x)
+  =W'x
+  =W_0x+cBAx.
+  \label{eq:lora-forward}
+\end{equation}
+由于
+\begin{equation}
+  B=[b_1,\ldots,b_r],
+  \qquad
+  A=\begin{bmatrix}a_1\\ \vdots\\ a_r\end{bmatrix},
+\end{equation}
+矩阵乘积可按中间指标展开。对任意 $\mu\in\{1,\ldots,m\}$、$\nu\in\{1,\ldots,n\}$，
+\begin{align}
+  (BA)_{\mu\nu}
+  &=\sum_{i=1}^{r}B_{\mu i}A_{i\nu} \\
+  &=\sum_{i=1}^{r}(b_i)_\mu(a_i)_\nu
+  =\left(\sum_{i=1}^{r}b_i a_i\right)_{\mu\nu}.
+\end{align}
+故有精确恒等式
+\begin{equation}
+  BA=\sum_{i=1}^{r}b_i a_i,
+  \qquad
+  BAx=\sum_{i=1}^{r}b_i(a_i x).
+  \label{eq:rank-one-sum}
+\end{equation}
+其中 $b_i a_i\in\R^{m\times n}$ 的秩至多为 $1$，而 $a_i x\in\R$ 是标量。于是每个中间维度都可以看成一个 rank-1 专家：
+\begin{equation}
+  E_i(x)=b_i(a_i x)\in\R^m.
+\end{equation}
+
+\subsection{SVD 类比的准确含义}
+
+若对某个固定更新矩阵做奇异值分解，
+\begin{equation}
+  \Delta W=U\Sigma V^{\mathsf{T}}
+  =\sum_{i=1}^{s}\sigma_i u_i v_i^{\mathsf{T}},
+  \qquad
+  \sigma_1\ge\cdots\ge\sigma_s\ge 0,
+\end{equation}
+则 Eckart--Young--Mirsky 定理给出
+\begin{equation}
+  \underset{\operatorname{rank}(M)\le k}{\min}
+  \|\Delta W-M\|_\F^2
+  =\sum_{i=k+1}^{s}\sigma_i^2,
+\end{equation}
+最优解为 $\sum_{i=1}^{k}\sigma_i u_i v_i^{\mathsf{T}}$。FlyLoRA 借用的是“保留较重要 rank-1 分量”的直觉，但必须注意：一般的 $b_i a_i$ 并不是 $\Delta W$ 的奇异分量，$|a_i x|$ 也不是奇异值。因此，Eckart--Young--Mirsky 定理\textbf{不能直接证明}按 $|a_i x|$ 选 top-$k$ 就是 $BAx$ 的最优近似。
+
+对单个专家，贡献范数有精确分解
+\begin{equation}
+  \|b_i a_i x\|_2
+  =\|b_i(a_i x)\|_2
+  =|a_i x|\,\|b_i\|_2.
+  \label{eq:expert-magnitude}
+\end{equation}
+因此按 $|a_i x|$ 排序等同于按真实贡献范数排序，当且仅当各列 $\|b_i\|_2$ 相同；若
+\begin{equation}
+  0<\beta_{\min}\le \|b_i\|_2\le\beta_{\max},
+\end{equation}
+则有
+\begin{equation}
+  \beta_{\min}|a_i x|
+  \le \|b_i a_i x\|_2
+  \le \beta_{\max}|a_i x|.
+\end{equation}
+这说明代理分数的失真至多受列范数比 $\beta_{\max}/\beta_{\min}$ 控制。
+
+令 $z=Ax$，$S$ 是 $|z_i|$ 最大的 $k$ 个坐标，截断误差为
+\begin{equation}
+  e_S=B(I-\Lambda_S)z=\sum_{i\notin S}b_i z_i.
+\end{equation}
+总能得到
+\begin{align}
+  \|e_S\|_2
+  &\le\sum_{i\notin S}\|b_i\|_2|z_i| \\
+  &\le\beta_{\max}\sum_{i\notin S}|z_i| \\
+  &\le\beta_{\max}\sqrt{r-k}\,\|z_{S^c}\|_2.
+  \label{eq:truncation-bound}
+\end{align}
+若进一步有 $B^{\mathsf{T}} B=\beta^2I_r$，则
+\begin{equation}
+  \|e_S\|_2^2
+  =z^{\mathsf{T}}(I-\Lambda_S)B^{\mathsf{T}} B(I-\Lambda_S)z
+  =\beta^2\sum_{i\notin S}|z_i|^2,
+\end{equation}
+此时保留最大的 $|z_i|$ 才是所有坐标子集中的严格最优解。
+
+\section{FlyLoRA 前向传播、路由和反向传播}
+
+\subsection{稀疏投影与两种 top-$k$ 解释}
+
+FlyLoRA 固定 $A$，每行恰好保留 $p$ 个位置，并在这些位置采样
+\begin{equation}
+  A_{ij}\mid(j\in S_i)\sim\cN\!\left(0,\frac{1}{r^2}\right),
+  \qquad |S_i|=p.
+  \label{eq:exact-p-model}
+\end{equation}
+令 $y=Ax$。论文叙述和式（7）强调按幅值选择，即
+\begin{equation}
+  \cS_k^{\mathrm{mag}}(y)
+  =\{\text{$|y_i|$ 最大的 $k$ 个指标}\}.
+  \label{eq:magnitude-topk}
+\end{equation}
+但原文式（10）加入负载均衡偏置后写成对 $(Ax+d)_i$ 本身逐次取最大值，没有绝对值。对应集合为
+\begin{equation}
+  \cS_k^{\mathrm{raw}}(x,d)
+  =\{\text{$(Ax+d)_i$ 最大的 $k$ 个指标}\}.
+  \label{eq:raw-topk}
+\end{equation}
+两者并不等价。下文凡涉及“贡献幅值”均采用式 \eqref{eq:magnitude-topk}；只涉及二值掩码和梯度稀疏性时，两种规则都适用。
+
+对选中集合 $S$ 定义
+\begin{equation}
+  \lambda_i=\1\{i\in S\},
+  \qquad
+  \Lambda=\diag(\lambda_1,\ldots,\lambda_r),
+  \qquad
+  y'=\Lambda y.
+\end{equation}
+于是严格且维度一致的前向式为
+\begin{align}
+  h=f_{\mathrm{FlyLoRA}}(x)
+  &=W_0x+cB\Lambda Ax \\
+  &=W_0x+c\sum_{i=1}^{r}\lambda_i b_i(a_i x).
+  \label{eq:fly-forward}
+\end{align}
+原文式（8）把分段条件写在 $[By']_i$ 上，但 $By'\in\R^m$，其指标属于输出维度而不是专家维度；维度一致的分段定义应写成
+\begin{equation}
+  y_i'=\begin{cases}
+    y_i,&i\in S,\\
+    0,&i\notin S.
+  \end{cases}
+\end{equation}
+
+\subsection{无损负载均衡偏置}
+
+原文对偏置 $d\in\R^r$ 做非梯度更新：
+\begin{equation}
+  d_i\leftarrow d_i+u\,\sgn(\bar c_i-c_i).
+  \label{eq:bias-update}
+\end{equation}
+若专家 $i$ 的实际计数 $c_i$ 小于目标计数 $\bar c_i$，则 $d_i$ 增加，使其以后更容易进入 top-$k$；反之则降低。$d$ 不进入专家输出的数值，只改变离散选择集合，所以这种机制不向任务损失增加额外可训练参数。
+
+\subsection{单样本梯度的逐元素推导}
+
+固定本次前向得到的掩码 $\Lambda$，定义
+\begin{equation}
+  u=\Lambda Ax\in\R^r,
+  \qquad
+  h=W_0x+cBu,
+  \qquad
+  \delta=\frac{\partial\cL}{\partial h}\in\R^m.
+\end{equation}
+对 $B_{\mu i}$，
+\begin{align}
+  h_\nu
+  &=(W_0x)_\nu+c\sum_{j=1}^{r}B_{\nu j}u_j,\\
+  \frac{\partial h_\nu}{\partial B_{\mu i}}
+  &=c\,\1\{\nu=\mu\}u_i,\\
+  \frac{\partial\cL}{\partial B_{\mu i}}
+  &=\sum_{\nu=1}^{m}
+    \frac{\partial\cL}{\partial h_\nu}
+    \frac{\partial h_\nu}{\partial B_{\mu i}}
+  =c\,\delta_\mu u_i.
+\end{align}
+把所有元素重新组成矩阵，得到
+\begin{equation}
+  \boxed{
+  \frac{\partial\cL}{\partial B}
+  =c\,\delta u^{\mathsf{T}}
+  =c\,\delta (Ax)^{\mathsf{T}}\Lambda.}
+  \label{eq:B-gradient}
+\end{equation}
+第 $i$ 列梯度为
+\begin{equation}
+  \boxed{
+  g_i:=\frac{\partial\cL}{\partial b_i}
+  =c\lambda_i(a_i x)\delta.}
+  \label{eq:column-gradient}
+\end{equation}
+若定义不加 top-$k$ 时的稠密梯度
+\begin{equation}
+  g_i^{(0)}=c(a_i x)\delta,
+\end{equation}
+则 $g_i=\lambda_i g_i^{(0)}$。这就是附录式（14）
+\begin{equation}
+  \frac{\partial\cL}{\partial\widetilde B}
+  =\frac{\partial\cL}{\partial B}\Lambda
+\end{equation}
+的逐列含义。
+
+对批量 $\{x_s\}_{s=1}^{N}$，令相应量为 $\delta_s,\Lambda_s$，则
+\begin{equation}
+  \frac{\partial\cL_{\mathrm{batch}}}{\partial B}
+  =c\sum_{s=1}^{N}\delta_s(Ax_s)^{\mathsf{T}}\Lambda_s.
+\end{equation}
+因为 $A$ 冻结，算法不对离散 top-$k$ 求导；$d$ 由式 \eqref{eq:bias-update} 更新。
+
+\section{稀疏随机投影}
+
+\subsection{两个不同的随机矩阵模型}
+
+主文采用“每行恰好 $p$ 个非零元”的模型 \eqref{eq:exact-p-model}。附录 A.1 为了便于分析，实际改用逐元素独立的替代模型
+\begin{equation}
+  A_{ij}=\frac{\xi_{ij}G_{ij}}{r},
+  \qquad
+  \xi_{ij}\sim\operatorname{Bernoulli}(q),
+  \quad
+  G_{ij}\sim\cN(0,1),
+  \quad q=\frac{p}{n},
+  \label{eq:bernoulli-gaussian}
+\end{equation}
+并假设所有 $\xi_{ij},G_{ij}$ 相互独立。两种模型的单个元素边缘分布相同，但前者同一行的支持位置互相依赖；所以从替代模型得到的定理不能不加说明地等同于原始模型定理。
+
+令
+\begin{equation}
+  z=x-y,
+  \qquad
+  \sigma^2=\E[A_{ij}^2]=\frac{q}{r^2}=\frac{p}{nr^2}.
+  \label{eq:sigma}
+\end{equation}
+因为各行独立且零均值，
+\begin{align}
+  \E\|Az\|_2^2
+  &=\sum_{u=1}^{r}\E\left(\sum_{j=1}^{n}A_{uj}z_j\right)^2\\
+  &=\sum_{u=1}^{r}\sum_{j=1}^{n}\E[A_{uj}^2]z_j^2\\
+  &=r\sigma^2\|z\|_2^2.
+\end{align}
+所以无偏归一化必须是
+\begin{equation}
+  D_A(z)=\frac{1}{r\sigma^2}\|Az\|_2^2
+  =\frac{nr}{p}\|Az\|_2^2,
+  \qquad
+  \E D_A(z)=\|z\|_2^2.
+  \label{eq:normalized-distance}
+\end{equation}
+
+\subsection{原论文声称的概率界}
+
+论文定理 3.1/A.2 声称：对任意 $\epsilon>0$，
+\begin{align}
+ &\Pp\left(
+ (1-\epsilon)\|z\|_2^2
+ \le D_A(z)
+ \le(1+\epsilon)\|z\|_2^2
+ \right)\nonumber\\
+ &\qquad\ge
+ 1-\exp\!\left[-(\epsilon^2-\epsilon^3)\frac r4\right]
+ -\exp\!\left[
+ -\frac{(\epsilon^2-\epsilon^3)r}{2(3p/n+1)}
+ \right].
+ \label{eq:paper-jl-claim}
+\end{align}
+其意图是分别控制上尾和下尾，再用
+\begin{equation}
+  \Pp(L\cap U)
+  =1-\Pp(L^c\cup U^c)
+  \ge 1-\Pp(L^c)-\Pp(U^c)
+\end{equation}
+合并两项。
+
+\subsection{附录所引用矩定理的两个尾界}
+
+为了看清常数如何进入结论，把论文附录引用的定理 A.1 改写到当前符号。设随机矩阵 $H\in\R^{r\times n}$ 的元素独立、关于零对称，且
+\begin{equation}
+  \E[H_{ij}^2]=\sigma^2>0,
+  \qquad
+  C=\E[H_{ij}^4]<\infty.
+\end{equation}
+对固定的非零 $z\in\R^n$，其下尾界写为
+\begin{equation}
+  \Pp\left(
+  \frac1r\|Hz\|_2^2
+  \le\sigma^2(1-\epsilon)\|z\|_2^2
+  \right)
+  \le
+  \exp\!\left[
+  -\frac{(\epsilon^2-\epsilon^3)r}
+  {2(C/\sigma^4+1)}
+  \right].
+  \label{eq:quoted-lower-tail}
+\end{equation}
+若还存在与阶数无关的 $L>0$，使得对所有整数 $s\ge1$，
+\begin{equation}
+  \E[H_{ij}^{2s}]
+  \le\sigma^{2s}\frac{(2s)!}{2^ss!}L^{2s},
+  \label{eq:quoted-moment-condition}
+\end{equation}
+则引用定理给出的上尾界是
+\begin{equation}
+  \Pp\left(
+  \frac1r\|Hz\|_2^2
+  \ge\sigma^2(1+\epsilon)L^2\|z\|_2^2
+  \right)
+  \le
+  \exp\!\left[-(\epsilon^2-\epsilon^3)\frac r4\right].
+  \label{eq:quoted-upper-tail}
+\end{equation}
+注意上尾阈值含有 $L^2$。若 $L=1$，上下尾都围绕期望尺度 $\sigma^2\|z\|_2^2$；若 $L>1$，式 \eqref{eq:quoted-upper-tail} 只控制更远处的尾部。后面将看到，稀疏 Bernoulli--Gaussian 元素需要 $L\ge q^{-1/2}$，这正是原证明无法直接得到对称 $1\pm\epsilon$ 界的关键。
+
+\subsection{偶数阶矩的完整计算}
+
+对任意整数 $s\ge1$，由 $\xi^{2s}=\xi$ 和独立性，
+\begin{align}
+  \E[A_{ij}^{2s}]
+  &=\E\left[\xi_{ij}^{2s}\right]
+    \E\left[\left(\frac{G_{ij}}r\right)^{2s}\right]\\
+  &=q\,\frac{\E[G^{2s}]}{r^{2s}}.
+  \label{eq:moment-step1}
+\end{align}
+标准高斯偶数阶矩为
+\begin{align}
+  \E[G^{2s}]
+  &=(2s-1)!!\\
+  &=(2s-1)(2s-3)\cdots3\cdot1\\
+  &=\frac{(2s)!}{2^s s!}.
+\end{align}
+因此
+\begin{equation}
+  \boxed{
+  \E[A_{ij}^{2s}]
+  =q\frac{(2s)!}{2^s s!}\frac1{r^{2s}}.}
+  \label{eq:correct-even-moment}
+\end{equation}
+特别地，
+\begin{equation}
+  C:=\E[A_{ij}^4]
+  =\frac{3q}{r^4}
+  =\frac{3p}{nr^4}.
+  \label{eq:fourth-moment}
+\end{equation}
+
+\subsection{原证明不能直接闭合的四个位置}
+
+\begin{enumerate}[label=\arabic*.]
+  \item \textbf{随机模型发生了替换。}“每行恰好 $p$ 个”不等于逐元素独立 Bernoulli$(p/n)$；后者每行非零数是随机变量。
+  \item \textbf{高斯矩的幂次。}若方差为 $1/r^2$，则
+  \begin{equation}
+    \E[(G/r)^{2s}]=(2s-1)!!\,(1/r^2)^s,
+  \end{equation}
+  而不是 $(2s-1)!!\,(1/r^2)^{2s}$。
+  \item \textbf{四阶矩比值。}由 \eqref{eq:sigma}、\eqref{eq:fourth-moment}，
+  \begin{equation}
+    \frac{C}{\sigma^4}
+    =\frac{3q/r^4}{q^2/r^4}
+    =\frac3q
+    =\frac{3n}{p},
+    \label{eq:C-ratio}
+  \end{equation}
+  不是 $3p/n$。因此直接代入附录定理 A.1 的下尾常数，会得到 $2(3n/p+1)$，而不是式 \eqref{eq:paper-jl-claim} 中的 $2(3p/n+1)$。
+  \item \textbf{统一矩常数 $L$。}附录引用的上尾条件要求
+  \begin{equation}
+    \E[A_{ij}^{2s}]
+    \le \sigma^{2s}\frac{(2s)!}{2^s s!}L^{2s}
+    \qquad(\forall s\ge1).
+  \end{equation}
+  代入 \eqref{eq:correct-even-moment} 和 $\sigma^{2s}=q^s/r^{2s}$，等价于
+  \begin{equation}
+    q\le q^sL^{2s}
+    \quad\Longleftrightarrow\quad
+    L\ge q^{-\frac{s-1}{2s}}.
+  \end{equation}
+  对所有 $s$ 统一成立的简单选择是
+  \begin{equation}
+    L=q^{-1/2}=\sqrt{\frac np}.
+    \label{eq:valid-L}
+  \end{equation}
+  但该引用定理的上尾阈值会包含 $L^2=n/p$，因而不能推出围绕 $1+\epsilon$ 的对称界。
+\end{enumerate}
+
+所以，式 \eqref{eq:paper-jl-claim} 应理解为论文的目标性结论；按照附录当前写出的代数，尚不能把它视作已经严格证明的 Johnson--Lindenstrauss 型指数界。
+
+\subsection{一条可完全验证的修正界}
+
+下面仍在逐元素独立模型 \eqref{eq:bernoulli-gaussian} 下，推导一条常数透明、无需引用外部定理的界。令第 $u$ 行投影为
+\begin{equation}
+  S_u=\sum_{j=1}^{n}A_{uj}z_j,
+  \qquad
+  \|Az\|_2^2=\sum_{u=1}^{r}S_u^2.
+\end{equation}
+对独立、零均值、同方差的随机变量展开四次方，只保留“同一指标出现四次”和“两个指标各出现两次”的项：
+\begin{align}
+  \E[S_u^4]
+  &=\sum_{j=1}^{n}Cz_j^4
+    +6\sum_{j<\ell}\sigma^4z_j^2z_\ell^2\\
+  &=3\sigma^4\left(\sum_{j=1}^{n}z_j^2\right)^2
+    +(C-3\sigma^4)\sum_{j=1}^{n}z_j^4.
+  \label{eq:row-fourth}
+\end{align}
+又因为 $\E[S_u^2]=\sigma^2\|z\|_2^2$，
+\begin{align}
+  \Var(S_u^2)
+  &=\E[S_u^4]-(\E[S_u^2])^2\\
+  &=2\sigma^4\|z\|_2^4
+   +(C-3\sigma^4)\|z\|_4^4.
+\end{align}
+各行独立，故
+\begin{equation}
+  \Var(\|Az\|_2^2)
+  =r\left[
+    2\sigma^4\|z\|_2^4
+    +(C-3\sigma^4)\|z\|_4^4
+  \right].
+\end{equation}
+定义集中度参数
+\begin{equation}
+  \kappa(z)=\frac{\|z\|_4^4}{\|z\|_2^4},
+  \qquad
+  \frac1n\le\kappa(z)\le1.
+\end{equation}
+对归一化距离 $R_A(z)=D_A(z)/\|z\|_2^2$，由 \eqref{eq:C-ratio} 得
+\begin{align}
+  \Var(R_A(z))
+  &=\frac{2}{r}
+    +\frac1r\left(\frac C{\sigma^4}-3\right)\kappa(z)\\
+  &=\frac1r\left[2+\frac{3(1-q)}q\kappa(z)\right].
+  \label{eq:normalized-variance}
+\end{align}
+应用切比雪夫不等式，得到严格有效的双侧界
+\begin{equation}
+  \boxed{
+  \Pp\left(
+  \left|\frac{D_A(z)}{\|z\|_2^2}-1\right|\ge\epsilon
+  \right)
+  \le
+  \frac{2+3(1-q)\kappa(z)/q}{r\epsilon^2}.}
+  \label{eq:valid-chebyshev}
+\end{equation}
+式 \eqref{eq:valid-chebyshev} 是可直接验证的多项式尾界，不是论文声称的指数尾界。
+
+\section{top-$k$ 如何降低列间梯度协方差}
+
+\subsection{均匀无放回激活的精确概率}
+
+附录假设每个样本从 $r$ 列中均匀、无放回地选出恰好 $k$ 列。于是对任意 $i\ne j$，
+\begin{equation}
+  q_1:=\Pp(\lambda_i=1)
+  =\frac{\binom{r-1}{k-1}}{\binom rk}
+  =\frac kr,
+  \label{eq:q1}
+\end{equation}
+而共同激活概率为
+\begin{align}
+  q_2&:=\Pp(\lambda_i=1,\lambda_j=1)\\
+  &=\frac{\binom{r-2}{k-2}}{\binom rk}
+  =\frac{k(k-1)}{r(r-1)}.
+  \label{eq:q2}
+\end{align}
+近似式
+\begin{equation}
+  q_2\approx\frac{k^2}{r^2}
+\end{equation}
+只在忽略减一项时成立；精确比值为
+\begin{equation}
+  \frac{q_2}{k^2/r^2}
+  =\frac{r(k-1)}{k(r-1)}.
+\end{equation}
+当 $k=1$ 时，$q_2=0$，而 $k^2/r^2=1/r^2$，所以“几乎为零”可加强为“在该随机掩码模型下严格为零”。
+
+\subsection{零均值与独立假设下的精确证明}
+
+令 $g_i^{(0)},g_j^{(0)}\in\R^m$ 为不加掩码的随机梯度列，令
+\begin{equation}
+  \widetilde g_i=\lambda_i g_i^{(0)},
+  \qquad
+  \widetilde g_j=\lambda_j g_j^{(0)}.
+\end{equation}
+使用两个关键假设：
+\begin{equation}
+  (\lambda_i,\lambda_j)\ \text{与}\ (g_i^{(0)},g_j^{(0)})\ \text{独立},
+  \qquad
+  \E[g_i^{(0)}]=\E[g_j^{(0)}]=0.
+  \label{eq:cov-assumptions}
+\end{equation}
+定义标量型列间协方差
+\begin{equation}
+  \Sigma_{ij}
+  =\E[(g_i^{(0)})^{\mathsf{T}}g_j^{(0)}]
+  -\E[g_i^{(0)}]^{\mathsf{T}}\E[g_j^{(0)}].
+\end{equation}
+在零均值下，$\Sigma_{ij}=\E[(g_i^{(0)})^{\mathsf{T}}g_j^{(0)}]$。于是
+\begin{align}
+  \widetilde\Sigma_{ij}
+  &=\E[\widetilde g_i^{\mathsf{T}}\widetilde g_j]\\
+  &=\E[\lambda_i\lambda_j
+        (g_i^{(0)})^{\mathsf{T}}g_j^{(0)}]\\
+  &=\E[\lambda_i\lambda_j]
+    \E[(g_i^{(0)})^{\mathsf{T}}g_j^{(0)}]\\
+  &=q_2\Sigma_{ij}.
+\end{align}
+故精确结论是
+\begin{equation}
+  \boxed{
+  \widetilde\Sigma_{ij}
+  =\frac{k(k-1)}{r(r-1)}\Sigma_{ij},
+  \qquad i\ne j.}
+  \label{eq:exact-cov-reduction}
+\end{equation}
+论文定理 3.3 的 $k^2/r^2$ 是式 \eqref{eq:exact-cov-reduction} 的渐近近似。
+
+对角项不同：
+\begin{align}
+  \widetilde\Sigma_{ii}
+  &=\E[\lambda_i^2\|g_i^{(0)}\|_2^2]\\
+  &=\E[\lambda_i]\E[\|g_i^{(0)}\|_2^2]\\
+  &=\frac kr\Sigma_{ii}.
+  \label{eq:diag-cov}
+\end{align}
+所以非对角协方差按约 $(k/r)^2$ 缩小，而方差只按 $k/r$ 缩小。若进一步用相关系数归一化，
+\begin{equation}
+  \widetilde{\operatorname{Corr}}_{ij}
+  =\frac{q_2}{q_1}
+   \operatorname{Corr}_{ij}
+  =\frac{k-1}{r-1}\operatorname{Corr}_{ij}.
+  \label{eq:corr-reduction}
+\end{equation}
+这比只看协方差更直接地解释论文热力图中非对角相关性的变浅。
+
+\subsection{非零均值时多出的项}
+
+令 $\mu_i=\E[g_i^{(0)}]$、$\mu_j=\E[g_j^{(0)}]$，仍假设掩码与梯度独立。则
+\begin{align}
+  \widetilde\Sigma_{ij}
+  &=q_2\E[(g_i^{(0)})^{\mathsf{T}}g_j^{(0)}]
+    -q_1^2\mu_i^{\mathsf{T}}\mu_j\\
+  &=q_2\Sigma_{ij}
+    +(q_2-q_1^2)\mu_i^{\mathsf{T}}\mu_j.
+  \label{eq:nonzero-mean-cov}
+\end{align}
+固定选 $k$ 个坐标属于无放回抽样，故
+\begin{equation}
+  q_2-q_1^2
+  =-\frac{k(r-k)}{r^2(r-1)}\le0.
+\end{equation}
+因此若不作零均值假设，不能只乘一个 $q_2$。
+
+\subsection{适用条件}
+
+真实掩码与梯度都依赖 $Ax$，因此二者并不严格独立。式 \eqref{eq:exact-cov-reduction} 严格对应均匀随机掩码代理模型；真实 top-$k$ 的缩放因子取决于掩码和梯度的联合分布。
+
+\section{跨任务随机子空间近似正交}
+
+\subsection{交叉 Gram 矩阵的均值}
+
+取两个任务独立初始化的随机投影
+\begin{equation}
+  A_i,A_j\in\R^{r\times n},
+  \qquad i\ne j,
+\end{equation}
+每个元素零均值、方差 $\sigma^2=p/(nr^2)$。定义行空间交叉 Gram 矩阵
+\begin{equation}
+  M_{ij}=A_iA_j^{\mathsf{T}}\in\R^{r\times r}.
+\end{equation}
+第 $(u,v)$ 个元素为
+\begin{equation}
+  (M_{ij})_{uv}
+  =\sum_{\ell=1}^{n}(A_i)_{u\ell}(A_j)_{v\ell}.
+\end{equation}
+两个任务的矩阵独立，故
+\begin{align}
+  \E[(M_{ij})_{uv}]
+  &=\sum_{\ell=1}^{n}
+    \E[(A_i)_{u\ell}]
+    \E[(A_j)_{v\ell}]\\
+  &=0,
+\end{align}
+从而
+\begin{equation}
+  \boxed{\E[A_iA_j^{\mathsf{T}}]=0_{r\times r}.}
+  \label{eq:mean-orthogonality}
+\end{equation}
+这是“均值正交”，不是说每次随机初始化后都精确正交。
+
+\subsection{单个元素的方差}
+
+令 $X_\ell=(A_i)_{u\ell}$、$Y_\ell=(A_j)_{v\ell}$。不同任务独立且零均值，交叉坐标项的期望为零，因此
+\begin{align}
+  \Var((M_{ij})_{uv})
+  &=\E\left(\sum_{\ell=1}^{n}X_\ell Y_\ell\right)^2\\
+  &=\sum_{\ell=1}^{n}\E[X_\ell^2]\E[Y_\ell^2]\\
+  &=n\sigma^4\\
+  &=n\left(\frac{p}{nr^2}\right)^2
+  =\frac{p^2}{nr^4}.
+  \label{eq:cross-entry-var}
+\end{align}
+于是切比雪夫不等式给出
+\begin{equation}
+  \Pp\left(|(M_{ij})_{uv}|\ge\epsilon\right)
+  \le\frac{p^2}{nr^4\epsilon^2}.
+  \label{eq:entry-cheb}
+\end{equation}
+
+\subsection{从元素界到矩阵范数界}
+
+若 $\|M_{ij}\|_\F\ge\epsilon r$，则 $r^2$ 个元素中至少有一个的绝对值不小于 $\epsilon$；否则所有元素均小于 $\epsilon$，Frobenius 范数就小于 $\sqrt{r^2\epsilon^2}=\epsilon r$。因此由并合界
+\begin{align}
+  \Pp(\|M_{ij}\|_\F\ge\epsilon r)
+  &\le\sum_{u=1}^{r}\sum_{v=1}^{r}
+  \Pp(|(M_{ij})_{uv}|\ge\epsilon)\\
+  &\le r^2\frac{p^2}{nr^4\epsilon^2}
+  =\frac{p^2}{nr^2\epsilon^2}.
+  \label{eq:paper-union-bound}
+\end{align}
+再由 $\|M\|_2\le\|M\|_\F$，得到论文定理 3.4 的有效但较松界
+\begin{equation}
+  \boxed{
+  \Pp(\|A_iA_j^{\mathsf{T}}\|_2\ge\epsilon r)
+  \le\frac{p^2}{nr^2\epsilon^2}.}
+  \label{eq:paper-orth-bound}
+\end{equation}
+
+还可以直接计算
+\begin{align}
+  \E\|M_{ij}\|_\F^2
+  &=\sum_{u,v}\E[(M_{ij})_{uv}^2]\\
+  &=r^2\frac{p^2}{nr^4}
+  =\frac{p^2}{nr^2}.
+  \label{eq:expected-cross-frob}
+\end{align}
+对 $\|M_{ij}\|_\F^2$ 使用 Markov 不等式，甚至得到更强的同阈值界
+\begin{equation}
+  \Pp(\|M_{ij}\|_\F\ge\epsilon r)
+  \le\frac{p^2}{nr^4\epsilon^2}.
+  \label{eq:stronger-frob-bound}
+\end{equation}
+式 \eqref{eq:paper-orth-bound} 仍然成立，只是没有利用所有元素平方和的期望。
+
+\subsection{如何传递到 LoRA 更新矩阵}
+
+令两个任务的更新为
+\begin{equation}
+  U_i=B_iA_i,
+  \qquad
+  U_j=B_jA_j.
+\end{equation}
+其 Frobenius 内积逐步变形为
+\begin{align}
+  \langle U_j,U_i\rangle_\F
+  &=\tr(U_j^{\mathsf{T}} U_i)\\
+  &=\tr(A_j^{\mathsf{T}} B_j^{\mathsf{T}} B_iA_i)\\
+  &=\tr(B_j^{\mathsf{T}} B_iA_iA_j^{\mathsf{T}}).
+  \label{eq:update-inner-trace}
+\end{align}
+最后一步用到了迹的循环不变性：只要乘积维度合法，$\tr(XYZ)=\tr(ZXY)$。
+
+令 $C_{ji}=B_j^{\mathsf{T}} B_i$、$M_{ij}=A_iA_j^{\mathsf{T}}$。Frobenius Cauchy--Schwarz 不等式给出
+\begin{equation}
+  \boxed{
+  |\langle U_j,U_i\rangle_\F|
+  =|\tr(C_{ji}M_{ij})|
+  \le\|C_{ji}\|_\F\|M_{ij}\|_\F.}
+  \label{eq:quantitative-update-orth}
+\end{equation}
+进一步，
+\begin{equation}
+  \|B_j^{\mathsf{T}} B_i\|_\F
+  \le\|B_j\|_2\|B_i\|_\F,
+\end{equation}
+所以只有在 $A_iA_j^{\mathsf{T}}$ 小且 $B_i,B_j$ 的范数受到控制时，才能定量地说更新近似正交。原文“对任意学得的 $B_iA_i,B_jA_j$ 都有内积约为零”需要隐含这一范数条件；若任意放大 $B$，绝对内积也可被任意放大。
+
+\subsection{模型合并范数的精确展开}
+
+对 $t$ 个任务，令
+\begin{equation}
+  \Delta W_{\mathrm{merge}}
+  =\sum_{i=1}^{t}w_iU_i,
+  \qquad
+  W'=W_0+\Delta W_{\mathrm{merge}}.
+\end{equation}
+由双线性展开，
+\begin{align}
+  \|\Delta W_{\mathrm{merge}}\|_\F^2
+  &=\left\langle\sum_iw_iU_i,\sum_jw_jU_j\right\rangle_\F\\
+  &=\sum_{i=1}^{t}w_i^2\|U_i\|_\F^2
+   +2\sum_{1\le i<j\le t}w_iw_j\langle U_i,U_j\rangle_\F\\
+  &=\sum_{i=1}^{t}w_i^2\|U_i\|_\F^2
+   +\sum_{i\ne j}w_iw_j\langle U_i,U_j\rangle_\F.
+  \label{eq:merge-exact}
+\end{align}
+若所有交叉内积相对较小，则
+\begin{equation}
+  \|\Delta W_{\mathrm{merge}}\|_\F^2
+  \approx\sum_{i=1}^{t}w_i^2\|U_i\|_\F^2.
+  \label{eq:merge-approx}
+\end{equation}
+近似误差可以显式控制：
+\begin{align}
+ &\left|
+ \|\Delta W_{\mathrm{merge}}\|_\F^2
+ -\sum_iw_i^2\|U_i\|_\F^2
+ \right|\\
+ &\quad\le
+ 2\sum_{i<j}|w_iw_j|\,
+ \|B_j^{\mathsf{T}} B_i\|_\F\,
+ \|A_iA_j^{\mathsf{T}}\|_\F.
+ \label{eq:merge-error-bound}
+\end{align}
+\end{document}

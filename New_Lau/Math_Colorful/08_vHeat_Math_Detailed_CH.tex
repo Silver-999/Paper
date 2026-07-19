@@ -1,0 +1,1217 @@
+\documentclass[UTF8,12pt,a4paper,fontset=none]{ctexart}
+
+\usepackage[a4paper,left=1.82cm,right=1.82cm,top=1.72cm,bottom=1.82cm,headheight=15pt]{geometry}
+\usepackage{fontspec}
+\usepackage{xeCJK}
+\setmainfont{Liberation Serif}
+\setsansfont{DejaVu Sans}
+\setmonofont{DejaVu Sans Mono}
+\setCJKmainfont[BoldFont=Noto Serif CJK SC Bold]{Noto Serif CJK SC}
+\setCJKsansfont{Noto Sans CJK SC}
+\setCJKmonofont{Noto Sans Mono CJK SC}
+
+\usepackage{amsmath,amssymb,mathtools,bm}
+\usepackage{booktabs,longtable,tabularx,array,multirow}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,calc,fit,backgrounds,shapes.geometric,decorations.pathmorphing}
+\usepackage[most]{tcolorbox}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{hyperref}
+\usepackage{cleveref}
+\usepackage{caption}
+\usepackage{float}
+\usepackage{listings}
+
+\definecolor{mainblue}{RGB}{39,82,138}
+\definecolor{deepblue}{RGB}{25,55,95}
+\definecolor{heatred}{RGB}{180,65,45}
+\definecolor{softblue}{RGB}{235,243,252}
+\definecolor{softgreen}{RGB}{238,248,241}
+\definecolor{softorange}{RGB}{255,246,232}
+\definecolor{softgray}{RGB}{245,246,248}
+\definecolor{warnred}{RGB}{160,48,48}
+
+\hypersetup{
+  unicode=true,
+  colorlinks=true,
+  linkcolor=deepblue,
+  urlcolor=mainblue,
+  citecolor=deepblue,
+  pdftitle={vHeat 数学过程详解},
+  pdfauthor={OpenAI}
+}
+
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.36em}
+\setlength{\tabcolsep}{5pt}
+\renewcommand{\arraystretch}{1.22}
+\allowdisplaybreaks[4]
+\emergencystretch=3em
+\sloppy
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small vHeat 数学过程详解}
+\fancyhead[R]{\small 热方程、Fourier/DCT 与视觉热传导算子}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\titleformat{\section}{\Large\bfseries\color{deepblue}}{\thesection}{0.65em}{}
+\titleformat{\subsection}{\large\bfseries\color{mainblue}}{\thesubsection}{0.55em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries}{\thesubsubsection}{0.5em}{}
+\numberwithin{equation}{section}
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\F}{\mathcal{F}}
+\newcommand{\IFT}{\mathcal{F}^{-1}}
+\newcommand{\DCT}{\operatorname{DCT}_{2\mathrm{D}}}
+\newcommand{\IDCT}{\operatorname{IDCT}_{2\mathrm{D}}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\norm}[1]{\left\lVert #1\right\rVert}
+\newcommand{\od}{\mathrm{d}}
+\newcommand{\pd}{\partial}
+\newcommand{\diag}{\operatorname{diag}}
+\newcommand{\softplus}{\operatorname{softplus}}
+\newcommand{\SiLU}{\operatorname{SiLU}}
+\newcommand{\LN}{\operatorname{LN}}
+\newcommand{\DWConv}{\operatorname{DWConv}}
+
+\newtcolorbox{keybox}[1][]{
+  enhanced,breakable,colback=softblue,colframe=mainblue,
+  boxrule=0.8pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,
+  title={#1},fonttitle=\bfseries
+}
+\newtcolorbox{examplebox}[1][]{
+  enhanced,breakable,colback=softgreen,colframe=green!45!black,
+  boxrule=0.7pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,
+  title={#1},fonttitle=\bfseries
+}
+\newtcolorbox{notebox}[1][]{
+  enhanced,breakable,colback=softorange,colframe=orange!70!black,
+  boxrule=0.7pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,
+  title={#1},fonttitle=\bfseries
+}
+\newtcolorbox{criticalbox}[1][]{
+  enhanced,breakable,colback=red!3,colframe=warnred,
+  boxrule=0.8pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,
+  title={#1},fonttitle=\bfseries
+}
+
+\setlength{\abovedisplayskip}{0.82em}
+\setlength{\belowdisplayskip}{0.82em}
+\setlength{\abovedisplayshortskip}{0.45em}
+\setlength{\belowdisplayshortskip}{0.45em}
+\begin{document}
+
+\begin{center}
+  {\LARGE\bfseries 08\_Building Vision Models upon Heat Conduction 数学过程详解}\par
+  \vspace{0.35em}
+  {\large 从二维热方程到 Heat Conduction Operator：连续模型、频域解、DCT 离散化与复杂度推导}
+\end{center}
+\vspace{0.5em}
+
+\begin{keybox}[阅读说明]
+本文针对论文 \emph{Building Vision Models upon Heat Conduction} 的数学部分进行逐式拆解。正文详细推导论文公式（1）--（11），补充 Fourier 导数性质、常微分方程求解、Gaussian 热核、Neumann 边界与余弦基、二维 DCT 的矩阵形式、复杂度 $O(N^{3/2})$ 的来源、频率自适应热扩散率、HCO 的梯度与稳定性，以及“物理热传导”和“学习型频域滤波”之间的边界。为避免把解释性推论误当作论文原结论，补充推导与批判性说明均会明确标注。
+\end{keybox}
+
+\tableofcontents
+\newpage
+
+\section{数学主线：把视觉特征传播写成热扩散}
+
+论文将图像 patch 或特征图中的局部信息类比为“热量”：一个位置的语义不仅停留在自身，还会按照某种扩散规律传播到周围乃至整幅图像。核心变换可概括为
+\begin{equation}
+  \boxed{
+  U^t
+  =\IDCT\!\left[
+  \DCT(U^0)\odot
+  e^{-k(\omega_x^2+\omega_y^2)t}
+  \right]
+  }.
+  \label{eq:core-hco}
+\end{equation}
+其中：
+\begin{itemize}[leftmargin=2.2em]
+  \item $U^0$ 是输入视觉特征；
+  \item $U^t$ 是“传导时间” $t$ 后的输出特征；
+  \item $\DCT$ 和 $\IDCT$ 在空间域与频率域之间转换；
+  \item $e^{-k(\omega_x^2+\omega_y^2)t}$ 是热方程给出的频率响应；
+  \item $k$ 是热扩散率，论文使用频率值嵌入预测，使其可学习且非均匀。
+\end{itemize}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=1.0cm and 1.0cm,>=Latex,
+box/.style={draw,rounded corners,minimum height=1cm,minimum width=2.25cm,align=center,fill=softblue},
+heat/.style={draw,rounded corners,minimum height=1cm,minimum width=2.6cm,align=center,fill=softorange},
+learn/.style={draw,rounded corners,minimum height=1cm,minimum width=2.4cm,align=center,fill=softgreen}]
+\node[box] (u0) {空间域特征\\$U^0$};
+\node[box,right=of u0] (dct) {二维 DCT\\$\widehat U=\DCT(U^0)$};
+\node[heat,right=of dct] (filter) {热扩散频响\\$H=e^{-k\omega^2t}$};
+\node[box,right=of filter] (idct) {二维 IDCT};
+\node[box,right=of idct] (ut) {输出特征\\$U^t$};
+\node[learn,below=of filter] (fve) {Frequency Value\\Embeddings $\to k$};
+\draw[->] (u0)--(dct);
+\draw[->] (dct)--(filter);
+\draw[->] (filter)--(idct);
+\draw[->] (idct)--(ut);
+\draw[->] (fve)--(filter);
+\end{tikzpicture}
+\caption{HCO 的数学流程：先变换到余弦频域，再按热扩散规律逐频率加权，最后回到空间域。}
+\end{figure}
+
+\begin{keybox}[一句话理解]
+Self-Attention 显式构造“任意 patch 对任意 patch”的相似度矩阵；HCO 则在一个全局余弦基中使用对角频率滤波器。二者都能获得全局感受野，但数学结构和计算复杂度不同。
+\end{keybox}
+
+\section{预备知识：热方程中的每个符号}
+
+\subsection{温度场与空间区域}
+
+设
+\begin{equation}
+  u=u(x,y,t),
+\end{equation}
+表示二维区域 $D\subset\R^2$ 中位置 $(x,y)$ 在时间 $t$ 的温度。固定 $t$ 时，$u(\cdot,\cdot,t)$ 是一张二维标量图；固定 $(x,y)$ 时，$u(x,y,\cdot)$ 描述该点温度随时间变化。
+
+偏导数
+\begin{equation}
+  \frac{\pd u}{\pd t}
+\end{equation}
+表示温度变化速度；二阶空间偏导
+\begin{equation}
+  \frac{\pd^2u}{\pd x^2},\qquad
+  \frac{\pd^2u}{\pd y^2}
+\end{equation}
+衡量温度曲线沿两个方向的局部弯曲程度。
+
+\subsection{Laplacian 算子}
+
+二维 Laplacian 定义为
+\begin{equation}
+  \Delta u
+  =\nabla^2u
+  =\frac{\pd^2u}{\pd x^2}
+  +\frac{\pd^2u}{\pd y^2}.
+\end{equation}
+若某点温度高于邻域，温度图在该点通常向下弯曲，$\Delta u<0$，热量将从该点向外扩散；若某点低于邻域，则 $\Delta u>0$，周围热量流入该点。
+
+\subsection{热扩散率}
+
+论文使用
+\begin{equation}
+  k>0
+\end{equation}
+表示 thermal diffusivity（热扩散率）。$k$ 越大，热量传播越快、平滑越强；$k$ 越小，局部结构保留越多。
+
+从量纲上看，若 $x,y$ 的单位是长度、$t$ 的单位是时间，则
+\begin{equation}
+  [k]=\frac{\text{长度}^2}{\text{时间}}.
+\end{equation}
+因此真正控制扩散尺度的是乘积 $kt$，这也是论文固定 $t$、只预测 $k$ 的原因之一。
+
+\section{论文公式（1）：二维热方程}
+
+论文从经典二维热方程开始：
+\begin{equation}
+  \frac{\pd u}{\pd t}
+  =k\left(
+  \frac{\pd^2u}{\pd x^2}
+  +\frac{\pd^2u}{\pd y^2}
+  \right)
+  =k\Delta u.
+  \tag{1}
+  \label{eq:paper1}
+\end{equation}
+并给定初始条件
+\begin{equation}
+  u(x,y,0)=f(x,y).
+  \label{eq:init}
+\end{equation}
+
+\subsection{为什么这是“扩散”而不是任意滤波}
+
+考虑一维离散近似：
+\begin{equation}
+  \frac{\pd^2u}{\pd x^2}(x_i)
+  \approx
+  \frac{u_{i-1}-2u_i+u_{i+1}}{h^2}.
+\end{equation}
+代入热方程，使用一个很小时间步长 $\Delta t$，得到显式 Euler 更新
+\begin{align}
+  u_i^{n+1}
+  &\approx u_i^n
+  +\Delta t\,k
+  \frac{u_{i-1}^n-2u_i^n+u_{i+1}^n}{h^2}\\
+  &=\left(1-2\lambda\right)u_i^n
+  +\lambda u_{i-1}^n
+  +\lambda u_{i+1}^n,
+  \qquad
+  \lambda=\frac{k\Delta t}{h^2}.
+\end{align}
+在稳定条件下，这相当于用邻域值对当前值做加权平均，因此峰值下降、低谷上升，特征趋于平滑。
+
+\begin{examplebox}[一个最小数值例子]
+若一维温度为 $(0,0,10,0,0)$，中心点的离散二阶差分为
+\begin{equation}
+  0-2\times10+0=-20<0,
+\end{equation}
+所以中心温度下降；相邻点的差分为 $10>0$，所以相邻点升温。信息由中心向周围传播。
+\end{examplebox}
+
+\section{论文公式（2）--（5）：将偏微分方程变成频域常微分方程}
+
+\subsection{二维 Fourier 变换约定}
+
+采用连续 Fourier 变换
+\begin{equation}
+  \widetilde u(\omega_x,\omega_y,t)
+  =\F\{u\}
+  =\int_{\R^2}u(x,y,t)
+  e^{-\mathrm{i}(\omega_xx+\omega_yy)}\,\od x\,\od y.
+  \label{eq:ft-def}
+\end{equation}
+逆变换为
+\begin{equation}
+  u(x,y,t)
+  =\frac{1}{(2\pi)^2}
+  \int_{\R^2}\widetilde u(\omega_x,\omega_y,t)
+  e^{\mathrm{i}(\omega_xx+\omega_yy)}\,
+  \od\omega_x\,\od\omega_y.
+\end{equation}
+不同教材可能把 $2\pi$ 因子分配到正变换或逆变换中，但后续指数衰减结构不变。
+
+\subsection{对热方程两侧做 Fourier 变换：公式（2）}
+
+对式 \eqref{eq:paper1} 两侧关于空间变量 $(x,y)$ 做 Fourier 变换：
+\begin{equation}
+  \F\left\{\frac{\pd u}{\pd t}\right\}
+  =k\F\left\{
+  \frac{\pd^2u}{\pd x^2}
+  +\frac{\pd^2u}{\pd y^2}
+  \right\}.
+  \tag{2}
+  \label{eq:paper2}
+\end{equation}
+这里 Fourier 变换不作用于时间 $t$，所以 $t$ 仍然保留。
+
+\subsection{左侧变换：公式（3）}
+
+在满足交换微分与积分的常规正则条件下，
+\begin{align}
+  \F\left\{\frac{\pd u}{\pd t}\right\}
+  &=\int_{\R^2}
+  \frac{\pd u(x,y,t)}{\pd t}
+  e^{-\mathrm{i}(\omega_xx+\omega_yy)}\,\od x\,\od y\\
+  &=\frac{\pd}{\pd t}
+  \int_{\R^2}u(x,y,t)
+  e^{-\mathrm{i}(\omega_xx+\omega_yy)}\,\od x\,\od y\\
+  &=\frac{\pd\widetilde u(\omega_x,\omega_y,t)}{\pd t}.
+  \tag{3}
+  \label{eq:paper3}
+\end{align}
+
+\subsection{右侧变换：公式（4）的完整分部积分推导}
+
+Fourier 变换的微分性质为
+\begin{equation}
+  \F\left\{\frac{\pd u}{\pd x}\right\}
+  =\mathrm{i}\omega_x\widetilde u,
+  \qquad
+  \F\left\{\frac{\pd^2u}{\pd x^2}\right\}
+  =-\omega_x^2\widetilde u.
+\end{equation}
+以一阶导数为例：
+\begin{align}
+  \F\left\{u_x\right\}
+  &=\int_{-\infty}^{\infty}u_x(x)
+  e^{-\mathrm{i}\omega_xx}\,\od x\\
+  &=\left[u(x)e^{-\mathrm{i}\omega_xx}\right]_{-\infty}^{\infty}
+  +\mathrm{i}\omega_x
+  \int_{-\infty}^{\infty}u(x)e^{-\mathrm{i}\omega_xx}\,\od x.
+\end{align}
+若边界项消失，则得到 $\mathrm{i}\omega_x\widetilde u$。再求一次导数便得到 $-\omega_x^2\widetilde u$。同理，
+\begin{equation}
+  \F\left\{u_{yy}\right\}
+  =-\omega_y^2\widetilde u.
+\end{equation}
+所以
+\begin{equation}
+  \F\{u_{xx}+u_{yy}\}
+  =-(\omega_x^2+\omega_y^2)
+  \widetilde u(\omega_x,\omega_y,t).
+  \tag{4}
+  \label{eq:paper4}
+\end{equation}
+
+\subsection{得到频域 ODE：公式（5）}
+
+把式 \eqref{eq:paper3} 和式 \eqref{eq:paper4} 代入式 \eqref{eq:paper2}：
+\begin{equation}
+  \frac{\od\widetilde u}{\od t}
+  =-k(\omega_x^2+\omega_y^2)\widetilde u.
+  \tag{5}
+  \label{eq:paper5}
+\end{equation}
+对于固定频率 $(\omega_x,\omega_y)$，这是关于时间 $t$ 的一阶线性常微分方程。原本耦合空间位置的 PDE，在频域中变成每个频率独立演化的标量 ODE。
+
+\begin{keybox}[频域对角化的本质]
+Laplacian 作用在复指数基函数上时只会乘一个标量：
+\begin{equation}
+  \Delta e^{\mathrm{i}(\omega_xx+\omega_yy)}
+  =-(\omega_x^2+\omega_y^2)
+  e^{\mathrm{i}(\omega_xx+\omega_yy)}.
+\end{equation}
+因此 Fourier 基是 Laplacian 的特征函数，Fourier 变换把微分算子“对角化”了。
+\end{keybox}
+
+\section{论文公式（6）：频域热方程的完整求解}
+
+令
+\begin{equation}
+  \lambda=k(\omega_x^2+\omega_y^2)\ge0,
+\end{equation}
+则式 \eqref{eq:paper5} 变成
+\begin{equation}
+  \frac{\od\widetilde u}{\od t}=-\lambda\widetilde u.
+\end{equation}
+分离变量：
+\begin{equation}
+  \frac{1}{\widetilde u}\,\od\widetilde u
+  =-\lambda\,\od t.
+\end{equation}
+积分得到
+\begin{equation}
+  \ln|\widetilde u|=-\lambda t+C,
+\end{equation}
+从而
+\begin{equation}
+  \widetilde u=C'e^{-\lambda t}.
+\end{equation}
+初始条件 $u(x,y,0)=f(x,y)$ 在频域中是
+\begin{equation}
+  \widetilde u(\omega_x,\omega_y,0)
+  =\widetilde f(\omega_x,\omega_y).
+\end{equation}
+因此 $C'=\widetilde f$，得到论文公式（6）：
+\begin{equation}
+  \boxed{
+  \widetilde u(\omega_x,\omega_y,t)
+  =\widetilde f(\omega_x,\omega_y)
+  e^{-k(\omega_x^2+\omega_y^2)t}
+  }.
+  \tag{6}
+  \label{eq:paper6}
+\end{equation}
+
+\subsection{频率响应如何解释}
+
+定义
+\begin{equation}
+  H(\omega_x,\omega_y;k,t)
+  =e^{-k(\omega_x^2+\omega_y^2)t}.
+  \label{eq:heat-response}
+\end{equation}
+若 $k,t\ge0$，则
+\begin{equation}
+  0<H\le1.
+\end{equation}
+零频率处
+\begin{equation}
+  H(0,0)=1,
+\end{equation}
+所以全局平均（DC 分量）不衰减。频率半径
+\begin{equation}
+  \rho=\sqrt{\omega_x^2+\omega_y^2}
+\end{equation}
+越大，$H=e^{-kt\rho^2}$ 越小，因此高频纹理与噪声比低频结构衰减得更快。
+
+\begin{examplebox}[不同频率的衰减]
+取 $kt=0.5$：
+\begin{align}
+  \rho=0&:\quad H=1,\\
+  \rho=1&:\quad H=e^{-0.5}\approx0.607,\\
+  \rho=2&:\quad H=e^{-2}\approx0.135,\\
+  \rho=3&:\quad H=e^{-4.5}\approx0.011.
+\end{align}
+这说明热扩散天然具有低通滤波性质。
+\end{examplebox}
+
+\subsection{极限情况}
+
+当 $t\to0^+$ 时，
+\begin{equation}
+  H\to1,
+  \qquad u(x,y,t)\to f(x,y),
+\end{equation}
+即算子接近恒等映射。
+
+若区域有限、边界采用 Neumann 条件且 $k$ 为正常数，则当 $t\to\infty$，所有非零频率趋于零，只留下常数模态，因此温度趋于全局平均值。
+
+\section{论文公式（7）：回到空间域与 Gaussian 热核}
+
+对式 \eqref{eq:paper6} 做逆 Fourier 变换，得到论文公式（7）：
+\begin{equation}
+  u(x,y,t)
+  =\IFT\left\{
+  \widetilde f(\omega_x,\omega_y)
+  e^{-k(\omega_x^2+\omega_y^2)t}
+  \right\}.
+  \tag{7}
+  \label{eq:paper7}
+\end{equation}
+由卷积定理，频域乘法对应空间域卷积：
+\begin{equation}
+  u(\cdot,\cdot,t)=G_t*f,
+  \label{eq:convolution-form}
+\end{equation}
+其中二维热核为
+\begin{equation}
+  G_t(x,y)
+  =\frac{1}{4\pi kt}
+  \exp\left[-\frac{x^2+y^2}{4kt}\right].
+  \label{eq:gaussian-kernel}
+\end{equation}
+
+\subsection{热核为什么是 Gaussian}
+
+一维中有经典变换对
+\begin{equation}
+  \IFT\{e^{-kt\omega^2}\}
+  =\frac{1}{\sqrt{4\pi kt}}
+  e^{-x^2/(4kt)}.
+\end{equation}
+二维指数可以分离：
+\begin{equation}
+  e^{-kt(\omega_x^2+\omega_y^2)}
+  =e^{-kt\omega_x^2}e^{-kt\omega_y^2}.
+\end{equation}
+所以二维逆变换是两个一维 Gaussian 的乘积，即式 \eqref{eq:gaussian-kernel}。
+
+\subsection{扩散尺度}
+
+Gaussian 的每个坐标方向方差为
+\begin{equation}
+  \sigma^2=2kt,
+\end{equation}
+所以典型扩散半径与
+\begin{equation}
+  \sigma=\sqrt{2kt}
+\end{equation}
+成正比。传播距离不是与时间线性增长，而是与 $\sqrt{t}$ 同阶。
+
+\begin{notebox}[论文没有显式写出的等价形式]
+论文直接使用频域一般解。补充的 Gaussian 卷积形式说明，经典常系数热方程等价于用一个随 $t$ 变宽的 Gaussian 核平滑输入。vHeat 的关键变化是把扩散率做成频率相关、可学习的量，因此一般不再等价于单一的各向同性 Gaussian 核。
+\end{notebox}
+
+\section{从标量温度到多通道视觉特征：论文公式（8）}
+
+视觉特征不是单通道标量，而是
+\begin{equation}
+  U(x,y,c,t),
+  \qquad c=1,2,\ldots,C.
+\end{equation}
+将每个通道视作一张温度场，论文把式 \eqref{eq:paper7} 扩展为
+\begin{equation}
+  U^t
+  =\IFT\left(
+  \F(U^0)
+  e^{-k(\omega_x^2+\omega_y^2)t}
+  \right).
+  \tag{8}
+  \label{eq:paper8}
+\end{equation}
+若
+\begin{equation}
+  U^0\in\R^{B\times H\times W\times C},
+\end{equation}
+那么 Fourier/DCT 只沿空间维度 $H,W$ 进行，批量维和通道维保留：
+\begin{equation}
+  \widehat U
+  =\F_{x,y}(U^0)
+  \in\mathbb{C}^{B\times H\times W\times C}.
+\end{equation}
+使用 DCT 后，由于输入和余弦基均为实数，频域系数仍为实数，可避免复数计算。
+
+\subsection{逐通道与跨通道建模的区别}
+
+式 \eqref{eq:paper8} 本身主要描述每个通道内的空间传播。通道之间的信息混合由 HCO layer 前后的线性层、门控分支和 FFN 完成。因此可把 vHeat 的职责拆成
+\begin{equation}
+  \underbrace{\text{HCO}}_{\text{全局空间传播}}
+  +
+  \underbrace{\text{Linear/FFN}}_{\text{通道混合与非线性}}.
+\end{equation}
+
+\section{为什么 Neumann 边界自然对应 DCT}
+
+\subsection{边界条件}
+
+图像是有限矩形区域，论文采用 Neumann 边界条件：
+\begin{equation}
+  \frac{\pd u}{\pd n}=0,
+  \qquad (x,y)\in\pd D,
+  \quad t\ge0,
+  \label{eq:neumann}
+\end{equation}
+其中 $n$ 是边界外法向量。它表示边界外没有热流：
+\begin{equation}
+  \text{热量不会穿过图像边界流出或流入}.
+\end{equation}
+在一维区间 $[0,L]$ 上，条件是
+\begin{equation}
+  u_x(0,t)=u_x(L,t)=0.
+\end{equation}
+
+\subsection{余弦函数满足零法向导数}
+
+考虑特征函数
+\begin{equation}
+  \phi_p(x)=\cos\left(\frac{p\pi x}{L}\right).
+\end{equation}
+其导数为
+\begin{equation}
+  \phi_p'(x)
+  =-\frac{p\pi}{L}
+  \sin\left(\frac{p\pi x}{L}\right).
+\end{equation}
+在 $x=0$ 和 $x=L$：
+\begin{equation}
+  \phi_p'(0)=\phi_p'(L)=0.
+\end{equation}
+所以余弦基天然满足 Neumann 边界。二维基函数是乘积
+\begin{equation}
+  \phi_{pq}(x,y)
+  =\cos\left(\frac{p\pi x}{L_x}\right)
+  \cos\left(\frac{q\pi y}{L_y}\right).
+\end{equation}
+这就是有限矩形区域中用 DCT 替代 DFT 的数学依据。
+
+\begin{keybox}[边界的直观含义]
+DFT 隐含周期延拓：图像右边界会与左边界相连，容易产生不自然的环绕。DCT 可解释为偶对称延拓，使边界法向导数为零，更符合“语义不跨越图像外部传播”的设定。
+\end{keybox}
+
+\section{论文公式（9）：HCO 的离散实现}
+
+在有限离散特征图上，论文将 Fourier 变换替换为二维 DCT：
+\begin{equation}
+  \boxed{
+  U^t
+  =\IDCT\left[
+  \DCT(U^0)\odot
+  e^{-k(\omega_x^2+\omega_y^2)t}
+  \right]
+  }.
+  \tag{9}
+  \label{eq:paper9}
+\end{equation}
+这里逐元素乘法应明确写为 $\odot$。在实现中，可预先构造频率平方矩阵
+\begin{equation}
+  \Omega^2_{pq}=\omega_p^2+\omega_q^2,
+\end{equation}
+再计算
+\begin{equation}
+  H_{pq}=\exp(-k_{pq}\Omega^2_{pq}t).
+\end{equation}
+对于每个 batch、通道或分组，频域系数逐点乘上 $H$。
+
+\subsection{离散 Laplacian 的更精确特征值}
+
+论文使用连续近似 $\omega_p^2+\omega_q^2$。在规则网格上，二阶中心差分 Laplacian 的精确离散特征值可写成
+\begin{equation}
+  \lambda_{pq}
+  =\frac{4}{h_x^2}
+  \sin^2\left(\frac{p\pi}{2H}\right)
+  +\frac{4}{h_y^2}
+  \sin^2\left(\frac{q\pi}{2W}\right).
+  \label{eq:discrete-eigenvalue}
+\end{equation}
+严格离散热扩散可使用
+\begin{equation}
+  H_{pq}=e^{-k\lambda_{pq}t}.
+\end{equation}
+当频率较低时，$\sin z\approx z$，因此
+\begin{equation}
+  \lambda_{pq}\approx\omega_p^2+\omega_q^2,
+\end{equation}
+论文形式可以视为连续热方程启发的频率参数化。
+
+\section{论文公式（10）：二维 DCT 与 IDCT 逐项解释}
+
+设输入矩阵
+\begin{equation}
+  A=(A_{mn})\in\R^{M\times N},
+\end{equation}
+DCT 系数矩阵
+\begin{equation}
+  B=(B_{pq})\in\R^{M\times N}.
+\end{equation}
+正交归一的二维 DCT-II 可写为
+\begin{align}
+  B_{pq}
+  &=\alpha_p\alpha_q
+  \sum_{m=0}^{M-1}\sum_{n=0}^{N-1}
+  A_{mn}
+  \cos\left(\frac{(2m+1)p\pi}{2M}\right)
+  \cos\left(\frac{(2n+1)q\pi}{2N}\right),
+  \label{eq:dct-element}
+\end{align}
+而逆变换为
+\begin{align}
+  A_{mn}
+  &=\sum_{p=0}^{M-1}\sum_{q=0}^{N-1}
+  \alpha_p\alpha_q B_{pq}
+  \cos\left(\frac{(2m+1)p\pi}{2M}\right)
+  \cos\left(\frac{(2n+1)q\pi}{2N}\right).
+  \label{eq:idct-element}
+\end{align}
+这对应论文公式（10）。归一化因子为
+\begin{equation}
+  \alpha_p=
+  \begin{cases}
+    \dfrac{1}{\sqrt{M}},&p=0,\\[0.35em]
+    \sqrt{\dfrac{2}{M}},&p>0,
+  \end{cases}
+  \qquad
+  \alpha_q=
+  \begin{cases}
+    \dfrac{1}{\sqrt{N}},&q=0,\\[0.35em]
+    \sqrt{\dfrac{2}{N}},&q>0.
+  \end{cases}
+  \tag{10}
+  \label{eq:paper10}
+\end{equation}
+
+\begin{criticalbox}[原文排版中容易误读的一点]
+IDCT 的求和变量应是频率索引 $p,q$，而不是空间索引 $m,n$。PDF 公式的字体与文本抽取可能让上下标显得混乱；式 \eqref{eq:idct-element} 给出了维度一致的标准写法。
+\end{criticalbox}
+
+\subsection{为什么二维 DCT 可分离}
+
+二维余弦基是行方向基与列方向基的乘积，因此可先对每一列做一维 DCT，再对每一行做一维 DCT，或反过来。其可分离性是矩阵实现的基础。
+
+\section{论文公式（11）：DCT 的矩阵乘法实现}
+
+定义行方向余弦矩阵
+\begin{equation}
+  C_{mp}
+  =\alpha_p
+  \cos\left(\frac{(2m+1)p\pi}{2M}\right),
+  \qquad C\in\R^{M\times M},
+\end{equation}
+列方向余弦矩阵
+\begin{equation}
+  D_{nq}
+  =\alpha_q
+  \cos\left(\frac{(2n+1)q\pi}{2N}\right),
+  \qquad D\in\R^{N\times N}.
+\end{equation}
+则二维 DCT 可写成
+\begin{equation}
+  B=C^{\top}AD
+  \quad\text{或等价地按作者索引约定写为}\quad
+  B=CAD^{\top}.
+  \label{eq:matrix-convention}
+\end{equation}
+只要 $C,D$ 的行列索引定义与乘法方向保持一致，两种记法描述的是同一组可分离基变换。论文采用的形式为
+\begin{align}
+  B&=CAD^{\top},\\
+  A&=C^{\top}BD.
+  \tag{11}
+  \label{eq:paper11}
+\end{align}
+由于使用正交归一基，
+\begin{equation}
+  C^{\top}C=I_M,
+  \qquad D^{\top}D=I_N,
+\end{equation}
+所以逆变换可直接使用转置矩阵。
+
+\subsection{维度核对}
+
+按论文约定：
+\begin{equation}
+  C_{M\times M}
+  A_{M\times N}
+  D^{\top}_{N\times N}
+  \Longrightarrow
+  B_{M\times N}.
+\end{equation}
+逆变换：
+\begin{equation}
+  C^{\top}_{M\times M}
+  B_{M\times N}
+  D_{N\times N}
+  \Longrightarrow
+  A_{M\times N}.
+\end{equation}
+
+\section{为什么复杂度是 \texorpdfstring{$O(N^{3/2})$}{O(N to the three halves)}}
+
+论文中 $N$ 表示 patch 总数。为了避免与 DCT 公式中的列数 $N$ 混淆，本节把总 patch 数记为 $P$。若特征图为正方形，则边长为
+\begin{equation}
+  S=\sqrt{P}.
+\end{equation}
+矩阵 $A,B,C,D$ 的空间尺寸均为 $S\times S$。计算
+\begin{equation}
+  CA
+\end{equation}
+是两个 $S\times S$ 稠密矩阵相乘，经典复杂度为
+\begin{equation}
+  O(S^3).
+\end{equation}
+再乘 $D^{\top}$ 仍是同阶，所以一次二维 DCT 为
+\begin{equation}
+  O(S^3)=O\left((\sqrt{P})^3\right)=O(P^{3/2}).
+\end{equation}
+DCT、逐频率乘法和 IDCT 合计仍为
+\begin{equation}
+  \boxed{O(P^{3/2})}.
+\end{equation}
+相比之下，标准自注意力的注意力矩阵为 $P\times P$，核心复杂度为
+\begin{equation}
+  O(P^2d),
+\end{equation}
+若只比较 token 数的次数，则是 $O(P^2)$。
+
+\begin{examplebox}[分辨率升高时的增长差异]
+若 patch 数扩大为原来的 $4$ 倍：
+\begin{align}
+  O(P^{3/2})&\text{ 增长 }4^{3/2}=8\text{ 倍},\\
+  O(P^2)&\text{ 增长 }4^2=16\text{ 倍}.
+\end{align}
+因此高分辨率下两者差距会迅速拉大。
+\end{examplebox}
+
+\begin{notebox}[复杂度表述需要精确理解]
+数学上存在 FFT 型快速 DCT，可达到约 $O(P\log P)$。论文报告的 $O(P^{3/2})$ 对应其 GPU 友好的稠密矩阵乘法实现，而不是 DCT 算法的理论最优复杂度。作者选择该实现，是因为规则 GEMM 在 GPU 上有很高的并行效率。
+\end{notebox}
+
+\section{自适应热扩散率与 Frequency Value Embeddings}
+
+\subsection{为什么固定 \texorpdfstring{$k$}{k} 不够}
+
+经典热方程中 $k$ 只由材料决定，是常数。若直接把固定 $k$ 用于所有图像、层和频率，得到的是统一的各向同性低通滤波，无法根据图像内容选择保留哪些结构。因此论文令
+\begin{equation}
+  k=k(\omega_x,\omega_y),
+\end{equation}
+使不同频率拥有不同扩散强度。
+
+\subsection{FVE 的数学角色}
+
+为每个频率位置 $(p,q)$ 设置可学习嵌入
+\begin{equation}
+  e_{pq}\in\R^{d_e}.
+\end{equation}
+通过线性层预测
+\begin{equation}
+  k_{pq}=We_{pq}+b,
+  \label{eq:k-linear}
+\end{equation}
+或在保证物理正性时可采用
+\begin{equation}
+  k_{pq}=\softplus(We_{pq}+b)>0.
+  \label{eq:k-positive}
+\end{equation}
+论文明确描述了“FVE 经线性层预测 $k$”，但正文并未充分展开正值约束的具体实现，因此式 \eqref{eq:k-positive} 是稳定实现的一种补充建议，而非对论文代码的无条件断言。
+
+最终频率响应为
+\begin{equation}
+  H_{pq}
+  =\exp[-k_{pq}\Omega_{pq}^2t].
+  \label{eq:adaptive-response}
+\end{equation}
+
+\subsection{固定 \texorpdfstring{$t$}{t} 的可辨识性原因}
+
+频率响应只通过乘积 $kt$ 出现：
+\begin{equation}
+  e^{-k\Omega^2t}=e^{-(kt)\Omega^2}.
+\end{equation}
+若同时学习 $k$ 和 $t$，任取 $a>0$，
+\begin{equation}
+  k'=ak,
+  \qquad t'=t/a
+\end{equation}
+会产生完全相同的响应。因此二者无法仅由该算子唯一辨识。固定 $t$、学习 $k$ 可以消除这种尺度冗余。
+
+\subsection{对参数的梯度}
+
+令
+\begin{equation}
+  H=e^{-k\Omega^2t}.
+\end{equation}
+则
+\begin{align}
+  \frac{\pd H}{\pd k}
+  &=-\Omega^2t\,H,\\
+  \frac{\pd H}{\pd t}
+  &=-k\Omega^2H.
+\end{align}
+高频处 $\Omega^2$ 较大，因此对 $k$ 的梯度幅度可能更大，但当指数已经极小又会出现衰减。过大的 $kt\Omega^2$ 可能导致高频分量和梯度接近零。
+
+\section{自适应频率滤波与经典热方程的关系}
+
+若 $k$ 是正的常数，则 HCO 完全对应常系数热方程的解算子。若 $k=k(\omega_x,\omega_y)$，则
+\begin{equation}
+  \widehat U^t(\omega)
+  =e^{-k(\omega)|\omega|^2t}\widehat U^0(\omega)
+\end{equation}
+仍然是一个稳定的谱滤波器，但它一般不再对应简单的局部 PDE
+\begin{equation}
+  u_t=k\Delta u
+\end{equation}
+中的常数 $k$。它可被解释为某个频率依赖的伪微分算子：
+\begin{equation}
+  u_t=-\mathcal{A}u,
+  \qquad
+  \widehat{\mathcal{A}u}(\omega)
+  =k(\omega)|\omega|^2\widehat u(\omega).
+\end{equation}
+
+\begin{criticalbox}[物理解释的边界]
+“受热传导启发”是准确的；但当 $k$ 被自由地按频率学习后，模型更严格的数学描述是“具有热核形式的学习型全局谱滤波”。它保留了指数扩散、频率对角化和能量传播的结构，但不必等价于某种真实材料的经典热传导。
+\end{criticalbox}
+
+\section{HCO Layer 的完整计算链}
+
+根据论文图示和文字，HCO layer 可整理为以下计算。设输入
+\begin{equation}
+  X\in\R^{B\times H\times W\times C}.
+\end{equation}
+首先进行局部预处理：
+\begin{equation}
+  Z=\DWConv_{3\times3}(X).
+\end{equation}
+然后形成两条分支。
+
+HCO 分支：
+\begin{equation}
+  Z_h=\operatorname{Linear}_h(\LN(Z)),
+\end{equation}
+\begin{equation}
+  Y_h=\operatorname{HCO}(Z_h).
+\end{equation}
+门控分支：
+\begin{equation}
+  Y_g=\SiLU(\operatorname{Linear}_g(\LN(Z))).
+\end{equation}
+融合时采用逐元素乘法：
+\begin{equation}
+  Y=Y_h\odot Y_g.
+\end{equation}
+再经线性投影和残差连接：
+\begin{equation}
+  X'=X+\operatorname{Linear}_o(Y).
+  \label{eq:hco-block-reconstruct}
+\end{equation}
+随后接标准 FFN：
+\begin{equation}
+  X_{\mathrm{out}}
+  =X'+\operatorname{FFN}(\LN(X')).
+\end{equation}
+
+\begin{notebox}[结构公式的性质]
+式 \eqref{eq:hco-block-reconstruct} 是根据论文 HCO layer 图和文字做的结构化展开，用于帮助理解数据流。论文正文重点给出的是 HCO 内部的热方程离散解，而没有把整个 block 写成单一编号公式。
+\end{notebox}
+
+\subsection{门控的意义}
+
+逐元素乘法
+\begin{equation}
+  Y_h\odot Y_g
+\end{equation}
+允许网络根据当前位置和通道的门值，选择性放大或压低 HCO 传播结果。HCO 提供全局传播，门控分支提供内容依赖的非线性选择。
+
+\subsection{残差连接的梯度通道}
+
+若
+\begin{equation}
+  X'=X+F(X),
+\end{equation}
+则
+\begin{equation}
+  \frac{\pd X'}{\pd X}
+  =I+\frac{\pd F}{\pd X}.
+\end{equation}
+恒等项 $I$ 为反向传播提供直接路径，使全局频域算子更容易稳定地嵌入深层网络。
+
+\section{HCO 为什么具有全局感受野}
+
+DCT 的每个频率系数是所有空间位置的线性组合：
+\begin{equation}
+  B_{pq}
+  =\sum_{m,n}A_{mn}\phi_{pq}(m,n).
+\end{equation}
+因此一个局部输入变化一般会影响许多频率系数。IDCT 又将每个频率系数重新分配到所有空间位置：
+\begin{equation}
+  A'_{mn}
+  =\sum_{p,q}B'_{pq}\phi_{pq}(m,n).
+\end{equation}
+组合后，输出位置 $(m,n)$ 对输入位置 $(i,j)$ 的线性核为
+\begin{equation}
+  K_{mn,ij}
+  =\sum_{p,q}H_{pq}
+  \phi_{pq}(m,n)\phi_{pq}(i,j).
+  \label{eq:global-kernel}
+\end{equation}
+通常 $K_{mn,ij}$ 对远距离 $(i,j)$ 也不为零，所以一次 HCO 就能建立全局依赖。
+
+\subsection{与注意力矩阵的对比}
+
+自注意力：
+\begin{equation}
+  Y=\operatorname{softmax}\left(\frac{QK^{\top}}{\sqrt d}\right)V,
+\end{equation}
+其传播矩阵由输入内容的两两相似度动态生成，大小为 $P\times P$。
+
+HCO：
+\begin{equation}
+  Y=\Phi^{\top}\diag(H)\Phi X,
+\end{equation}
+其中 $\Phi$ 是固定 DCT 基，$H$ 是学习到的频率响应。它不显式构造两两相似度，而是在共享频率基中进行对角调制。
+
+\begin{center}
+\begin{tabularx}{\textwidth}{>{\bfseries}p{2.5cm}XX}
+\toprule
+比较项 & Self-Attention & HCO\\
+\midrule
+全局交互 & 显式 token 两两交互 & 固定全局基中的谱传播\\
+动态性 & $Q,K$ 由输入生成 & 主要由可学习频率扩散率调节\\
+核心矩阵 & $P\times P$ 注意力矩阵 & 对角频率响应 $H$\\
+复杂度 & 约 $O(P^2)$ & 论文实现约 $O(P^{3/2})$\\
+解释方式 & 相似度加权 & 热扩散与频率滤波\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\section{稳定性、能量与可逆性分析}
+
+\subsection{频域能量不增条件}
+
+DCT 是正交变换，满足 Parseval 等式：
+\begin{equation}
+  \norm{U}_{F}^{2}
+  =\norm{\DCT(U)}_{F}^{2}.
+\end{equation}
+若 $k_{pq}\ge0$ 且 $t\ge0$，则 $|H_{pq}|\le1$，因此
+\begin{align}
+  \norm{U^t}_{F}^{2}
+  &=\sum_{p,q,c}|H_{pq}|^2
+  |\widehat U^0_{pqc}|^2\\
+  &\le\sum_{p,q,c}|\widehat U^0_{pqc}|^2
+  =\norm{U^0}_{F}^{2}.
+\end{align}
+这说明纯 HCO 热扩散部分是非扩张的，不会无界放大特征能量。
+
+\subsection{若 \texorpdfstring{$k<0$}{k is negative} 会发生什么}
+
+若某些频率上 $k<0$，则
+\begin{equation}
+  H=e^{|k|\Omega^2t}>1,
+\end{equation}
+且随频率平方指数增长，可能严重放大高频噪声并造成数值不稳定。因此从热方程和稳定性角度，保证 $k\ge0$ 很重要。
+
+\subsection{是否可逆}
+
+有限 $t$ 下，若所有 $H_{pq}>0$，形式上可写
+\begin{equation}
+  \widehat U^0_{pq}
+  =\frac{\widehat U^t_{pq}}{H_{pq}}.
+\end{equation}
+但高频处 $H_{pq}$ 可能极小，除法会放大噪声，逆问题高度病态。这与图像去模糊和反热传导问题一致。
+
+\section{一个可手算的离散 HCO 示例}
+
+考虑一个 $2\times2$ 特征图
+\begin{equation}
+  A=
+  \begin{bmatrix}
+    4&0\\
+    0&0
+  \end{bmatrix}.
+\end{equation}
+使用正交二维 DCT，可将其表示为低频与高频余弦模态的组合。为了突出机制，设四个频率响应为
+\begin{equation}
+  H=
+  \begin{bmatrix}
+    1&0.6\\
+    0.6&0.2
+  \end{bmatrix}.
+\end{equation}
+零频率保留，高频显著衰减。经过
+\begin{equation}
+  B=\DCT(A),
+  \qquad B'=B\odot H,
+  \qquad A'=\IDCT(B'),
+\end{equation}
+输出会从单点峰值变成向其他位置扩散的平滑分布，同时总平均值主要由 DC 分量保持。
+
+\begin{keybox}[这个例子要表达的不是具体数值]
+HCO 不在空间域逐步扫描邻居，而是一次性把局部峰值分解成全局余弦模态，衰减高频后再重构。空间上看到的“向外扩散”，是频域低通演化的等价表现。
+\end{keybox}
+
+\section{模型分层与扩散尺度}
+
+vHeat 采用四阶段层次结构，随着 stage 加深：
+\begin{equation}
+  H\times W
+  \to\frac H4\times\frac W4
+  \to\frac H8\times\frac W8
+  \to\frac H{16}\times\frac W{16}
+  \to\frac H{32}\times\frac W{32},
+\end{equation}
+同时通道数增加。浅层高分辨率特征强调局部纹理，深层低分辨率特征强调高级语义。
+
+论文可视化显示，若更深层预测的平均 $k$ 更大，则根据
+\begin{equation}
+  \sigma=\sqrt{2kt},
+\end{equation}
+其有效扩散尺度更大，符合深层需要聚合更广语义范围的直觉。但这里的 $k$ 是学习型频率参数，$\sigma$ 只适用于常系数 Gaussian 热核的直观类比，不能逐字等同于所有自适应 HCO 的真实空间标准差。
+
+\section{论文数学设计的优势}
+
+\subsection{物理方程直接给出结构化频率响应}
+
+与任意学习一个全局频率权重矩阵相比，HCO 使用
+\begin{equation}
+  e^{-k\Omega^2t}
+\end{equation}
+这一热方程形式，带来明确的频率顺序、平滑性和稳定性先验。
+
+\subsection{全局感受野不需要显式二次矩阵}
+
+通过固定 DCT 基，算子写成
+\begin{equation}
+  \Phi^{\top}\diag(H)\Phi,
+\end{equation}
+避免显式存储 $P\times P$ 注意力矩阵。
+
+\subsection{适应性与先验的平衡}
+
+FVE 提供频率位置先验，线性层学习扩散率。与把每个频率权重完全自由化相比，它保留了热扩散参数化；与固定 $k$ 相比，又能适应视觉内容与网络阶段。
+
+\section{需要谨慎理解或可进一步优化的地方}
+
+\subsection{频率相关 \texorpdfstring{$k$}{k} 与严格物理模型存在距离}
+
+经典各向同性热方程使用常数 $k$；若 $k$ 依赖频率，它更像学习型谱算子。若未来希望加强物理一致性，可考虑：
+\begin{itemize}[leftmargin=2.2em]
+  \item 约束 $k_{pq}\ge0$；
+  \item 对相邻频率的 $k$ 加平滑正则；
+  \item 使用少量物理参数构造各向异性扩散张量；
+  \item 显式区分空间依赖 $k(x,y)$ 与频率依赖 $k(\omega)$。
+\end{itemize}
+
+\subsection{分辨率变化时的频率坐标}
+
+不同输入分辨率对应不同的 DCT 网格。若直接插值 FVE，需要确认插值的是归一化频率坐标而不是纯数组索引。论文附录比较了多种 FVE/$k$ 尺寸对齐策略，这说明跨分辨率迁移不是完全无代价的。
+
+\subsection{复杂度不等于实际速度}
+
+$O(P^{3/2})$ 只描述渐近次数。实际速度还取决于通道数、批量、内存访问、矩阵乘法内核和硬件。论文采用 GEMM 形式正是为了利用 GPU 的成熟优化。
+
+\subsection{指数滤波可能过度平滑}
+
+若 $kt$ 过大，非零频率迅速衰减，特征可能趋于常数，产生 oversmoothing。可通过残差连接、门控、分层小步扩散、限制 $k$ 范围等方式缓解。
+
+\subsection{缺少显式的输入依赖两两关系}
+
+HCO 的频率基固定，通常不具备标准自注意力那种“根据当前图像任意两个 token 内容计算相似度”的自由度。其优势是效率和结构先验，代价是交互形式受谱参数化约束。门控和上下文特征映射可补偿一部分表达能力，但二者不是完全等价。
+
+\section{公式总表与维度检查}
+
+\begin{longtable}{p{1.15cm}p{6.2cm}p{8.2cm}}
+\toprule
+编号 & 公式 & 数学含义\\
+\midrule
+\endfirsthead
+\toprule
+编号 & 公式 & 数学含义\\
+\midrule
+\endhead
+(1) & $u_t=k(u_{xx}+u_{yy})$ & 二维热方程，局部曲率驱动温度变化。\\
+(2) & $\F(u_t)=k\F(u_{xx}+u_{yy})$ & 对空间变量做 Fourier 变换。\\
+(3) & $\F(u_t)=\pd_t\widetilde u$ & 时间微分与空间 Fourier 变换交换。\\
+(4) & $\F(u_{xx}+u_{yy})=-(\omega_x^2+\omega_y^2)\widetilde u$ & 微分在频域变成乘法。\\
+(5) & $\dot{\widetilde u}=-k(\omega_x^2+\omega_y^2)\widetilde u$ & 每个频率独立的一阶 ODE。\\
+(6) & $\widetilde u=\widetilde f e^{-k(\omega_x^2+\omega_y^2)t}$ & 频域指数衰减解。\\
+(7) & $u=\IFT(\widetilde f e^{-k|\omega|^2t})$ & 返回空间域；等价于 Gaussian 卷积。\\
+(8) & $U^t=\IFT(\F(U^0)e^{-k|\omega|^2t})$ & 扩展到多通道视觉特征。\\
+(9) & $U^t=\IDCT(\DCT(U^0)e^{-k|\omega|^2t})$ & Neumann 边界下的离散 HCO。\\
+(10) & 二维 DCT-II/IDCT-III 双重求和 & 定义空间网格与余弦频率系数之间的变换。\\
+(11) & $B=CAD^{\top},\ A=C^{\top}BD$ & GPU 友好的可分离矩阵乘法实现。\\
+\bottomrule
+\end{longtable}
+
+\section{从输入到输出的完整数学过程}
+
+将所有关键步骤串起来：
+\begin{align}
+  X_0&\in\R^{B\times H\times W\times C},\\
+  Z&=\DWConv(X_0),\\
+  V&=\operatorname{Linear}_h(\LN(Z)),\\
+  \widehat V&=\DCT(V),\\
+  k&=\operatorname{Predictor}(\operatorname{FVE}),\\
+  H&=\exp(-k\odot\Omega^2t),\\
+  V_t&=\IDCT(\widehat V\odot H),\\
+  G&=\SiLU(\operatorname{Linear}_g(\LN(Z))),\\
+  X_1&=X_0+\operatorname{Linear}_o(V_t\odot G),\\
+  X_{\mathrm{out}}&=X_1+\operatorname{FFN}(\LN(X_1)).
+\end{align}
+
+其中 HCO 最核心的数学压缩式是
+\begin{equation}
+  \boxed{
+  \operatorname{HCO}(V)
+  =\Phi^{\top}
+  \diag\!\left(e^{-k\odot\Omega^2t}\right)
+  \Phi V
+  },
+\end{equation}
+$\Phi$ 表示二维 DCT 正交基。这个表达把整篇论文的数学思想集中为：
+\begin{equation}
+  \boxed{
+  \text{固定全局余弦基}
+  +\text{可学习热扩散谱}
+  +\text{逆变换重建}
+  }.
+\end{equation}
+
+\section{结论}
+
+vHeat 的数学创新不是重新发明热方程，而是完成了以下映射：
+\begin{equation}
+  \text{物理温度场}
+  \longleftrightarrow
+  \text{多通道视觉特征},
+\end{equation}
+\begin{equation}
+  \text{热量扩散}
+  \longleftrightarrow
+  \text{视觉语义传播},
+\end{equation}
+\begin{equation}
+  \text{热方程频域解}
+  \longleftrightarrow
+  \text{可学习全局频率滤波器}.
+\end{equation}
+
+其推导链条是：
+\begin{equation}
+  \boxed{
+  u_t=k\Delta u
+  \xrightarrow{\F}
+  \dot{\widetilde u}=-k|\omega|^2\widetilde u
+  \xrightarrow{\text{解 ODE}}
+  \widetilde u=\widetilde f e^{-k|\omega|^2t}
+  \xrightarrow{\text{Neumann+DCT}}
+  \operatorname{HCO}
+  }.
+\end{equation}
+
+这套设计以 $O(P^{3/2})$ 的论文实现复杂度获得全局感受野，并通过频率值嵌入让热扩散率可学习。最值得掌握的不是单独某个指数公式，而是“利用算子特征基把空间传播对角化，再在谱域中进行结构化学习”的通用思想。
+
+\end{document}

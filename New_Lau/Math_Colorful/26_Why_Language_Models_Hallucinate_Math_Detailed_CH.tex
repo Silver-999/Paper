@@ -1,0 +1,558 @@
+\documentclass[UTF8,12pt,a4paper,fontset=none]{ctexart}
+\usepackage[a4paper,left=1.82cm,right=1.82cm,top=1.72cm,bottom=1.82cm,headheight=15pt]{geometry}
+\usepackage{fontspec,xeCJK}
+\setmainfont{Liberation Serif}
+\setsansfont{DejaVu Sans}
+\setmonofont{DejaVu Sans Mono}
+\setCJKmainfont[BoldFont=Noto Serif CJK SC Bold]{Noto Serif CJK SC}
+\setCJKsansfont[BoldFont=Noto Sans CJK SC Bold]{Noto Sans CJK SC}
+\setCJKmonofont{Noto Sans Mono CJK SC}
+\usepackage{amsmath,amssymb,mathtools,bm}
+\usepackage{booktabs,longtable,tabularx,array,multirow}
+\usepackage{enumitem,xcolor}
+\usepackage[most]{tcolorbox}
+\usepackage{fancyhdr,titlesec,hyperref,cleveref,lastpage}
+\usepackage{tikz,float,caption,listings}
+\usetikzlibrary{arrows.meta,positioning,calc,fit,backgrounds,shapes.geometric}
+\definecolor{mainblue}{RGB}{39,82,138}
+\definecolor{deepblue}{RGB}{25,55,95}
+\definecolor{softblue}{RGB}{235,243,252}
+\definecolor{softgreen}{RGB}{238,248,241}
+\definecolor{softorange}{RGB}{255,246,232}
+\definecolor{softgray}{RGB}{245,246,248}
+\definecolor{warnred}{RGB}{160,48,48}
+\hypersetup{unicode=true,colorlinks=true,linkcolor=deepblue,urlcolor=mainblue,citecolor=deepblue}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.36em}
+\setlength{\tabcolsep}{5pt}
+\renewcommand{\arraystretch}{1.2}
+\allowdisplaybreaks[4]
+\emergencystretch=3em
+\sloppy
+\pagestyle{fancy}\fancyhf{}\fancyfoot[C]{\small 第 \thepage\ 页，共 \pageref{LastPage} 页}\renewcommand{\headrulewidth}{0.4pt}
+\titleformat{\section}{\Large\bfseries\color{deepblue}}{\thesection}{0.65em}{}
+\titleformat{\subsection}{\large\bfseries\color{mainblue}}{\thesubsection}{0.55em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries}{\thesubsubsection}{0.5em}{}
+\numberwithin{equation}{section}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Prob}{\mathbb{P}}
+\newcommand{\Loss}{\mathcal{L}}
+\newcommand{\norm}[1]{\left\lVert #1\right\rVert}
+\newcommand{\ip}[2]{\left\langle #1,#2\right\rangle}
+\newcommand{\tr}{\operatorname{Tr}}
+\newcommand{\diag}{\operatorname{diag}}
+\newcommand{\rank}{\operatorname{rank}}
+\newcommand{\softmax}{\operatorname{softmax}}
+\newcommand{\argmin}{\operatorname*{arg\,min}}
+\newcommand{\argmax}{\operatorname*{arg\,max}}
+\newcommand{\sg}{\operatorname{sg}}
+\newcommand{\KL}{D_{\mathrm{KL}}}
+\newcommand{\dd}{\mathrm{d}}
+\newtcolorbox{keybox}[1][]{enhanced,breakable,colback=softblue,colframe=mainblue,boxrule=0.8pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\newtcolorbox{examplebox}[1][]{enhanced,breakable,colback=softgreen,colframe=green!45!black,boxrule=0.7pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\newtcolorbox{notebox}[1][]{enhanced,breakable,colback=softorange,colframe=orange!70!black,boxrule=0.7pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\newtcolorbox{criticalbox}[1][]{enhanced,breakable,colback=red!3,colframe=warnred,boxrule=0.8pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\lstset{basicstyle=\ttfamily\small,breaklines=true,frame=single,backgroundcolor=\color{softgray},numbers=left,numberstyle=\tiny,showstringspaces=false,columns=fullflexible}
+\hypersetup{pdftitle={26 Why Language Models Hallucinate 数学过程详解},pdfauthor={OpenAI}}
+\fancyhead[L]{\small 26 Why Language Models Hallucinate}
+\fancyhead[R]{\small 数学过程详解}
+\setlength{\abovedisplayskip}{0.82em}
+\setlength{\belowdisplayskip}{0.82em}
+\setlength{\abovedisplayshortskip}{0.45em}
+\setlength{\belowdisplayshortskip}{0.45em}
+\begin{document}
+\begin{center}
+{\LARGE\bfseries 26\_Why Language Models Hallucinate 数学过程详解}\par
+\vspace{0.35em}
+{\large 从密度估计到 IIV 分类、校准与 Missing Mass}
+\end{center}
+\vspace{0.45em}
+\begin{keybox}[本文只处理真正需要推导的部分]
+本文完整复原生成错误率到二分类误差的 reduction，证明主下界，推导交叉熵校准导数、singleton/missing-mass 关系与评测为何鼓励猜测。全文按“公式从哪里来--每个符号是什么--中间步骤为何成立--维度和复杂度如何核对--论文结论依赖哪些假设”的顺序展开；不复述实验表格，也不使用与论文无关的通用背景凑页数。
+\end{keybox}
+\tableofcontents
+\newpage
+
+\section{生成错误率的概率定义}
+样本空间 $\mathcal X=\mathcal V\cup\mathcal E$，$\mathcal V$ 为有效陈述，$\mathcal E$ 为错误陈述，二者不交。真实训练分布满足 $p(\mathcal E)=0$，语言模型为 $\widehat p$。生成错误率
+\begin{equation}
+ \boxed{\operatorname{err}=\widehat p(\mathcal E)=\Pr_{x\sim\widehat p}[x\in\mathcal E]}.
+\end{equation}
+“训练数据全真”并不推出 $\widehat p(\mathcal E)=0$，因为密度估计器必须在未见样本上分配概率质量。
+
+\section{IIV 二分类问题的构造}
+构造混合分布
+\begin{equation}
+ D(x)=\begin{cases}
+ p(x)/2,&x\in\mathcal V,\\
+ 1/(2|\mathcal E|),&x\in\mathcal E,
+ \end{cases}
+\end{equation}
+标签 $f(x)=+1$ 当且仅当 $x\in\mathcal V$。由语言模型概率构造阈值分类器
+\begin{equation}
+ \widehat f(x)=\begin{cases}
+ +1,&\widehat p(x)>1/|\mathcal E|,\\
+ -1,&\widehat p(x)\le1/|\mathcal E|.
+ \end{cases}
+\end{equation}
+IIV 误分类率
+\begin{equation}
+ \operatorname{err}_{\rm iiv}=\Pr_{x\sim D}[\widehat f(x)\ne f(x)].
+\end{equation}
+它把“会不会生成错误”转化成“能不能区分有效与错误候选”。
+
+\section{无 Prompt 情形主界的逐步证明}
+定义高概率集合
+\begin{equation}
+ A=\{x:\widehat p(x)>1/|\mathcal E|\},\qquad B=A^c,
+\end{equation}
+以及校准差
+\begin{equation}
+ \delta=|\widehat p(A)-p(A)|.
+\end{equation}
+误分类分成假阳性与假阴性：
+\begin{equation}
+ \operatorname{err}_{\rm iiv}=D(A\cap\mathcal E)+D(B\cap\mathcal V).
+\end{equation}
+
+对 $x\in A\cap\mathcal E$，有 $\widehat p(x)>1/|\mathcal E|$，而 $D(x)=1/(2|\mathcal E|)$，所以逐点
+\begin{equation}
+ \widehat p(x)>2D(x).
+\end{equation}
+求和得
+\begin{equation}
+ \widehat p(A\cap\mathcal E)\ge2D(A\cap\mathcal E).
+\end{equation}
+
+对 $B\cap\mathcal V$，每个有效样本概率至多 $1/|\mathcal E|$，故
+\begin{equation}
+ \widehat p(B\cap\mathcal V)\le\frac{|\mathcal V|}{|\mathcal E|}.
+\end{equation}
+又因 $p(B\cap\mathcal V)=p(B)$，并用
+\begin{equation}
+ |p(B)-\widehat p(B)|=\delta,
+\end{equation}
+可整理为
+\begin{equation}
+ \widehat p(B\cap\mathcal E)
+ \ge2D(B\cap\mathcal V)-\frac{|\mathcal V|}{|\mathcal E|}-\delta.
+\end{equation}
+两部分相加：
+\begin{equation}
+ \boxed{\operatorname{err}\ge2\operatorname{err}_{\rm iiv}
+ -\frac{|\mathcal V|}{|\mathcal E|}-\delta}.
+\end{equation}
+当错误候选远多于有效候选且模型近似校准时，生成错误率至少约为 IIV 错误率的两倍。
+
+\section{含 Prompt 的一般化}
+Prompt $c\sim\mu$，有效和错误回答集合分别为 $V_c,E_c$。联合模型
+\begin{equation}
+ \widehat p(c,r)=\mu(c)\widehat p(r\mid c).
+\end{equation}
+令
+\begin{equation}
+ K=\min_c|E_c|,
+ \qquad k=\max_c|V_c|,
+\end{equation}
+阈值改为 $1/K$。完全相同的分解给出
+\begin{equation}
+ \boxed{\operatorname{err}\ge2\operatorname{err}_{\rm iiv}-\frac{k}{K}-\delta}.
+\end{equation}
+生日问题中 $k$ 很小而 $K$ 很大，因此校准项以外的修正很小。
+
+\section{交叉熵为何推动阈值校准}
+预训练目标
+\begin{equation}
+ \Loss(\widehat p)=\E_{x\sim p}[-\log\widehat p(x)].
+\end{equation}
+把集合 $A$ 内概率乘以 $s$ 再归一化：
+\begin{equation}
+ \widehat p_s(x)=\frac{s^{\mathbf1[x\in A]}\widehat p(x)}{Z(s)},
+ \qquad Z(s)=s\widehat p(A)+\widehat p(B).
+\end{equation}
+损失
+\begin{equation}
+ \Loss(s)=-p(A)\log s+\log Z(s)+\text{const}.
+\end{equation}
+求导并令 $s=1$：
+\begin{align}
+ \Loss'(1)&=-p(A)+\frac{\widehat p(A)}{\widehat p(A)+\widehat p(B)}\\
+ &=\widehat p(A)-p(A).
+\end{align}
+所以
+\begin{equation}
+ \boxed{|\Loss'(1)|=\delta}.
+\end{equation}
+若训练达到局部极小且模型族能实现这种简单重标定，则导数应接近 0，解释了 base model 的阈值校准。
+
+\section{任意事实、Singleton Rate 与 Missing Mass}
+训练集中只出现一次且非 IDK 的 prompt 集合为 $S$，singleton rate
+\begin{equation}
+ \operatorname{sr}=\frac{|S|}{N}.
+\end{equation}
+Good--Turing 思想指出，单例比例估计未见事件的总概率质量
+\begin{equation}
+ M_0=\sum_{c:N_c=0}\mu(c).
+\end{equation}
+直观原因是：一个稀有 prompt 若当前只出现一次，与未来出现一个此前未见 prompt 的概率由同一长尾质量控制。论文在集中不等式下得到高概率界，主导项为
+\begin{equation}
+ \operatorname{err}\gtrsim \operatorname{sr}-\frac{2}{\min_c|E_c|}-O\left(\frac{\log N}{\sqrt N}\right)-\delta.
+\end{equation}
+因此 singleton rate 不是经验相关性，而是不可学习事实质量的可观测估计量。
+
+\section{模型族不足的下界}
+阈值分类器族
+\begin{equation}
+ \mathcal G=\{g_{\theta,t}:g_{\theta,t}(c,r)=\mathbf1[\widehat p_\theta(r\mid c)>t]\}
+\end{equation}
+的不可约误差
+\begin{equation}
+ \operatorname{opt}(\mathcal G)=\min_{g\in\mathcal G}\Pr_D[g(x)\ne f(x)].
+\end{equation}
+代入主界：
+\begin{equation}
+ \operatorname{err}\ge2\operatorname{opt}(\mathcal G)-\frac{k}{K}-\delta.
+\end{equation}
+这把架构表达能力不足、上下文窗口不足、优化未拟合等熟悉的分类错误因素直接映射到生成幻觉。
+
+\section{纯多选问题的修正系数}
+每个 prompt 只有一个正确选项，总选项数 $C$，错误数 $C-1$。论文给出
+\begin{equation}
+ \boxed{\operatorname{err}\ge2\left(1-\frac1C\right)\operatorname{opt}(\mathcal G)}.
+\end{equation}
+二选一时系数为 1；$C\to\infty$ 时趋近 2。它说明“生成错误约为二分类辨别错误两倍”在大量错误候选时最紧。
+
+\section{为什么 0--1 评分鼓励猜测}
+模型对正确答案的主观概率为 $p$。回答的期望 0--1 得分为
+\begin{equation}
+ U_{\rm answer}=p,
+\end{equation}
+若 IDK 得 0，则
+\begin{equation}
+ U_{\rm IDK}=0.
+\end{equation}
+只要 $p>0$，猜测严格优于弃权。若错误惩罚为 $-\lambda$、正确为 1，回答效用
+\begin{equation}
+ U=p-(1-p)\lambda=(1+\lambda)p-\lambda.
+\end{equation}
+理性回答阈值
+\begin{equation}
+ p>\frac{\lambda}{1+\lambda}.
+\end{equation}
+通过设置正的错误代价或给校准弃权部分分数，评测才会奖励表达不确定性。
+
+\section{Brier Score 与严格适当评分}
+若模型报告置信度 $q$，真实标签 $y\in\{0,1\}$，Brier 损失
+\begin{equation}
+ \Loss_B=(q-y)^2.
+\end{equation}
+给定真实正确概率 $p$，期望损失
+\begin{equation}
+ \E\Loss_B=p(q-1)^2+(1-p)q^2=(q-p)^2+p(1-p).
+\end{equation}
+唯一最优报告是 $q=p$。与准确率不同，严格适当评分不会鼓励把低置信度答案伪装成确定答案。
+% AUGMENTED_DETAILED_MATH
+
+\section{缺失质量与 Good--Turing 估计}
+真实事实分布为 $p=(p_i)$，训练样本计数 $N_i$。未在训练集中出现的事实总概率
+\begin{equation}
+ M_0=\sum_i p_i\mathbf1(N_i=0)
+\end{equation}
+称 missing mass。单例数
+\begin{equation}
+ N_1=\sum_i\mathbf1(N_i=1).
+\end{equation}
+对样本量 $n$，
+\begin{align}
+ \E\frac{N_1}{n}
+ &=\sum_i\frac1n\Pr(N_i=1)\\
+ &=\sum_i p_i(1-p_i)^{n-1}.
+\end{align}
+而
+\begin{equation}
+ \E M_0=\sum_ip_i(1-p_i)^n.
+\end{equation}
+两者只差一个 $(1-p_i)$ 因子；稀有事实 $p_i\ll1$ 时近似相等，得到 Good--Turing 估计
+\begin{equation}
+ \boxed{M_0\approx N_1/n.}
+\end{equation}
+这把“训练中只见过一次的事实比例”与测试时未见事实概率联系起来。
+
+\section{IIV 二分类规约}
+对一个事实 $f$，构造两个字符串：正确陈述 $s^+(f)$ 与错误陈述 $s^-(f)$。给定训练集 $D$，算法需判断某陈述是否属于真实集合。定义判别器
+\begin{equation}
+ h_D(s)\in\{0,1\}.
+\end{equation}
+若模型在未见事实上无法区分正负陈述，则对对称先验
+\begin{equation}
+ \Pr(h_D(s)=Y\mid f\ \text{unseen})\le\frac12.
+\end{equation}
+于是总错误率至少包含
+\begin{equation}
+ \operatorname{Err}\ge\frac12\Pr(f\ \text{unseen})
+ =\frac12M_0.
+\end{equation}
+更精细的定理会加入 prompt 信息和模型族可辨识性系数，但核心下界来自 unseen mass。
+
+\section{为什么训练误差低不消除下界}
+经验风险
+\begin{equation}
+ \widehat R_D(h)=\frac1n\sum_{j=1}^{n}\mathbf1[h(s_j)\ne y_j]
+\end{equation}
+只约束训练中出现的事实。若两个世界分布 $P$、$Q$ 在所有已观察样本上相同，但对未见事实真值相反，则任何算法基于 $D$ 产生相同 $h_D$，至少在一个世界中出错。Le Cam 两点法给出
+\begin{equation}
+ \inf_h\sup_{R\in\{P,Q\}}\Pr_R(h\ne Y)
+ \ge\frac12(1-\operatorname{TV}(P_D,Q_D)).
+\end{equation}
+若训练分布不可区分，TV 小，下界接近 $1/2$。
+
+\section{交叉熵的最优预测概率}
+对二元真值 $Y\sim\operatorname{Bernoulli}(\eta)$，预测概率 $q$ 的期望 log loss
+\begin{equation}
+ L(q)=-\eta\log q-(1-\eta)\log(1-q).
+\end{equation}
+求导
+\begin{equation}
+ L'(q)=-\frac\eta q+\frac{1-\eta}{1-q},
+\end{equation}
+令零得 $q=\eta$；二阶导
+\begin{equation}
+ L''(q)=\frac\eta{q^2}+\frac{1-\eta}{(1-q)^2}>0.
+\end{equation}
+所以交叉熵是严格适当评分，理论上鼓励输出真实置信度，而不是一律猜测。
+
+\section{0--1 评分为何鼓励阈值化猜测}
+若回答正确得 1 分，错误和拒答都得 0 分，预测某答案正确概率为 $q>0$，猜测期望得分
+\begin{equation}
+ \E S_{\mathrm{guess}}=q>0,
+\end{equation}
+拒答得分为 0，所以任何正概率猜测都优于拒答。若错误惩罚为 $-\lambda$，则
+\begin{equation}
+ \E S=q-(1-q)\lambda
+ =(1+\lambda)q-\lambda.
+\end{equation}
+只有当
+\begin{equation}
+ q>\frac{\lambda}{1+\lambda}
+\end{equation}
+才应回答。评分规则通过阈值直接决定模型是否倾向“有把握再说”。
+
+\section{多选题的随机猜测修正}
+$K$ 选一题随机猜中概率 $1/K$。若模型准确率为 $a$，去除随机基线的 normalized accuracy
+\begin{equation}
+ a_{\mathrm{norm}}=\frac{a-1/K}{1-1/K}.
+\end{equation}
+当 $a=1/K$ 时为 0，完美时为 1。若未见事实上模型等价随机猜测，则原始错误率
+\begin{equation}
+ 1-1/K
+\end{equation}
+随选项数改变，因此理论下界需要乘相应修正系数，不能把二分类的 $1/2$ 直接照搬。
+
+\section{Brier Score 的严格适当性}
+二元 Brier loss
+\begin{equation}
+ L_B(q,Y)=(q-Y)^2.
+\end{equation}
+期望
+\begin{align}
+ \E L_B
+ &=\eta(q-1)^2+(1-\eta)q^2\\
+ &=(q-\eta)^2+\eta(1-\eta).
+\end{align}
+第二项不可约，唯一最优 $q=\eta$。与 log loss 相比，Brier 对极端错误概率的惩罚有限；log loss 在 $q\to0$ 且 $Y=1$ 时发散，更强烈抑制过度自信。
+
+\section{校准误差与准确率是不同量}
+把预测概率分箱 $B_m$，经验校准误差
+\begin{equation}
+ \operatorname{ECE}
+ =\sum_m\frac{|B_m|}{n}
+ |\operatorname{acc}(B_m)-\operatorname{conf}(B_m)|.
+\end{equation}
+一个模型可以准确率高但 ECE 大，例如所有预测置信度 0.99 而实际正确率 0.8；也可以准确率低但完美校准。论文讨论 hallucination 时，事实错误率、置信度校准、拒答策略必须分开评估。
+
+\section{模型族不足的不可约误差}
+即使事实在训练中出现，若模型类 $\mathcal H$ 无法表达真规则，仍有 approximation error
+\begin{equation}
+ R_{\mathrm{app}}=\inf_{h\in\mathcal H}R(h)-R^*>0.
+\end{equation}
+总误差可概念分解为
+\begin{equation}
+ R(\widehat h)-R^*
+ =R_{\mathrm{app}}+R_{\mathrm{est}}+R_{\mathrm{opt}}.
+\end{equation}
+missing-mass 下界主要描述估计信息缺失；模型容量、优化失败和分布漂移会在其上继续增加错误。
+
+\section{有限样本置信区间}
+测试集中观察 $m$ 次 hallucination，总样本 $n$，估计率 $\widehat p=m/n$。正态近似标准误
+\begin{equation}
+ \operatorname{SE}=\sqrt{\frac{\widehat p(1-\widehat p)}{n}}.
+\end{equation}
+小概率或小样本时应使用 Wilson 区间：
+\begin{equation}
+ \frac{\widehat p+z^2/(2n)\pm z
+ \sqrt{\widehat p(1-\widehat p)/n+z^2/(4n^2)}}
+ {1+z^2/n}.
+\end{equation}
+否则只比较点估计可能把抽样噪声误认为方法差异。
+\clearpage
+\section{从“未见事实”到不可避免错误的概率模型}
+设事实空间 $\mathcal F$ 上真实分布为 $P$，训练集包含 $n$ 个独立事实样本 $F_1,\ldots,F_n$。训练后仍未出现的事实集合
+\begin{equation}
+ U_n=\{f\in\mathcal F:N_f=0\},
+\end{equation}
+其中 $N_f=\sum_i\mathbf 1(F_i=f)$。未见质量
+\begin{equation}
+ M_n=P(U_n)=\sum_f p_f\mathbf 1(N_f=0).
+\end{equation}
+即使模型把所有已见事实记住，对 $U_n$ 中事实仍缺乏监督。若某类问答要求在未见事实上猜测，错误率至少与 $M_n$ 同阶。
+
+\section{Missing Mass 的期望}
+对固定事实 $f$，未在 $n$ 个样本中出现的概率为
+\begin{equation}
+ \Pr(N_f=0)=(1-p_f)^n.
+\end{equation}
+因此
+\begin{equation}
+ \E[M_n]=\sum_f p_f(1-p_f)^n.
+\end{equation}
+稀有事实 $p_f\ll1/n$ 时，$(1-p_f)^n\approx e^{-np_f}\approx1$，几乎必然未见；高频事实则迅速被覆盖。这给出“长尾知识更易幻觉”的直接统计原因。
+
+\section{Singleton Rate 与 Good--Turing 估计}
+训练集中恰好出现一次的事实数
+\begin{equation}
+ N_1=\sum_f\mathbf 1(N_f=1).
+\end{equation}
+其期望
+\begin{align}
+ \E[N_1]
+ &=\sum_f n p_f(1-p_f)^{n-1}.
+\end{align}
+于是
+\begin{equation}
+ \E\left[\frac{N_1}{n}\right]
+ =\sum_f p_f(1-p_f)^{n-1}.
+\end{equation}
+与 $\E[M_n]=\sum_fp_f(1-p_f)^n$ 只差一个 $(1-p_f)$ 因子，因此 $N_1/n$ 是未见质量的经典估计。直观上，若样本中还有大量“只见一次”的事实，说明还有相当质量完全没见过。
+
+\section{IIV 二分类规约的核心逻辑}
+把每个事实问答转换成一个判断：模型输出的候选陈述是真还是假。设正负标签 $Y\in\{0,1\}$，模型内部表示 $Z$，任何回答策略对应分类器 $g(Z)$。Bayes 错误率
+\begin{equation}
+ e^*=\E_Z\min\{P(Y=1\mid Z),P(Y=0\mid Z)\}.
+\end{equation}
+若训练数据无法区分两个在已见样本上一致、但在未见事实上标签相反的世界，则任何算法在这两个世界中至少有一个错误概率较高。这是信息论式不可辨识性，而不是优化不足。
+
+\section{0--1 准确率为何鼓励阈值化猜测}
+若模型认为答案正确的概率为 $p$。必须在“回答正确答案”与“拒答”之间选择。若拒答得分为 0，回答正确得 1、错误得 0，则回答的期望分数
+\begin{equation}
+ \E[S_{\rm answer}]=p.
+\end{equation}
+只要 $p>0$，回答优于拒答，因此指标鼓励无论多不确定都猜测。若错误扣分 $-c$，则
+\begin{equation}
+ \E[S]=p-(1-p)c,
+\end{equation}
+回答条件为
+\begin{equation}
+ p>\frac{c}{1+c}.
+\end{equation}
+评分规则改变会直接改变最优行为阈值。
+
+\section{交叉熵的严格适当性}
+二分类预测概率 $q$，真实标签概率 $p$。期望交叉熵
+\begin{equation}
+ \ell(q)=-p\log q-(1-p)\log(1-q).
+\end{equation}
+一阶导数
+\begin{equation}
+ \ell'(q)=-\frac pq+\frac{1-p}{1-q}
+ =\frac{q-p}{q(1-q)}.
+\end{equation}
+唯一驻点 $q=p$。二阶导数
+\begin{equation}
+ \ell''(q)=\frac p{q^2}+\frac{1-p}{(1-q)^2}>0.
+\end{equation}
+所以最优预测概率等于真实概率，交叉熵鼓励校准，而 0--1 准确率只关心 $q$ 是否跨过 $1/2$。
+
+\section{Brier Score 的严格适当性}
+Brier 损失
+\begin{equation}
+ \ell(q,Y)=(q-Y)^2.
+\end{equation}
+期望
+\begin{align}
+ \E\ell
+ &=p(q-1)^2+(1-p)q^2\\
+ &=q^2-2pq+p\\
+ &=(q-p)^2+p(1-p).
+\end{align}
+第二项与 $q$ 无关，因此唯一最优解仍是 $q=p$。与交叉熵相比，Brier 对极端错误概率的惩罚有限，更数值稳定，但对尾部概率差异不如对数损失敏感。
+
+\section{多选题随机猜测修正}
+$K$ 选一，随机猜测准确率为 $1/K$。若模型在不知道答案时随机猜，原始准确率仍非零。常见归一化得分
+\begin{equation}
+ S_{\rm norm}=\frac{\mathrm{Acc}-1/K}{1-1/K}.
+\end{equation}
+随机猜测得 0，满分得 1。若准确率 $a$，
+\begin{equation}
+ S_{\rm norm}=\frac{Ka-1}{K-1}.
+\end{equation}
+但它仍不能区分“校准的不确定”与“过度自信的猜测”，因为只使用最终选项。
+
+\section{校准误差与准确率的区别}
+把置信度分成 bins $B_m$，经验准确率和平均置信度
+\begin{equation}
+ \operatorname{acc}(B_m)=\frac1{|B_m|}
+ \sum_{i\in B_m}\mathbf 1(\hat y_i=y_i),
+\end{equation}
+\begin{equation}
+ \operatorname{conf}(B_m)=\frac1{|B_m|}
+ \sum_{i\in B_m}\hat p_i.
+\end{equation}
+ECE
+\begin{equation}
+ \mathrm{ECE}=\sum_m\frac{|B_m|}{n}
+ |\operatorname{acc}(B_m)-\operatorname{conf}(B_m)|.
+\end{equation}
+两个模型可以有相同准确率，但一个输出 0.6 置信度、另一个输出 0.99；若实际准确率 0.6，前者校准好，后者严重过度自信。
+
+\section{有限样本误差率的置信区间}
+观察 $n$ 个独立问答，错误指示 $E_i\in\{0,1\}$，经验错误率
+\begin{equation}
+ \hat e=\frac1n\sum_iE_i.
+\end{equation}
+Hoeffding 不等式给出
+\begin{equation}
+ \Pr(|\hat e-e|\ge\epsilon)
+ \le2e^{-2n\epsilon^2}.
+\end{equation}
+置信度 $1-\delta$ 下
+\begin{equation}
+ |\hat e-e|\le
+ \sqrt{\frac{\log(2/\delta)}{2n}}.
+\end{equation}
+例如 $n=1000,\delta=0.05$，半径约
+\begin{equation}
+ \sqrt{\frac{\log40}{2000}}\approx0.043.
+\end{equation}
+因此小基准上的几个百分点差异可能落在统计噪声内。
+
+\section{模型族不足带来的不可约误差}
+设真实条件分布为 $p^*(y\mid x)$，模型族为 $\mathcal Q$。最小交叉熵
+\begin{equation}
+ \min_{q\in\mathcal Q}\E[-\log q(Y\mid X)]
+ =H(Y\mid X)+
+ \min_{q\in\mathcal Q}\E_X\KL(p^*(\cdot\mid X)\|q(\cdot\mid X)).
+\end{equation}
+第一项是数据本身的不确定性，第二项是模型族逼近误差。即使无限数据和完美优化，若 $p^*\notin\mathcal Q$，第二项仍大于零。论文的统计下界与模型逼近下界应区分：前者来自未见样本，后者来自函数类限制。
+
+\section{选择性回答的风险--覆盖率曲线}
+令模型只在置信度 $p\ge\tau$ 时回答。覆盖率
+\begin{equation}
+ C(\tau)=\Pr(p\ge\tau),
+\end{equation}
+选择性风险
+\begin{equation}
+ R(\tau)=\Pr(\hat y\ne y\mid p\ge\tau).
+\end{equation}
+增大 $\tau$ 通常降低风险但减少覆盖。单一准确率无法反映该权衡。对于幻觉评估，更合理的是报告整条风险--覆盖率曲线或其面积，而不是强迫模型回答全部问题。
+\end{document}

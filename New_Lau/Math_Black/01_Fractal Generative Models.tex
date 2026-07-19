@@ -1,0 +1,423 @@
+\documentclass[11pt]{article}
+\usepackage{fontspec}
+\setmainfont[
+  Path=fonts/,
+  Extension=.ttf,
+  UprightFont=*-400,
+  BoldFont=*-700
+]{NotoSerifSC}
+\setsansfont[
+  Path=fonts/,
+  Extension=.ttf,
+  UprightFont=*-400,
+  BoldFont=*-700
+]{NotoSerifSC}
+\XeTeXlinebreaklocale "zh"
+\XeTeXlinebreakskip=0pt plus 1pt
+\usepackage[a4paper,margin=1.70cm]{geometry}
+\usepackage{amsmath,amssymb,mathtools,bm}
+\usepackage{booktabs,longtable,array}
+\usepackage{enumitem}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\setlist{nosep,leftmargin=2em}
+\allowdisplaybreaks[3]
+\numberwithin{equation}{section}
+\pagestyle{plain}
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Pp}{\mathbb{P}}
+\newcommand{\1}{\mathbf{1}}
+\newcommand{\T}{\mathsf{T}}
+\newcommand{\F}{\mathrm{F}}
+\newcommand{\cN}{\mathcal{N}}
+\newcommand{\cL}{\mathcal{L}}
+\newcommand{\cS}{\mathcal{S}}
+\newcommand{\cH}{\mathcal{H}}
+\newcommand{\cA}{\mathcal{A}}
+\newcommand{\cM}{\mathcal{M}}
+\newcommand{\cT}{\mathcal{T}}
+\newcommand{\diag}{\operatorname{diag}}
+\newcommand{\tr}{\operatorname{tr}}
+\newcommand{\Var}{\operatorname{Var}}
+\newcommand{\Cov}{\operatorname{Cov}}
+\newcommand{\softmax}{\operatorname{softmax}}
+\newcommand{\KL}{D_{\mathrm{KL}}}
+\newcommand{\sg}{\operatorname{sg}}
+\begin{document}
+    \begin{center}
+      {\LARGE\bfseries 01\_Fractal Generative Models}
+    \end{center}
+    \vspace{0.8em}
+
+    \section{符号与维度}
+    \begin{longtable}{>{$}l<{$} >{$}l<{$} p{10cm}}
+    \toprule
+    \text{符号} & \text{维度} & \text{含义}\\
+    \midrule
+    x_{1:N} & \{1,\ldots,K\}^N & 展平后的离散图像序列。\\
+        X^{(j)} & -- & 递归层中的第 $j$ 个块。\\
+        b,L & \mathbb N & 分支数与递归深度。\\
+        p_\theta & -- & 自回归条件分布。\\
+    \bottomrule
+    \end{longtable}
+
+    所有向量默认是列向量；未特别说明时，期望同时对数据、噪声和采样时刻取值。下文只展开论文中承担方法逻辑的公式，并把所需假设写在推导发生的位置。
+
+\section{递归生成树的概率归一化}
+
+设根表示完整对象，深度 $d$ 的每个节点 $v$ 产生 $b$ 个子节点
+$c_1(v),\ldots,c_b(v)$。条件生成分布
+\begin{equation}
+ p_\theta(x_{c_1},\ldots,x_{c_b}\mid x_v)
+\end{equation}
+对每个父状态都归一化。整棵有限树的联合分布
+\begin{equation}
+ p_\theta(x_{\mathcal T})=p(x_{\rm root})
+ \prod_{v\in\mathcal I}
+ p_\theta(x_{\operatorname{ch}(v)}\mid x_v),
+\end{equation}
+其中 $\mathcal I$ 是内部节点集合。
+
+归一化可从叶到根证明。固定一个最深内部节点 $v$，对其全部孩子求和/积分：
+\begin{equation}
+ \int p_\theta(x_{\operatorname{ch}(v)}\mid x_v)
+ dx_{\operatorname{ch}(v)}=1.
+\end{equation}
+逐个消去所有最深层条件因子，再向上重复，最终只剩
+$\int p(x_{\rm root})dx_{\rm root}=1$。因此局部条件归一化保证全局联合归一化，
+不要求不同分支边缘独立；它们通过共同祖先相关。
+
+\section{叶子数、节点数与递归深度}
+
+满 $b$ 叉树深度 $D$（根为深度 $0$）的叶子数
+\begin{equation}
+ N_{\rm leaf}=b^D.
+\end{equation}
+总节点数是几何级数
+\begin{equation}
+ N_{\rm total}=\sum_{d=0}^{D}b^d
+ =\frac{b^{D+1}-1}{b-1}.
+\end{equation}
+内部节点数
+\begin{equation}
+ N_{\rm int}=\frac{b^D-1}{b-1}.
+\end{equation}
+若每个内部节点调用同一生成模块一次，串行总调用量为 $N_{\rm int}$；
+同一深度的节点可并行，理想关键路径只有 $D$ 次模块调用，但显存随并行宽度 $b^d$ 增长。
+
+若目标叶子数为 $N$，所需深度
+\begin{equation}
+ D=\lceil\log_bN\rceil.
+\end{equation}
+增大分支因子降低关键路径，却增加单次父节点输出维度和同层并行宽度。
+
+\section{分层负对数似然的分解}
+
+由联合分解，单棵树负对数似然
+\begin{equation}
+ -\log p_\theta(x_{\mathcal T})
+ =-\log p(x_{\rm root})
+ -\sum_{v\in\mathcal I}
+ \log p_\theta(x_{\operatorname{ch}(v)}\mid x_v).
+\end{equation}
+若根分布固定，训练只需最小化所有内部节点局部 NLL 之和。
+参数共享意味着总梯度累加：
+\begin{equation}
+ \nabla_\theta\cL=
+ -\sum_{v\in\mathcal I}
+ \nabla_\theta\log p_\theta(x_{\operatorname{ch}(v)}\mid x_v).
+\end{equation}
+深层节点数量指数增多，所以不加权时深层对梯度总量占主导。
+
+若每层先平均再加权，
+\begin{equation}
+ \cL=\sum_{d=0}^{D-1}\lambda_d
+ \frac1{b^d}\sum_{v:\operatorname{depth}(v)=d}\ell_v,
+\end{equation}
+则每层总权重为 $\lambda_d$，不随节点数增长。若直接对所有节点平均，
+深度 $d$ 的总权重比例为
+\begin{equation}
+ \frac{b^d}{\sum_{j=0}^{D-1}b^j}.
+\end{equation}
+两种归一化对应不同的统计目标。
+
+\section{随机抽取节点的无偏梯度}
+
+完整损失是
+\begin{equation}
+ L=\sum_{v\in\mathcal I}w_v\ell_v.
+\end{equation}
+若按概率 $q_v>0$ 抽一个节点，估计
+\begin{equation}
+ \widehat L=\frac{w_v}{q_v}\ell_v
+\end{equation}
+满足
+\begin{equation}
+ \E_q\widehat L=
+ \sum_vq_v\frac{w_v}{q_v}\ell_v=L.
+\end{equation}
+同理梯度无偏。其二阶矩
+\begin{equation}
+ \E\|\widehat g\|^2
+ =\sum_v\frac{w_v^2}{q_v}\|g_v\|^2.
+\end{equation}
+在 $\sum_vq_v=1$ 下用拉格朗日乘子最小化，得到理论最优
+\begin{equation}
+ q_v^*\propto w_v\|g_v\|.
+\end{equation}
+实际未知梯度范数，可用损失、深度或历史梯度作代理。
+
+\section{误差沿树传播}
+
+设父到子映射 $x_c=F_\theta(x_v,\epsilon_c)$，对父状态 Lipschitz：
+\begin{equation}
+ \|F(x,\epsilon)-F(y,\epsilon)\|
+ \le L\|x-y\|.
+\end{equation}
+若每一层还有局部模型误差 $\delta_d$，某条深度 $D$ 路径的误差递推
+\begin{equation}
+ e_{d+1}\le Le_d+\delta_d.
+\end{equation}
+展开得
+\begin{equation}
+ e_D\le L^De_0+\sum_{d=0}^{D-1}L^{D-1-d}\delta_d.
+\end{equation}
+$L<1$ 时早期误差衰减，$L>1$ 时根部误差会影响大量后代并被放大。
+这说明分层监督不仅提供多尺度损失，也可直接约束早期递归误差。
+
+\section{分支相关性}
+
+考虑两个叶子 $a,b$ 的最近公共祖先位于深度 $k$。若线性化递归
+\begin{equation}
+ x_{d+1}=Ax_d+\epsilon_{d+1},
+ \qquad\Cov(\epsilon)=\Sigma,
+\end{equation}
+且分叉后的噪声独立，则共同祖先状态 $x_k$ 传播到叶子的协方差为
+\begin{equation}
+ \Cov(x_a,x_b)=A^{D-k}\Cov(x_k)(A^{D-k})^T.
+\end{equation}
+分叉越晚，共享随机历史越长，叶子通常相关越强。树分解提供条件独立
+\begin{equation}
+ x_a\perp x_b\mid x_{\rm LCA},
+\end{equation}
+却不意味着边缘独立。
+
+\section{自回归因子化与块内因子化}
+
+一个父节点生成 $b$ 个孩子，可联合建模
+\begin{equation}
+ p(x_{1:b}\mid x_v),
+\end{equation}
+也可块内自回归
+\begin{equation}
+ p(x_{1:b}\mid x_v)=
+ \prod_{j=1}^{b}p(x_j\mid x_v,x_{<j}).
+\end{equation}
+后者由概率链式法则不损失表达能力，但块内关键路径增加到 $b$；
+若条件独立近似
+\begin{equation}
+ p(x_{1:b}\mid x_v)\approx\prod_jp(x_j\mid x_v),
+\end{equation}
+可完全并行，却舍弃给定父表示后仍存在的兄弟相关性。
+
+\section{条件期望作为 $L^2$ 正交投影}
+
+令随机向量 $Y\in L^2$，观测 $Z$ 生成子空间
+\begin{equation}
+ \mathcal H_Z=\{f(Z):\E\|f(Z)\|^2<\infty\}.
+\end{equation}
+条件期望 $m(Z)=\E[Y\mid Z]$ 满足任意 $h(Z)\in\mathcal H_Z$：
+\begin{equation}
+ \E[(Y-m(Z))^Th(Z)]=0.
+\end{equation}
+因为
+\begin{align}
+ \E[(Y-m)^Th]
+ &=\E\{\E[(Y-m)^Th\mid Z]\}\\
+ &=\E\{h^T\E[Y-m\mid Z]\}=0.
+\end{align}
+于是 Pythagoras 恒等式
+\begin{equation}
+ \E\|Y-f(Z)\|^2
+ =\E\|Y-m(Z)\|^2+\E\|m(Z)-f(Z)\|^2.
+\end{equation}
+多数回归、去噪、流匹配和局部目标的“最优预测器”都由这一投影结论得到。
+
+全方差公式也是同一正交分解：
+\begin{equation}
+ \Var(Y)=\E\Var(Y\mid Z)+\Var(\E[Y\mid Z]).
+\end{equation}
+第一项是观测 $Z$ 后仍不可约的不确定性，第二项是不同 $Z$ 条件均值的变化。
+
+\section{Jensen、对数和与变分界}
+
+对凹函数 $\log$，
+\begin{equation}
+ \log\E X\ge\E\log X,
+ \qquad X>0.
+\end{equation}
+差距可以写成 KL。令未归一权重 $w(z)>0$、提议分布 $q(z)$，
+配分函数 $Z=\E_qw(z)$，定义
+\begin{equation}
+ p^*(z)=\frac{q(z)w(z)}{Z}.
+\end{equation}
+则
+\begin{align}
+ \log Z-\E_q\log w
+ &=\E_q\log\frac{Z}{w(z)}\\
+ &=\E_q\log\frac{q(z)}{p^*(z)}\\
+ &=D_{\rm KL}(q\|p^*)\ge0.
+\end{align}
+因此 Jensen 下界何时紧不只取决于“方差小”，而是提议分布是否等于归一化后的目标分布。
+
+log-sum-exp
+\begin{equation}
+ \operatorname{LSE}(x)=\log\sum_{i=1}^{n}e^{x_i}
+\end{equation}
+满足
+\begin{equation}
+ \max_i x_i\le\operatorname{LSE}(x)
+ \le\max_i x_i+\log n.
+\end{equation}
+减去最大值 $m=\max_ix_i$ 后计算
+\begin{equation}
+ \operatorname{LSE}(x)=m+\log\sum_ie^{x_i-m}
+\end{equation}
+可避免指数上溢且数学等价。
+
+\section{Hoeffding 不等式的矩母函数推导}
+
+设独立 $X_i\in[a_i,b_i]$，$S=\sum_i(X_i-\E X_i)$。
+对任意 $\lambda>0$，Markov 不等式
+\begin{equation}
+ \Pp(S\ge t)=\Pp(e^{\lambda S}\ge e^{\lambda t})
+ \le e^{-\lambda t}\E e^{\lambda S}.
+\end{equation}
+独立性给出矩母函数乘积。Hoeffding 引理
+\begin{equation}
+ \E e^{\lambda(X_i-\E X_i)}
+ \le\exp\left(\frac{\lambda^2(b_i-a_i)^2}{8}\right).
+\end{equation}
+故
+\begin{equation}
+ \Pp(S\ge t)
+ \le\exp\left(-\lambda t+\frac{\lambda^2}{8}
+ \sum_i(b_i-a_i)^2\right).
+\end{equation}
+对 $\lambda$ 最小化，
+\begin{equation}
+ \lambda^*=\frac{4t}{\sum_i(b_i-a_i)^2},
+\end{equation}
+得到
+\begin{equation}
+ \Pp(S\ge t)
+ \le\exp\left(-\frac{2t^2}{\sum_i(b_i-a_i)^2}\right).
+\end{equation}
+对下尾应用于 $-S$，再 union bound 得双侧界。
+
+\section{Bernstein 界利用方差信息}
+
+若独立零均值 $X_i$ 满足 $|X_i|\le M$，总方差
+$v=\sum_i\E X_i^2$，Bernstein 界
+\begin{equation}
+ \Pp\left(\sum_iX_i\ge t\right)
+ \le\exp\left(-\frac{t^2}{2(v+Mt/3)}\right).
+\end{equation}
+当 $t\ll v/M$ 时近似高斯尾 $e^{-t^2/(2v)}$；
+当 $t$ 很大时转为 $e^{-3t/(2M)}$。相比只使用取值区间的 Hoeffding，
+方差远小于最坏范围时 Bernstein 更紧。
+
+对 Bernoulli 均值 $\widehat p=N^{-1}\sum_iX_i$，$v=Np(1-p)$，
+\begin{equation}
+ \Pp(|\widehat p-p|\ge\epsilon)
+ \le2\exp\left(-\frac{N\epsilon^2}
+ {2[p(1-p)+\epsilon/3]}\right).
+\end{equation}
+
+\section{并合界与同时保证}
+
+事件 $E_1,…,E_M$ 不要求独立也有
+\begin{equation}
+ \Pp\left(\bigcup_{j=1}^{M}E_j\right)
+ \le\sum_{j=1}^{M}\Pp(E_j).
+\end{equation}
+若每个失败概率至多 $\delta/M$，则全部结论同时成立的概率至少 $1-\delta$。
+将单点集中界扩展到有限候选集合通常产生 $\log M$ 项。例如
+\begin{equation}
+ 2M e^{-2N\epsilon^2}\le\delta
+\end{equation}
+等价于
+\begin{equation}
+ \epsilon\ge\sqrt{\frac{\log(2M/\delta)}{2N}}.
+\end{equation}
+若候选集合无限，需要覆盖数、VC 维或 Rademacher 复杂度，而不能直接把 $M=\infty$ 代入。
+
+\section{Delta 方法与非线性估计误差}
+
+设 $\sqrt N(\widehat\theta-\theta)\Rightarrow\cN(0,\Sigma)$，
+光滑函数 $g$ 的一阶展开
+\begin{equation}
+ g(\widehat\theta)=g(\theta)+
+ \nabla g(\theta)^T(\widehat\theta-\theta)+o_p(N^{-1/2}).
+\end{equation}
+于是
+\begin{equation}
+ \sqrt N[g(\widehat\theta)-g(\theta)]
+ \Rightarrow\cN(0,\nabla g^T\Sigma\nabla g).
+\end{equation}
+例如 $g(p)=\log p$，方差近似
+\begin{equation}
+ \Var(\log\widehat p)\approx\frac{\Var(\widehat p)}{p^2}.
+\end{equation}
+当 $p$ 很小时误差被 $1/p^2$ 放大，解释了稀有事件对数概率和概率比估计的不稳定。
+
+二阶展开还给非线性偏差
+\begin{equation}
+ \E g(\widehat\theta)-g(\theta)
+ \approx\frac12\tr(H_g(\theta)\Cov(\widehat\theta)).
+\end{equation}
+FID、比率、倒数和归一化优势等即使基础估计无偏，非线性组合也可有有限样本偏差。
+
+\section{重要性采样与有效样本量}
+
+目标期望 $\E_p f(X)$ 用提议 $q$ 采样，权重
+$w(x)=p(x)/q(x)$：
+\begin{equation}
+ \widehat\mu=\frac1N\sum_{i=1}^{N}w(X_i)f(X_i),
+ \qquad X_i\sim q.
+\end{equation}
+若 $p$ 的归一化常数未知，使用自归一估计
+\begin{equation}
+ \widetilde\mu=\frac{\sum_iw_if_i}{\sum_iw_i},
+\end{equation}
+它一般有 $O(1/N)$ 偏差，但常更实用。权重退化可用
+\begin{equation}
+ N_{\rm eff}=\frac{(\sum_iw_i)^2}{\sum_iw_i^2}
+\end{equation}
+衡量；权重相等时为 $N$，单个权重主导时接近 $1$。
+
+比率裁剪 $\widetilde w=\min(w,c)$ 降低方差，但引入偏差
+\begin{equation}
+ \E_q[(w-\widetilde w)f]
+ =\E_q[(w-c)_+f].
+\end{equation}
+若 $|f|\le F$，绝对偏差至多
+\begin{equation}
+ F\E_q[(w-c)_+].
+\end{equation}
+
+\section{校准与 Brier 分解}
+
+二元预测概率 $P\in[0,1]$、标签 $Y\in\{0,1\}$。条件真实频率
+$m(P)=\E[Y\mid P]$。Brier 分数
+\begin{align}
+ \E(P-Y)^2
+ &=\E(P-m(P))^2+\E(m(P)-Y)^2,
+\end{align}
+交叉项因条件期望为零而消失。第一项是校准误差，第二项是给定预测分组后的不可约噪声。
+若模型完美校准，$m(P)=P$，第一项为零，但单次预测仍可错误；
+校准不是零错误率，而是概率与长期频率一致。
+
+\end{document}

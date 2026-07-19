@@ -1,0 +1,628 @@
+\documentclass[UTF8,12pt,a4paper,fontset=none]{ctexart}
+\usepackage[a4paper,left=1.82cm,right=1.82cm,top=1.72cm,bottom=1.82cm,headheight=15pt]{geometry}
+\usepackage{fontspec,xeCJK}
+\setmainfont{Liberation Serif}
+\setsansfont{DejaVu Sans}
+\setmonofont{DejaVu Sans Mono}
+\setCJKmainfont[BoldFont=Noto Serif CJK SC Bold]{Noto Serif CJK SC}
+\setCJKsansfont[BoldFont=Noto Sans CJK SC Bold]{Noto Sans CJK SC}
+\setCJKmonofont{Noto Sans Mono CJK SC}
+\usepackage{amsmath,amssymb,mathtools,bm}
+\usepackage{booktabs,longtable,tabularx,array,multirow}
+\usepackage{enumitem,xcolor}
+\usepackage[most]{tcolorbox}
+\usepackage{fancyhdr,titlesec,hyperref,cleveref,lastpage}
+\usepackage{tikz,float,caption,listings}
+\usetikzlibrary{arrows.meta,positioning,calc,fit,backgrounds,shapes.geometric}
+\definecolor{mainblue}{RGB}{39,82,138}
+\definecolor{deepblue}{RGB}{25,55,95}
+\definecolor{softblue}{RGB}{235,243,252}
+\definecolor{softgreen}{RGB}{238,248,241}
+\definecolor{softorange}{RGB}{255,246,232}
+\definecolor{softgray}{RGB}{245,246,248}
+\definecolor{warnred}{RGB}{160,48,48}
+\hypersetup{unicode=true,colorlinks=true,linkcolor=deepblue,urlcolor=mainblue,citecolor=deepblue}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.36em}
+\setlength{\tabcolsep}{5pt}
+\renewcommand{\arraystretch}{1.2}
+\allowdisplaybreaks[4]
+\emergencystretch=3em
+\sloppy
+\pagestyle{fancy}\fancyhf{}\fancyfoot[C]{\small 第 \thepage\ 页，共 \pageref{LastPage} 页}\renewcommand{\headrulewidth}{0.4pt}
+\titleformat{\section}{\Large\bfseries\color{deepblue}}{\thesection}{0.65em}{}
+\titleformat{\subsection}{\large\bfseries\color{mainblue}}{\thesubsection}{0.55em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries}{\thesubsubsection}{0.5em}{}
+\numberwithin{equation}{section}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Prob}{\mathbb{P}}
+\newcommand{\Loss}{\mathcal{L}}
+\newcommand{\norm}[1]{\left\lVert #1\right\rVert}
+\newcommand{\ip}[2]{\left\langle #1,#2\right\rangle}
+\newcommand{\tr}{\operatorname{Tr}}
+\newcommand{\diag}{\operatorname{diag}}
+\newcommand{\rank}{\operatorname{rank}}
+\newcommand{\softmax}{\operatorname{softmax}}
+\newcommand{\argmin}{\operatorname*{arg\,min}}
+\newcommand{\argmax}{\operatorname*{arg\,max}}
+\newcommand{\sg}{\operatorname{sg}}
+\newcommand{\KL}{D_{\mathrm{KL}}}
+\newcommand{\dd}{\mathrm{d}}
+\newtcolorbox{keybox}[1][]{enhanced,breakable,colback=softblue,colframe=mainblue,boxrule=0.8pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\newtcolorbox{examplebox}[1][]{enhanced,breakable,colback=softgreen,colframe=green!45!black,boxrule=0.7pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\newtcolorbox{notebox}[1][]{enhanced,breakable,colback=softorange,colframe=orange!70!black,boxrule=0.7pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\newtcolorbox{criticalbox}[1][]{enhanced,breakable,colback=red!3,colframe=warnred,boxrule=0.8pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\lstset{basicstyle=\ttfamily\small,breaklines=true,frame=single,backgroundcolor=\color{softgray},numbers=left,numberstyle=\tiny,showstringspaces=false,columns=fullflexible}
+\hypersetup{pdftitle={09 Mean Flows for One-step Generative Modeling 数学过程详解},pdfauthor={OpenAI}}
+\fancyhead[L]{\small 09 Mean Flows for One-step Generative Modeling}
+\fancyhead[R]{\small 数学过程详解}
+\setlength{\abovedisplayskip}{0.82em}
+\setlength{\belowdisplayskip}{0.82em}
+\setlength{\abovedisplayshortskip}{0.45em}
+\setlength{\belowdisplayshortskip}{0.45em}
+\begin{document}
+\begin{center}
+{\LARGE\bfseries 09\_Mean Flows for One-step Generative Modeling 数学过程详解}\par
+\vspace{0.35em}
+{\large 平均速度定义、MeanFlow Identity、JVP 训练目标与一步采样}
+\end{center}
+\vspace{0.45em}
+\begin{keybox}[本文只处理真正需要推导的部分]
+本文逐步推导平均速度、区间可加性、MeanFlow Identity、全导数/JVP、停止梯度目标、Flow Matching 退化关系和鲁棒损失。全文按“公式从哪里来--每个符号是什么--中间步骤为何成立--维度和复杂度如何核对--论文结论依赖哪些假设”的顺序展开；不复述实验表格，也不使用与论文无关的通用背景凑页数。
+\end{keybox}
+\tableofcontents
+\newpage
+
+\section{Flow Matching 的瞬时速度}
+给定数据 $x\sim p_{\rm data}$、先验噪声 $\epsilon\sim p_{\rm prior}$，论文使用一般线性路径
+\begin{equation}
+ z_t=a_t x+b_t\epsilon.
+\end{equation}
+对 $t$ 求导得到条件瞬时速度
+\begin{equation}
+ v_t(z_t\mid x)=\dot a_t x+\dot b_t\epsilon.
+\end{equation}
+最常用的 rectified path 为 $a_t=1-t,b_t=t$，于是
+\begin{equation}
+ z_t=(1-t)x+t\epsilon,\qquad v_t=\epsilon-x.
+\end{equation}
+同一个 $z_t$ 可能来自多个 $(x,\epsilon)$，所以真正决定边缘概率流的速度是条件期望
+\begin{equation}
+ \boxed{v(z_t,t)=\E[v_t\mid z_t].}
+\end{equation}
+均方误差回归条件速度与回归边缘速度具有相同最优解，因为条件期望是 $L^2$ 投影。
+
+\section{平均速度的定义与位移关系}
+对从时刻 $t$ 走到更早时刻 $r<t$ 的轨迹，定义平均速度
+\begin{equation}
+ \boxed{u(z_t,r,t)=\frac{1}{t-r}\int_r^t v(z_\tau,\tau)\,\dd\tau.}
+\end{equation}
+由 ODE $\dd z_t/\dd t=v(z_t,t)$，积分得到
+\begin{equation}
+ z_t-z_r=\int_r^t v(z_\tau,\tau)\,\dd\tau.
+\end{equation}
+所以
+\begin{equation}
+ \boxed{z_r=z_t-(t-r)u(z_t,r,t).}
+\end{equation}
+这不是数值近似，而是平均速度定义的恒等式。如果网络能精确预测 $u(z_1,0,1)$，则一步采样
+\begin{equation}
+ z_0=z_1-u(z_1,0,1)
+\end{equation}
+精确等于整段 ODE 的积分位移。
+
+\section{平均速度的区间可加性}
+任选 $r<s<t$，由积分可加性
+\begin{equation}
+ \int_r^t v\,\dd\tau=\int_r^s v\,\dd\tau+\int_s^t v\,\dd\tau.
+\end{equation}
+代入平均速度定义：
+\begin{equation}
+ \boxed{(t-r)u(z_t,r,t)
+ =(s-r)u(z_s,r,s)+(t-s)u(z_t,s,t).}
+\end{equation}
+该“自一致性”不需要额外正则，只要 $u$ 真的是同一速度场的区间平均就自动成立。网络近似误差会破坏它，但理论目标本身具有该性质。
+
+\section{MeanFlow Identity 的逐步推导}
+从
+\begin{equation}
+ (t-r)u(z_t,r,t)=\int_r^t v(z_\tau,\tau)\,\dd\tau
+\end{equation}
+出发，对 $t$ 求全导数。左边用乘积法则：
+\begin{equation}
+ \frac{\dd}{\dd t}\big[(t-r)u\big]
+ =u+(t-r)\frac{\dd u}{\dd t}.
+\end{equation}
+右边用微积分基本定理：
+\begin{equation}
+ \frac{\dd}{\dd t}\int_r^t v(z_\tau,\tau)\,\dd\tau=v(z_t,t).
+\end{equation}
+因此
+\begin{equation}
+ u+(t-r)\frac{\dd u}{\dd t}=v,
+\end{equation}
+整理得论文核心恒等式
+\begin{equation}
+ \boxed{u(z_t,r,t)=v(z_t,t)-(t-r)\frac{\dd}{\dd t}u(z_t,r,t).}
+\end{equation}
+当 $r\to t$，第二项消失，于是 $u\to v$，平均速度退化为瞬时速度。
+
+\section{全导数为什么包含 Jacobian--vector product}
+$u$ 同时依赖状态 $z_t$、区间起点 $r$ 和终点 $t$：
+\begin{equation}
+ u=u(z_t,r,t).
+\end{equation}
+链式法则给出
+\begin{equation}
+ \frac{\dd u}{\dd t}
+ =\frac{\partial u}{\partial z}\frac{\dd z_t}{\dd t}
+ +\frac{\partial u}{\partial r}\frac{\dd r}{\dd t}
+ +\frac{\partial u}{\partial t}\frac{\dd t}{\dd t}.
+\end{equation}
+训练中 $r$ 与 $t$ 独立采样，故 $\dd r/\dd t=0$；又 $\dd z_t/\dd t=v(z_t,t)$，于是
+\begin{equation}
+ \boxed{\frac{\dd u}{\dd t}=v(z_t,t)\,\partial_z u+\partial_tu.}
+\end{equation}
+若 $u\in\R^d$，$\partial_z u\in\R^{d\times d}$。显式构造 Jacobian 代价高，但只需要
+\begin{equation}
+ J_u(z_t)\,v
+\end{equation}
+这一 Jacobian--vector product，可由自动微分的 JVP 在线性于一次网络评估的成本内计算。
+
+\section{训练目标与停止梯度}
+用网络 $u_\theta$ 代替真实平均速度，并把条件速度 $v_t$ 作为可采样监督，目标构造为
+\begin{equation}
+ u_{\rm tgt}
+ =v_t-(t-r)\left(v_t\partial_z u_\theta+\partial_tu_\theta\right).
+\end{equation}
+损失
+\begin{equation}
+ \boxed{\Loss(\theta)=
+ \E\norm{u_\theta(z_t,r,t)-\sg(u_{\rm tgt})}_2^2.}
+\end{equation}
+若不使用 $\sg$，$u_{\rm tgt}$ 本身含 $\partial u_\theta$，求梯度会出现 Hessian 或二阶反向传播。停止梯度后
+\begin{equation}
+ \nabla_\theta\Loss
+ =2\E J_\theta u_\theta^{\top}
+ \left(u_\theta-u_{\rm tgt}\right),
+\end{equation}
+JVP 只用于计算目标值，不继续参与外层梯度。
+
+\section{零损失为何恢复原定义}
+若对所有 $(z_t,r,t)$ 都有 $u_\theta=u_{\rm tgt}$，则网络满足
+\begin{equation}
+ u_\theta=v-(t-r)\frac{\dd u_\theta}{\dd t},
+\end{equation}
+也就是 MeanFlow Identity。令
+\begin{equation}
+ F(t)=(t-r)u_\theta(z_t,r,t).
+\end{equation}
+则
+\begin{equation}
+ F'(t)=u_\theta+(t-r)\frac{\dd u_\theta}{\dd t}=v(z_t,t).
+\end{equation}
+又 $F(r)=0$，积分得到
+\begin{equation}
+ F(t)=\int_r^t v(z_\tau,\tau)\,\dd\tau,
+\end{equation}
+即
+\begin{equation}
+ u_\theta=\frac1{t-r}\int_r^t v\,\dd\tau.
+\end{equation}
+所以恒等式与平均速度定义在适当边界条件下等价。
+
+\section{MeanFlow 与普通 Flow Matching 的退化关系}
+当强制 $r=t$ 时
+\begin{equation}
+ t-r=0,
+\end{equation}
+目标变成
+\begin{equation}
+ u_{\rm tgt}=v_t,
+\end{equation}
+而网络输入的区间长度为零，$u(z_t,t,t)=v(z_t,t)$。因此损失退化为标准 Flow Matching：
+\begin{equation}
+ \Loss=\E\norm{u_\theta(z_t,t,t)-v_t}_2^2.
+\end{equation}
+非零区间 $t-r$ 才迫使网络学习有限时间位移，而不是局部切向量。
+
+\section{一步和多步采样}
+一步采样从 $z_1=\epsilon$ 开始：
+\begin{equation}
+ \boxed{x\approx z_0=z_1-u_\theta(z_1,0,1).}
+\end{equation}
+若分成 $K$ 段 $1=t_K>t_{K-1}>\cdots>t_0=0$，则
+\begin{equation}
+ z_{t_{i-1}}=z_{t_i}-(t_i-t_{i-1})u_\theta(z_{t_i},t_{i-1},t_i).
+\end{equation}
+这里每一步预测的是该区间平均速度，所以即使 $K$ 很小也比用瞬时速度做粗 Euler 积分更匹配位移目标。
+
+\section{自适应损失加权的数学含义}
+论文考虑误差 $\Delta=u_\theta-u_{\rm tgt}$，目标族
+\begin{equation}
+ \Loss_\gamma=\norm{\Delta}_2^{2\gamma}.
+\end{equation}
+其梯度为
+\begin{equation}
+ \nabla_\Delta\Loss_\gamma
+ =2\gamma\norm{\Delta}_2^{2\gamma-2}\Delta.
+\end{equation}
+可用停止梯度权重近似：
+\begin{equation}
+ w=\frac{1}{(\norm{\Delta}_2^2+c)^p},\qquad p=1-\gamma,
+\end{equation}
+然后最小化
+\begin{equation}
+ \sg(w)\norm{\Delta}_2^2.
+\end{equation}
+大误差样本权重被压低，减弱离群点主导；$c>0$ 防止误差接近零时权重发散。
+
+\section{CFG 平均速度}
+若瞬时引导速度
+\begin{equation}
+ v^{\rm cfg}=v_u+\omega(v_c-v_u),
+\end{equation}
+对应平均速度由积分线性性得到
+\begin{align}
+ u^{\rm cfg}
+ &=\frac1{t-r}\int_r^t v^{\rm cfg}\,\dd\tau\\
+ &=u_u+\omega(u_c-u_u).
+\end{align}
+因此 CFG 可以直接作用在平均速度场上。需要注意，若条件/无条件网络共享但输入不同，JVP 目标中的导数也必须针对组合后的场一致计算。
+
+\section{理论与实现边界}
+\begin{criticalbox}[MeanFlow 不等于“任何 ODE 都能一步精确”]
+一步精确成立的前提是网络准确预测整段真实边缘轨迹的平均速度。训练只使用条件速度和自洽恒等式，有限模型、有限数据、停止梯度与优化误差都会造成偏差。JVP 避免了显式积分，但并没有消除学习整段非线性轨迹的难度。
+\end{criticalbox}
+% AUGMENTED_DETAILED_MATH
+
+\section{平均速度是位移的精确商}
+真实 ODE
+\begin{equation}
+ \dot x_t=v(x_t,t)
+\end{equation}
+在区间 $[r,t]$ 上积分：
+\begin{equation}
+ x_t-x_r=\int_r^tv(x_s,s)\dd s.
+\end{equation}
+定义平均速度
+\begin{equation}
+ u(x_t,r,t)=\frac1{t-r}\int_r^tv(x_s,s)\dd s,
+\end{equation}
+立即得到
+\begin{equation}
+ \boxed{x_r=x_t-(t-r)u(x_t,r,t).}
+\end{equation}
+因此若模型精确预测从噪声端 $t=1$ 到数据端 $r=0$ 的平均速度，一次更新就可完成生成；这不是数值近似，而是平均速度定义的代数恒等式。
+
+\section{区间可加性}
+取 $r<s<t$，由积分可加
+\begin{equation}
+ (t-r)u_{r,t}=(s-r)u_{r,s}+(t-s)u_{s,t}.
+\end{equation}
+故
+\begin{equation}
+ \boxed{
+ u_{r,t}=\frac{s-r}{t-r}u_{r,s}
+ +\frac{t-s}{t-r}u_{s,t}.
+ }
+\end{equation}
+长区间平均场是两个短区间平均场的加权平均。该一致性是 MeanFlow 可以多步组合、也可以一步使用的核心结构。
+
+\section{MeanFlow Identity 的微分推导}
+由
+\begin{equation}
+ (t-r)u(x_t,r,t)=\int_r^tv(x_s,s)\dd s
+\end{equation}
+对 $t$ 求全导数。左边
+\begin{align}
+ \frac{\dd}{\dd t}[(t-r)u(x_t,r,t)]
+ &=u+(t-r)\left(\partial_tu+J_xu\,\dot x_t\right).
+\end{align}
+右边由微积分基本定理为
+\begin{equation}
+ \frac{\dd}{\dd t}\int_r^tv(x_s,s)\dd s=v(x_t,t).
+\end{equation}
+又 $\dot x_t=v(x_t,t)$，所以
+\begin{equation}
+ \boxed{
+ v=u+(t-r)(\partial_tu+J_xu\,v).
+ }
+\end{equation}
+整理
+\begin{equation}
+ u=v-(t-r)\frac{\dd u}{\dd t},
+\end{equation}
+即论文的 MeanFlow Identity。这里 $\dd u/\dd t$ 必须是沿轨迹的全导数，不能只取显式时间偏导。
+
+\section{Jacobian--vector product 的实现}
+全导数中的
+\begin{equation}
+ J_xu\,v
+\end{equation}
+无需显式构造 $d\times d$ Jacobian。定义方向扰动
+\begin{equation}
+ \varphi(\epsilon)=u(x+\epsilon v,r,t),
+\end{equation}
+则
+\begin{equation}
+ \left.\frac{\dd\varphi}{\dd\epsilon}\right|_{0}=J_xu\,v.
+\end{equation}
+自动微分的 JVP 计算复杂度与一次前向同阶，内存远小于存储完整 Jacobian。若用有限差分
+\begin{equation}
+ J_xu\,v\approx\frac{u(x+\epsilon v)-u(x)}{\epsilon},
+\end{equation}
+会额外引入 $O(\epsilon)$ 截断误差与小 $\epsilon$ 的舍入误差。
+
+\section{训练目标的自洽固定点}
+设网络输出 $u_\theta$，由 Identity 构造目标
+\begin{equation}
+ y_\theta=v-(t-r)\left(\partial_tu_\theta+J_xu_\theta v\right).
+\end{equation}
+论文使用停止梯度
+\begin{equation}
+ \Loss=\E\norm{u_\theta-\sg(y_\theta)}^2.
+\end{equation}
+若损失为零，则
+\begin{equation}
+ u_\theta=y_\theta
+\end{equation}
+满足 MeanFlow Identity。停止梯度后的参数梯度为
+\begin{equation}
+ \nabla_\theta\Loss
+ =2\E J_{\theta}u_\theta^\top(u_\theta-y_\theta),
+\end{equation}
+不包含目标分支的二阶导。若不停止梯度，会多出
+\begin{equation}
+ -2J_\theta y_\theta^\top(u_\theta-y_\theta),
+\end{equation}
+可能导致网络通过同时移动预测与目标来缩小误差，而不是逼近固定点。
+
+\section{平方损失的条件期望最优解}
+实际训练中同一 $(x_t,r,t)$ 可能对应多个随机路径目标 $Y$。对固定输入，风险
+\begin{equation}
+ R(a)=\E\norm{a-Y}^2
+\end{equation}
+分解为
+\begin{equation}
+ R(a)=\norm{a-\E Y}^2+\operatorname{Var}(Y).
+\end{equation}
+所以网络学到
+\begin{equation}
+ u^*(x_t,r,t)=\E[Y\mid x_t,r,t].
+\end{equation}
+这意味着 MeanFlow 的一次映射是条件平均动力学；多模态路径若在同一点交叉，平方损失仍可能平均不同方向。
+
+\section{一步误差由平均场预测误差直接控制}
+真实关系
+\begin{equation}
+ x_r=x_t-(t-r)u^*.
+\end{equation}
+模型一步生成
+\begin{equation}
+ \widehat x_r=x_t-(t-r)u_\theta.
+\end{equation}
+相减得精确误差公式
+\begin{equation}
+ \boxed{
+ \widehat x_r-x_r=-(t-r)(u_\theta-u^*).
+ }
+\end{equation}
+故
+\begin{equation}
+ \E\norm{\widehat x_r-x_r}^2
+ =(t-r)^2\E\norm{u_\theta-u^*}^2.
+\end{equation}
+长区间一步生成对场误差按区间长度平方放大；多步可缩短每段放大因子，但会累积多次模型误差。
+
+\section{多步组合误差递推}
+划分 $t_0>t_1>\cdots>t_m$，更新
+\begin{equation}
+ \widehat x_{t_{i+1}}
+ =\widehat x_{t_i}-(t_i-t_{i+1})u_\theta(\widehat x_{t_i},t_{i+1},t_i).
+\end{equation}
+若场对 $x$ 的 Lipschitz 常数为 $L$，单段预测误差上界为 $\epsilon_i$，则
+\begin{equation}
+ \norm{e_{i+1}}
+ \le[1+L\Delta t_i]\norm{e_i}+\Delta t_i\epsilon_i.
+\end{equation}
+递推得到
+\begin{equation}
+ \norm{e_m}
+ \le e^{LT}\sum_i\Delta t_i\epsilon_i.
+\end{equation}
+所以多步并不必然更准；它取决于短区间模型误差是否显著小于长区间误差。
+
+\section{CFG 对平均速度的线性作用}
+条件和无条件瞬时速度分别为 $v_c,v_u$，CFG
+\begin{equation}
+ v_w=(1+w)v_c-wv_u.
+\end{equation}
+平均算子是线性的：
+\begin{align}
+ u_w
+ &=\frac1{t-r}\int_r^tv_w(s)\dd s\\
+ &=(1+w)u_c-wu_u.
+\end{align}
+因此可直接在平均速度上做同样线性组合。若条件/无条件路径状态不同，严格线性等式需要它们在同一参考轨迹上评估；实际网络近似会引入路径错配。
+
+\section{自适应权重的尺度不变性}
+若不同时间段目标方差差异大，可用
+\begin{equation}
+ w(t)=\frac1{\E\norm{Y_t}^2+\epsilon}
+\end{equation}
+归一化损失
+\begin{equation}
+ \Loss=\E w(t)\norm{u_\theta-Y_t}^2.
+\end{equation}
+当所有目标缩放 $Y_t\mapsto aY_t$ 时，分子乘 $a^2$，权重近似除以 $a^2$，总梯度尺度更稳定。但权重改变了不同时间区域的统计重要性，不再对应原始均匀时间风险。
+\clearpage
+\section{平均速度满足的传输型偏微分方程}
+固定区间起点 $r$，定义
+\begin{equation}
+ F(z,t)=(t-r)u(z,r,t).
+\end{equation}
+沿概率流轨迹 $\dot z=v(z,t)$，MeanFlow 恒等式给出
+\begin{equation}
+ \frac{\dd}{\dd t}F(z_t,t)=v(z_t,t).
+\end{equation}
+展开全导数：
+\begin{equation}
+ \partial_tF+(v\cdot\nabla_z)F=v.
+\end{equation}
+因此 $F$ 满足一阶线性输运 PDE
+\begin{equation}
+ \boxed{\partial_tF+J_zF\,v=v,\qquad F(z,r)=0.}
+\end{equation}
+沿特征线积分便恢复
+\begin{equation}
+ F(z_t,t)=\int_r^t v(z_\tau,\tau)\dd\tau.
+\end{equation}
+所以 MeanFlow Identity 也可理解为这条输运 PDE 的特征线解。
+
+\section{JVP 与有限差分的关系}
+对向量函数 $u:\R^d\to\R^d$，方向 $v$ 上的 Jacobian--vector product 定义为
+\begin{equation}
+ J_u(z)v=\left.\frac{\dd}{\dd\epsilon}u(z+\epsilon v)\right|_{\epsilon=0}.
+\end{equation}
+有限差分近似为
+\begin{equation}
+ J_u(z)v\approx\frac{u(z+h v)-u(z)}{h}.
+\end{equation}
+截断误差为 $O(h)$，但 $h$ 太小时还会放大浮点舍入误差。自动微分 JVP 直接传播一阶切向量，不需要选择 $h$，也无需显式形成 $d\times d$ Jacobian。若一次网络前向成本为 $C_f$，JVP 通常仍为 $O(C_f)$，而显式 Jacobian 需要约 $d$ 次反向或前向传播。
+
+\section{停止梯度目标与真正的二阶目标差异}
+令
+\begin{equation}
+ y_\theta=v-(t-r)D_tu_\theta,
+ \qquad
+ D_tu_\theta=J_zu_\theta v+\partial_tu_\theta.
+\end{equation}
+不停止梯度的平方损失
+\begin{equation}
+ \Loss_{\rm full}=\frac12\|u_\theta-y_\theta\|^2
+\end{equation}
+梯度为
+\begin{equation}
+ \nabla_\theta\Loss_{\rm full}
+ =(J_\theta u_\theta-J_\theta y_\theta)^\top(u_\theta-y_\theta).
+\end{equation}
+由于 $y_\theta$ 含 $J_zu_\theta$，$J_\theta y_\theta$ 含混合二阶导数
+\begin{equation}
+ \frac{\partial^2u_\theta}{\partial\theta\,\partial z}.
+\end{equation}
+使用停止梯度后
+\begin{equation}
+ \nabla_\theta\Loss_{\rm sg}
+ =J_\theta u_\theta^\top(u_\theta-\sg(y_\theta)).
+\end{equation}
+因此训练更像固定点迭代：当前网络产生目标，再把目标视为常量回归。它与直接最小化残差平方的梯度场不同，但共享相同的零残差固定点。
+
+\section{一维线性速度场的解析 MeanFlow}
+考虑
+\begin{equation}
+ \dot z=az+b,
+\end{equation}
+其中 $a,b$ 为常数。若 $a\ne0$，从 $t$ 到 $\tau$ 的解为
+\begin{equation}
+ z_\tau=e^{a(\tau-t)}\left(z_t+\frac ba\right)-\frac ba.
+\end{equation}
+从 $r$ 到 $t$ 的位移为
+\begin{equation}
+ z_t-z_r
+ =\left(1-e^{-a(t-r)}\right)\left(z_t+\frac ba\right).
+\end{equation}
+所以平均速度
+\begin{equation}
+ \boxed{u(z_t,r,t)=
+ \frac{1-e^{-a(t-r)}}{t-r}
+ \left(z_t+\frac ba\right).}
+\end{equation}
+当 $t-r\to0$，利用
+\begin{equation}
+ \lim_{h\to0}\frac{1-e^{-ah}}{h}=a,
+\end{equation}
+得到
+\begin{equation}
+ u\to az_t+b=v(z_t,t).
+\end{equation}
+这个例子直接验证平均速度到瞬时速度的极限。
+
+\section{一步采样误差的精确表达}
+真实平均速度为 $u^*$，网络误差为
+\begin{equation}
+ e_u(z_t,r,t)=u_\theta-u^*.
+\end{equation}
+一步更新
+\begin{equation}
+ \widehat z_r=z_t-(t-r)u_\theta
+\end{equation}
+与真值
+\begin{equation}
+ z_r=z_t-(t-r)u^*
+\end{equation}
+之差恰好是
+\begin{equation}
+ \boxed{\widehat z_r-z_r=-(t-r)e_u.}
+\end{equation}
+因此一步位置误差没有额外的 Euler 截断项；所有误差都来自平均速度预测。对完整区间 $[0,1]$，位置均方误差等于
+\begin{equation}
+ \E\|\widehat z_0-z_0\|^2=\E\|e_u(z_1,0,1)\|^2.
+\end{equation}
+
+\section{多步误差递推与 Lipschitz 放大}
+第 $i$ 段从 $t_i$ 到 $t_{i-1}$，记 $h_i=t_i-t_{i-1}$。网络更新
+\begin{equation}
+ \widehat z_{i-1}=\widehat z_i-h_i u_\theta(\widehat z_i,t_{i-1},t_i).
+\end{equation}
+真实更新
+\begin{equation}
+ z_{i-1}=z_i-h_i u^*(z_i,t_{i-1},t_i).
+\end{equation}
+若 $u^*$ 对状态是 $L_i$-Lipschitz，且模型误差上界为 $\varepsilon_i$，则
+\begin{align}
+ \|e_{i-1}\|
+ &\le \|e_i\|+h_iL_i\|e_i\|+h_i\varepsilon_i\\
+ &=(1+h_iL_i)\|e_i\|+h_i\varepsilon_i.
+\end{align}
+展开得
+\begin{equation}
+ \|e_0\|
+ \le\sum_{k=1}^{K}h_k\varepsilon_k
+ \prod_{j=1}^{k-1}(1+h_jL_j).
+\end{equation}
+这说明多步并不自动优于一步：每段预测更容易，但状态误差会在后续段被放大。
+
+\section{条件速度监督的方差分解}
+训练样本给出的条件速度 $V$ 对同一个 $(z,t)$ 可能有随机性。平方损失最小值为不可约条件方差：
+\begin{equation}
+ \min_f\E\|f(z,t)-V\|^2
+ =\E\operatorname{Var}(V\mid z,t).
+\end{equation}
+若路径交叉严重，同一点对应多种潜在速度，条件方差大，单个确定性网络难以拟合。平均速度把整个区间的速度积分后再回归，可能降低局部高频波动，但也可能把不同轨迹的位移多模态平均化。该方法成立依赖于所选概率流 ODE 具有良好的一一传输结构。
+
+\section{自适应幂损失的梯度尺度}
+令残差 $e=u_\theta-u_{\rm tgt}$，损失
+\begin{equation}
+ \ell_\gamma(e)=\left(\|e\|_2^2+\epsilon\right)^\gamma.
+\end{equation}
+对 $e$ 的梯度
+\begin{equation}
+ \nabla_e\ell_\gamma
+ =2\gamma\left(\|e\|^2+\epsilon\right)^{\gamma-1}e.
+\end{equation}
+当 $\gamma<1$ 时，大残差的权重相对下降，具有鲁棒性；当 $\gamma>1$ 时，大残差被进一步放大。$\epsilon>0$ 防止 $\gamma<1$ 时在 $e=0$ 附近导数奇异。
+
+\section{CFG 对平均速度的线性与非线性部分}
+若条件和无条件速度场分别为 $v_c,v_u$，线性 CFG 场
+\begin{equation}
+ v_w=(1+w)v_c-wv_u.
+\end{equation}
+在同一条给定轨迹上积分，平均速度也线性：
+\begin{equation}
+ u_w=\frac1{t-r}\int_r^t v_w\dd\tau
+ =(1+w)u_c-wu_u.
+\end{equation}
+但实际轨迹本身由 $v_w$ 决定，因此 $u_c$ 与 $u_u$ 若分别沿各自轨迹计算，上式一般不再严格成立。网络直接学习 guided mean field 时，必须明确训练目标所沿的是哪一条轨迹。
+\end{document}

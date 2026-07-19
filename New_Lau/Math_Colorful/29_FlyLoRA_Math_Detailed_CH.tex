@@ -1,0 +1,566 @@
+\documentclass[UTF8,12pt,a4paper,fontset=none]{ctexart}
+\usepackage[a4paper,left=1.82cm,right=1.82cm,top=1.72cm,bottom=1.82cm,headheight=15pt]{geometry}
+\usepackage{fontspec,xeCJK}
+\setmainfont{Liberation Serif}
+\setsansfont{DejaVu Sans}
+\setmonofont{DejaVu Sans Mono}
+\setCJKmainfont[BoldFont=Noto Serif CJK SC Bold]{Noto Serif CJK SC}
+\setCJKsansfont[BoldFont=Noto Sans CJK SC Bold]{Noto Sans CJK SC}
+\setCJKmonofont{Noto Sans Mono CJK SC}
+\usepackage{amsmath,amssymb,mathtools,bm}
+\usepackage{booktabs,longtable,tabularx,array,multirow}
+\usepackage{enumitem,xcolor}
+\usepackage[most]{tcolorbox}
+\usepackage{fancyhdr,titlesec,hyperref,cleveref,lastpage}
+\usepackage{tikz,float,caption,listings}
+\usetikzlibrary{arrows.meta,positioning,calc,fit,backgrounds,shapes.geometric}
+\definecolor{mainblue}{RGB}{39,82,138}
+\definecolor{deepblue}{RGB}{25,55,95}
+\definecolor{softblue}{RGB}{235,243,252}
+\definecolor{softgreen}{RGB}{238,248,241}
+\definecolor{softorange}{RGB}{255,246,232}
+\definecolor{softgray}{RGB}{245,246,248}
+\definecolor{warnred}{RGB}{160,48,48}
+\hypersetup{unicode=true,colorlinks=true,linkcolor=deepblue,urlcolor=mainblue,citecolor=deepblue}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.36em}
+\setlength{\tabcolsep}{5pt}
+\renewcommand{\arraystretch}{1.2}
+\allowdisplaybreaks[4]
+\emergencystretch=3em
+\sloppy
+\pagestyle{fancy}\fancyhf{}\fancyfoot[C]{\small 第 \thepage\ 页，共 \pageref{LastPage} 页}\renewcommand{\headrulewidth}{0.4pt}
+\titleformat{\section}{\Large\bfseries\color{deepblue}}{\thesection}{0.65em}{}
+\titleformat{\subsection}{\large\bfseries\color{mainblue}}{\thesubsection}{0.55em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries}{\thesubsubsection}{0.5em}{}
+\numberwithin{equation}{section}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Prob}{\mathbb{P}}
+\newcommand{\Loss}{\mathcal{L}}
+\newcommand{\norm}[1]{\left\lVert #1\right\rVert}
+\newcommand{\ip}[2]{\left\langle #1,#2\right\rangle}
+\newcommand{\tr}{\operatorname{Tr}}
+\newcommand{\diag}{\operatorname{diag}}
+\newcommand{\rank}{\operatorname{rank}}
+\newcommand{\softmax}{\operatorname{softmax}}
+\newcommand{\argmin}{\operatorname*{arg\,min}}
+\newcommand{\argmax}{\operatorname*{arg\,max}}
+\newcommand{\sg}{\operatorname{sg}}
+\newcommand{\KL}{D_{\mathrm{KL}}}
+\newcommand{\dd}{\mathrm{d}}
+\newtcolorbox{keybox}[1][]{enhanced,breakable,colback=softblue,colframe=mainblue,boxrule=0.8pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\newtcolorbox{examplebox}[1][]{enhanced,breakable,colback=softgreen,colframe=green!45!black,boxrule=0.7pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\newtcolorbox{notebox}[1][]{enhanced,breakable,colback=softorange,colframe=orange!70!black,boxrule=0.7pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\newtcolorbox{criticalbox}[1][]{enhanced,breakable,colback=red!3,colframe=warnred,boxrule=0.8pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\lstset{basicstyle=\ttfamily\small,breaklines=true,frame=single,backgroundcolor=\color{softgray},numbers=left,numberstyle=\tiny,showstringspaces=false,columns=fullflexible}
+\hypersetup{pdftitle={29 FlyLoRA 数学过程详解},pdfauthor={OpenAI}}
+\fancyhead[L]{\small 29 FlyLoRA}
+\fancyhead[R]{\small 数学过程详解}
+\setlength{\abovedisplayskip}{0.82em}
+\setlength{\belowdisplayskip}{0.82em}
+\setlength{\abovedisplayshortskip}{0.45em}
+\setlength{\belowdisplayshortskip}{0.45em}
+\begin{document}
+\begin{center}
+{\LARGE\bfseries 29\_FlyLoRA 数学过程详解}\par
+\vspace{0.35em}
+{\large Rank-wise MoE、稀疏随机投影与任务正交}
+\end{center}
+\vspace{0.45em}
+\begin{keybox}[本文只处理真正需要推导的部分]
+本文逐式分解 LoRA 为 rank-1 专家，推导冻结稀疏投影的隐式 top-k、计算量、局部梯度、负载均衡、多任务交叉项和随机矩阵近似正交。全文按“公式从哪里来--每个符号是什么--中间步骤为何成立--维度和复杂度如何核对--论文结论依赖哪些假设”的顺序展开；不复述实验表格，也不使用与论文无关的通用背景凑页数。
+\end{keybox}
+\tableofcontents
+\newpage
+
+\section{LoRA 的低秩分解与维度}
+冻结权重 $W_0\in\R^{m\times n}$，更新
+\begin{equation}
+ W'=W_0+\frac{\alpha}{r}BA,
+ \qquad B\in\R^{m\times r},\quad A\in\R^{r\times n}.
+\end{equation}
+输入 $x\in\R^n$ 时
+\begin{equation}
+ f(x)=W_0x+\frac{\alpha}{r}B(Ax).
+\end{equation}
+参数量从 $mn$ 降为
+\begin{equation}
+ P_{\rm LoRA}=r(m+n),
+\end{equation}
+而 $\rank(BA)\le r$。
+
+\section{Rank-1 专家分解}
+令 $a_i=A[i,:]\in\R^{1\times n}$、$b_i=B[:,i]\in\R^{m}$，则
+\begin{equation}
+ BAx=\sum_{i=1}^{r}b_i(a_ix).
+\end{equation}
+每项
+\begin{equation}
+ E_i(x)=b_i(a_ix)
+\end{equation}
+是 rank-1 专家：$a_i$ 产生标量激活，$b_i$ 把标量扩展到输出空间。显式 MoE 路由写成
+\begin{equation}
+ f(x)=W_0x+\frac{\alpha}{r}\sum_iG_i(x)b_i(a_ix).
+\end{equation}
+
+\section{SVD 与 top-$k$ rank 分量的联系}
+若更新矩阵有 SVD
+\begin{equation}
+ \Delta W=\sum_{i=1}^{r}\sigma_i u_iv_i^\top,
+\end{equation}
+Eckart--Young--Mirsky 定理给出最佳 rank-$k$ 近似
+\begin{equation}
+ \Delta W_k=\sum_{i=1}^{k}\sigma_i u_iv_i^\top,
+ \qquad
+ \norm{\Delta W-\Delta W_k}_F^2=\sum_{i>k}\sigma_i^2.
+\end{equation}
+FlyLoRA 不能在线做 SVD，但用投影激活 $|a_ix|$ 作为输入相关的重要度代理；它选择的是对当前 token 贡献大的分量，而非全局固定奇异值。
+
+\section{冻结稀疏随机投影兼任 down-projection 与 router}
+$A\in\R^{r\times n}$ 每行仅 $p$ 个非零项，稀疏率
+\begin{equation}
+ \rho=\frac pn.
+\end{equation}
+非零元素独立取
+\begin{equation}
+ A_{ij}\sim\mathcal N(0,1/r^2).
+\end{equation}
+先算
+\begin{equation}
+ y=Ax,
+\end{equation}
+再保留幅值最大的 $k$ 个坐标：
+\begin{equation}
+ m_i(x)=\mathbf1\left[i\in\operatorname{TopK}(|y|)\right],
+ \qquad y_i'=m_i y_i.
+\end{equation}
+输出
+\begin{equation}
+ \boxed{f_{\rm Fly}(x)=W_0x+\frac{\alpha}{k}B(m(x)\odot Ax)}.
+\end{equation}
+$A$ 同时给出每个 rank 的标量系数和 top-$k$ 分数，所以无需额外 $W_g\in\R^{r\times n}$。
+
+\section{路由前计算量}
+稠密 LoRA 下投影成本 $O(rn)$。稀疏 $A$ 每行 $p$ 个非零，成本
+\begin{equation}
+ C_A=O(rp)=O(\rho rn).
+\end{equation}
+上投影只激活 $k$ 列，成本
+\begin{equation}
+ C_B=O(km).
+\end{equation}
+总增量
+\begin{equation}
+ C_{\rm Fly}=O(rp+km),
+\end{equation}
+相比普通 LoRA 的 $O(rn+rm)$，当 $p\ll n,k\ll r$ 时显著降低。
+
+\section{top-$k$ 的反向传播}
+在一个不发生排序交换的局部区域，掩码 $m$ 视为常数，
+\begin{equation}
+ \frac{\partial y_i'}{\partial y_j}=m_i\delta_{ij}.
+\end{equation}
+故只有被选 rank 的 $b_i$ 获得梯度：
+\begin{equation}
+ \frac{\partial\Loss}{\partial b_i}
+ =\frac{\alpha}{k}m_i\frac{\partial\Loss}{\partial f}y_i.
+\end{equation}
+$A$ 冻结，因此无需对离散排序边界求梯度。代价是未激活专家本步完全无更新，必须用负载均衡防止“饿死”。
+
+\section{无损负载均衡偏置}
+选择分数改为
+\begin{equation}
+ s_i=(Ax)_i+d_i,
+\end{equation}
+偏置手工更新
+\begin{equation}
+ d_i\leftarrow d_i+u\operatorname{sign}(\bar c_i-c_i),
+\end{equation}
+$c_i$ 为实际频率、$\bar c_i$ 为目标频率。若专家过少使用，$d_i$ 增大；过多使用则减小。由于 $d_i$ 只参与选择、不乘到最终专家输出，它不直接改变已选专家的幅值，因而被称为 loss-free balancing。
+
+\section{随机投影的近似正交}
+取两个独立零均值随机投影 $A_s,A_t\in\R^{r\times n}$。Frobenius 内积
+\begin{equation}
+ Z=\ip{A_s}{A_t}_F=\sum_{ij}(A_s)_{ij}(A_t)_{ij}.
+\end{equation}
+独立性给出
+\begin{equation}
+ \E Z=0.
+\end{equation}
+若每项方差为 $\sigma^4$ 且共有约 $r\rho n$ 个共同有效位置，则
+\begin{equation}
+ \operatorname{Var}(Z)\approx r\rho^2n\sigma^4.
+\end{equation}
+而
+\begin{equation}
+ \E\norm{A_s}_F^2\approx r\rho n\sigma^2.
+\end{equation}
+归一化余弦的标准差量级
+\begin{equation}
+ \operatorname{Std}\left(
+ \frac{\ip{A_s}{A_t}_F}{\norm{A_s}_F\norm{A_t}_F}
+ \right)=O((rn)^{-1/2}).
+\end{equation}
+高维下独立随机子空间近似正交，是任务合并减干扰的结构来源。
+
+\section{多任务合并的交叉项}
+任务 $s,t$ 更新
+\begin{equation}
+ \Delta W_s=B_sA_s,\qquad \Delta W_t=B_tA_t.
+\end{equation}
+在输入协方差 $\Sigma_x$ 下，输出干扰内积
+\begin{align}
+ \E_x\ip{\Delta W_sx}{\Delta W_tx}
+ &=\tr(B_sA_s\Sigma_xA_t^\top B_t^\top).
+\end{align}
+若白化 $\Sigma_x=I$ 且 $A_sA_t^\top\approx0$，交叉项接近 0。注意这并不保证 $B_s$ 与 $B_t$ 正交；真正抑制的是两任务看到的投影坐标相关性。
+
+\section{激活参数量与存储参数量}
+训练参数只有 $B\in\R^{m\times r}$（若 $A$ 冻结）：
+\begin{equation}
+ P_{\rm train}=mr.
+\end{equation}
+单 token 激活列数 $k$，参与乘法的参数
+\begin{equation}
+ P_{\rm active}=mk.
+\end{equation}
+但存储仍需 $mr$。因此“激活参数少”描述计算，不等于模型文件大小按 $k/r$ 缩小。
+
+\section{固定缩放 $\alpha/k$ 的方差核对}
+若活跃标量 $y_i$ 独立同方差 $\sigma_y^2$、列向量范数相近，增量输出方差近似
+\begin{equation}
+ \E\norm{\Delta f}^2\propto
+ \left(\frac{\alpha}{k}\right)^2k\sigma_y^2
+ =\frac{\alpha^2}{k}\sigma_y^2.
+\end{equation}
+若希望不同 $k$ 下方差严格不变，更自然的缩放是 $1/\sqrt{k}$；论文沿用 LoRA 风格的 $1/k$ 更强调控制总幅值。两种选择对应不同稳定性假设。
+% AUGMENTED_DETAILED_MATH
+
+\section{LoRA 是受限矩阵更新}
+全量更新 $\Delta W\in\R^{d_{out}\times d_{in}}$，LoRA 约束
+\begin{equation}
+ \Delta W=BA,
+ \qquad B\in\R^{d_{out}\times r},\quad A\in\R^{r\times d_{in}}.
+\end{equation}
+因此
+\begin{equation}
+ \rank(\Delta W)\le r.
+\end{equation}
+参数量从 $d_{out}d_{in}$ 降为
+\begin{equation}
+ r(d_{in}+d_{out}).
+\end{equation}
+对输入 $x$，增量
+\begin{equation}
+ \Delta y=BAx.
+\end{equation}
+梯度
+\begin{equation}
+ \nabla_B\Loss=g_y(Ax)^\top,
+ \qquad
+ \nabla_A\Loss=B^\top g_yx^\top.
+\end{equation}
+若 $B$ 零初始化，初始 $\nabla_A=0$，先由 $B$ 学习打开增量通路。
+
+\section{SVD 与最优低秩逼近}
+任意目标更新
+\begin{equation}
+ \Delta W^*=U\Sigma V^\top
+ =\sum_{j=1}^{r_*}\sigma_ju_jv_j^\top.
+\end{equation}
+Eckart--Young 定理说明 Frobenius 范数下最佳 rank-$r$ 逼近
+\begin{equation}
+ \Delta W_r=\sum_{j=1}^{r}\sigma_ju_jv_j^\top
+\end{equation}
+且误差
+\begin{equation}
+ \norm{\Delta W^*-\Delta W_r}_F^2
+ =\sum_{j>r}\sigma_j^2.
+\end{equation}
+FlyLoRA 把每个 rank-1 项视为专家，路由选择相当于针对输入激活不同奇异方向，而非对所有输入固定使用同一个 rank-$r$ 子空间。
+
+\section{Rank-1 专家的显式输出}
+写
+\begin{equation}
+ B=[b_1,\ldots,b_r],
+ \qquad A=\begin{bmatrix}a_1^\top\\\vdots\\a_r^\top\end{bmatrix}.
+\end{equation}
+则
+\begin{equation}
+ BAx=\sum_{j=1}^{r}b_j(a_j^\top x).
+\end{equation}
+加入稀疏门控 $g_j(x)$：
+\begin{equation}
+ \boxed{
+ \Delta y(x)=\frac\alpha k
+ \sum_{j\in\operatorname{TopK}(g(x),k)}g_j(x)b_j(a_j^\top x).
+ }
+\end{equation}
+每个专家先把 $x$ 投影成标量 $a_j^\top x$，再沿输出方向 $b_j$ 写回，因此其几何意义非常清晰。
+
+\section{冻结随机投影的保距性质}
+路由特征用固定随机矩阵 $R\in\R^{m\times d}$：
+\begin{equation}
+ z=Rx,
+ \qquad R_{ij}\sim\mathcal N(0,1/m).
+\end{equation}
+则
+\begin{equation}
+ \E\norm{Rx}^2=\norm{x}^2.
+\end{equation}
+对两个向量 $x,y$，极化恒等式给出
+\begin{equation}
+ \E\ip{Rx}{Ry}=\ip{x}{y}.
+\end{equation}
+集中不等式说明
+\begin{equation}
+ \Pr\left(|\norm{Rx}^2-\norm{x}^2|>\epsilon\norm{x}^2\right)
+ \le2e^{-cm\epsilon^2}.
+\end{equation}
+所以固定随机投影可低成本保留路由所需的相似度结构，同时避免再训练一个大型 router down-projection。
+
+\section{稀疏 softmax 与 top-$k$ 梯度}
+router logits $s\in\R^r$，选中集合 $S$ 后
+\begin{equation}
+ g_j=\frac{e^{s_j}}{\sum_{\ell\in S}e^{s_\ell}},
+ \qquad j\in S.
+\end{equation}
+集合固定时
+\begin{equation}
+ \frac{\partial g_j}{\partial s_m}
+ =g_j(\mathbf1_{j=m}-g_m),
+ \qquad j,m\in S.
+\end{equation}
+未选专家梯度为 0。排序边界不可微但几乎处处分段可导。若某专家长期未入选，就没有任务梯度，因此需要负载均衡或随机扰动防止死亡专家。
+
+\section{负载均衡统计}
+设 batch 中专家 $j$ 的选择频率
+\begin{equation}
+ f_j=\frac1B\sum_{i=1}^{B}\mathbf1(j\in S_i),
+\end{equation}
+平均门控概率
+\begin{equation}
+ p_j=\frac1B\sum_i g_{ij}.
+\end{equation}
+常见均衡损失
+\begin{equation}
+ \Loss_{\mathrm{bal}}=r\sum_{j=1}^{r}f_jp_j.
+\end{equation}
+若 $f_j=p_j=1/r$，则 $\Loss_{\mathrm{bal}}=1$。当概率集中到少数专家时内积增大。由于 $f_j$ 来自硬选择，通常停止其梯度，仅通过 $p_j$ 调整 router。
+
+\section{缩放 $\alpha/k$ 的方差核对}
+假设选中专家输出 $e_j$ 独立、零均值、协方差 $\Sigma$，且门控近似均匀。未缩放和
+\begin{equation}
+ s=\sum_{j=1}^{k}e_j
+\end{equation}
+协方差 $k\Sigma$。乘 $1/k$ 后
+\begin{equation}
+ \operatorname{Cov}(s/k)=\Sigma/k.
+\end{equation}
+乘 $1/\sqrt{k}$ 才保持方差不变。论文用 $\alpha/k$ 更接近保持平均幅值而非方差；$\alpha$ 需补偿不同 $k$ 下的尺度变化。
+
+\section{多任务干扰的 Frobenius 内积}
+任务 $a,b$ 的更新 $\Delta W_a,\Delta W_b$。在二阶近似中，把任务 $a$ 更新叠加到任务 $b$ 的损失变化
+\begin{equation}
+ \Delta\Loss_b
+ \approx\ip{G_b}{\Delta W_a}
+ +\frac12\ip{\Delta W_a}{H_b\Delta W_a}.
+\end{equation}
+若两任务更新方向近似正交
+\begin{equation}
+ \ip{\Delta W_a}{\Delta W_b}_F\approx0,
+\end{equation}
+交叉干扰通常较小。rank-wise 专家把不同任务路由到不同 rank-1 分量，使掩码重叠率下降，从结构上减少内积交叉项。
+
+\section{稀疏路由下的有效秩}
+对固定输入 $x$，只有 $k$ 个专家激活，因此局部更新矩阵
+\begin{equation}
+ \Delta W(x)=\sum_{j\in S(x)}g_j(x)b_ja_j^\top
+\end{equation}
+满足
+\begin{equation}
+ \rank(\Delta W(x))\le k.
+\end{equation}
+但跨输入联合使用的专家集合可覆盖全部 $r$ 个方向，所以全数据集有效容量可接近 rank $r$，单样本计算仅 rank $k$。这就是条件计算的容量--FLOPs 解耦。
+
+\section{参数量与计算量}
+存储参数仍包括所有专家
+\begin{equation}
+ P_{\mathrm{store}}=r(d_{in}+d_{out})+P_{\mathrm{router}}.
+\end{equation}
+若 router 投影已冻结，训练参数主要是专家和少量门控。单 token 激活计算
+\begin{equation}
+ C_{\mathrm{active}}=O(kd_{in}+kd_{out})
+\end{equation}
+加上 router 成本。训练显存还需保存全部专家参数的优化器状态，因此“激活 $k$ 个”不等于优化器内存按 $k/r$ 缩小。
+
+\section{路由噪声与专家探索}
+给 logits 加噪声
+\begin{equation}
+ \widetilde s_j=s_j+\sigma\epsilon_j
+\end{equation}
+可使边界附近专家有概率被选中。两专家差值 $\Delta=s_1-s_2$，若噪声高斯，则专家 1 被选概率
+\begin{equation}
+ \Pr(\widetilde s_1>\widetilde s_2)
+ =\Phi\left(\frac{\Delta}{\sqrt2\sigma}
+\right).
+\end{equation}
+$\sigma$ 大时探索更均匀，过大则路由近似随机；训练后期通常减小噪声。
+\clearpage
+\section{LoRA 更新是低秩矩阵流形上的优化}
+冻结权重 $W_0\in\R^{d_{\rm out}\times d_{\rm in}}$，更新
+\begin{equation}
+ \Delta W=BA,
+ \qquad B\in\R^{d_{\rm out}\times r},
+ \quad A\in\R^{r\times d_{\rm in}}.
+\end{equation}
+由秩不等式
+\begin{equation}
+ \rank(BA)\le\min(\rank B,\rank A)\le r.
+\end{equation}
+因此可达更新集合位于秩不超过 $r$ 的代数簇。参数量
+\begin{equation}
+ P_{\rm LoRA}=r(d_{\rm in}+d_{\rm out})
+\end{equation}
+相对全矩阵 $d_{\rm in}d_{\rm out}$ 大幅减少。
+
+\section{Rank-1 专家分解}
+把 $B$ 的列写为 $b_1,\ldots,b_r$，$A$ 的行为 $a_1^\top,\ldots,a_r^\top$，则
+\begin{equation}
+ BA=\sum_{j=1}^{r}b_ja_j^\top.
+\end{equation}
+对输入 $x$，
+\begin{equation}
+ \Delta Wx=\sum_{j=1}^{r}b_j(a_j^\top x).
+\end{equation}
+每个 rank-1 专家先用标量投影 $a_j^\top x$ 判断输入在方向 $a_j$ 上的分量，再沿输出方向 $b_j$ 写回。
+
+\section{SVD 与最优低秩逼近}
+任意矩阵更新 $M$ 的 SVD
+\begin{equation}
+ M=\sum_{j=1}^{q}\sigma_ju_jv_j^\top,
+ \qquad \sigma_1\ge\cdots\ge\sigma_q.
+\end{equation}
+Eckart--Young 定理说明最优 rank-$r$ Frobenius 逼近
+\begin{equation}
+ M_r=\sum_{j=1}^{r}\sigma_ju_jv_j^\top,
+\end{equation}
+误差
+\begin{equation}
+ \|M-M_r\|_F^2=\sum_{j>r}\sigma_j^2.
+\end{equation}
+FlyLoRA 的 rank-wise 专家可看作学习一组数据依赖的 rank-1 分量，但它们不必正交，也不按奇异值排序。
+
+\section{输入依赖路由后的有效更新}
+路由权重 $g_j(x)$，top-$k$ 集合 $S(x)$，则
+\begin{equation}
+ \Delta W(x)x=\frac{\alpha}{k}
+ \sum_{j\in S(x)}g_j(x)b_j(a_j^\top x).
+\end{equation}
+注意 $\Delta W$ 现在依赖输入 $x$，不再是固定线性矩阵；整体映射是分段非线性的。即使每个专家 rank 1，不同输入激活不同专家后，模型在数据集上的联合有效秩可超过 $k$。
+
+\section{冻结随机投影的 Johnson--Lindenstrauss 解释}
+设路由投影 $R\in\R^{m\times d}$，元素独立且方差 $1/m$。对固定向量 $x$，
+\begin{equation}
+ \E\|Rx\|_2^2=\|x\|_2^2.
+\end{equation}
+对次高斯随机矩阵，有高概率界
+\begin{equation}
+ \Pr\left(
+ |\|Rx\|^2-\|x\|^2|>\epsilon\|x\|^2
+ \right)
+ \le2e^{-c m\epsilon^2}.
+\end{equation}
+对 $N$ 个样本用并集界，若
+\begin{equation}
+ m=O(\epsilon^{-2}\log N),
+\end{equation}
+则所有两两距离近似保持。冻结随机路由因此可以保留输入几何而不增加训练参数，但并不保证对具体任务的最优可分性。
+
+\section{Top-$k$ softmax 的梯度}
+先计算 logits $z_j$，选择集合 $S$，集合内
+\begin{equation}
+ g_j=\frac{e^{z_j}}{\sum_{\ell\in S}e^{z_\ell}},\qquad j\in S.
+\end{equation}
+固定选择集合时
+\begin{equation}
+ \frac{\partial g_j}{\partial z_m}
+ =g_j(\mathbf 1[j=m]-g_m),\qquad j,m\in S.
+\end{equation}
+未选专家梯度为零。排序边界处集合变化不连续，因此专家一旦长期未入选，无法通过主任务梯度恢复，需路由噪声或负载均衡促进探索。
+
+\section{缩放 $\alpha/k$ 的方差核对}
+假设激活专家输出 $e_j=b_j(a_j^\top x)$ 独立、零均值、方差 $\sigma_e^2$，且均匀权重 $g_j\approx1$。求和输出
+\begin{equation}
+ y=\frac{\alpha}{k}\sum_{j=1}^{k}e_j.
+\end{equation}
+方差
+\begin{equation}
+ \operatorname{Var}(y)=
+ \frac{\alpha^2}{k^2}k\sigma_e^2
+ =\frac{\alpha^2}{k}\sigma_e^2.
+\end{equation}
+若希望方差与 $k$ 无关，更自然的缩放是 $\alpha/\sqrt{k}$。使用 $\alpha/k$ 会使激活专家越多，输出方差越小；其优点是控制总幅值，缺点是可能削弱大 $k$ 配置。
+
+\section{多任务干扰的 Frobenius 内积}
+两个任务更新 $\Delta W_1,\Delta W_2$，合并后平方范数
+\begin{equation}
+ \|\Delta W_1+\Delta W_2\|_F^2
+ =\|\Delta W_1\|_F^2+
+ \|\Delta W_2\|_F^2+
+ 2\langle\Delta W_1,\Delta W_2\rangle_F.
+\end{equation}
+对 rank-1 分量
+\begin{equation}
+ \langle b_1a_1^\top,b_2a_2^\top\rangle_F
+ =(b_1^\top b_2)(a_1^\top a_2).
+\end{equation}
+只要输入方向或输出方向之一近似正交，交叉项就小。FlyLoRA 的任务解耦可以通过路由减少同一输入上同时激活的专家，也可以通过随机投影和稀疏性降低更新内积。
+
+\section{参数量、激活量与计算量}
+总存储参数若有 $r$ 个 rank-1 专家：
+\begin{equation}
+ P=r(d_{\rm in}+d_{\rm out})+P_{\rm router}.
+\end{equation}
+每个 token 只激活 $k$ 个专家，专家计算
+\begin{equation}
+ C_{\rm expert}\approx2k(d_{\rm in}+d_{\rm out})
+\end{equation}
+FLOPs。标准 rank-$r$ LoRA 为
+\begin{equation}
+ C_{\rm LoRA}\approx2r(d_{\rm in}+d_{\rm out}).
+\end{equation}
+所以当 $k\ll r$ 时激活计算下降，但路由还需计算 logits。若冻结投影直接复用 $a_j^\top x$ 作为路由分数，可减少额外投影。
+
+\section{有效秩的输入分布定义}
+输入依赖更新无法用单一矩阵秩完整描述。可以定义输出协方差
+\begin{equation}
+ \Sigma_y=\E_x[\Delta y(x)\Delta y(x)^\top].
+\end{equation}
+有效秩
+\begin{equation}
+ r_{\rm eff}(\Sigma_y)=
+ \exp\left(-\sum_i p_i\log p_i\right),
+ \qquad p_i=\frac{\lambda_i}{\sum_j\lambda_j}.
+\end{equation}
+即使每个样本只用 $k$ 个专家，若不同样本覆盖许多输出方向，$\Sigma_y$ 的有效秩可远大于 $k$。这说明“每 token 激活秩”和“数据整体表达秩”是不同概念。
+
+\section{一个 $2\times2$ 数值例子}
+取两个专家
+\begin{equation}
+ b_1=\begin{pmatrix}1\\0\end{pmatrix},\quad
+ a_1=\begin{pmatrix}1\\0\end{pmatrix},\qquad
+ b_2=\begin{pmatrix}0\\1\end{pmatrix},\quad
+ a_2=\begin{pmatrix}0\\1\end{pmatrix}.
+\end{equation}
+对 $x=(3,1)^\top$，若路由选专家 1，
+\begin{equation}
+ \Delta y=b_1a_1^\top x=(3,0)^\top.
+\end{equation}
+对 $x=(1,4)^\top$，选专家 2，
+\begin{equation}
+ \Delta y=(0,4)^\top.
+\end{equation}
+每个样本有效秩为 1，但整个数据集的输出覆盖两个正交方向，整体有效秩为 2。
+\end{document}

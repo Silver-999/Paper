@@ -1,0 +1,173 @@
+\documentclass[UTF8,11pt,a4paper]{ctexart}
+\usepackage[a4paper,left=1.45cm,right=1.45cm,top=1.55cm,bottom=1.65cm]{geometry}
+\usepackage{amsmath,amssymb,bm}
+\usepackage{graphicx}
+\usepackage{booktabs,tabularx,array,longtable}
+\usepackage{enumitem}
+\usepackage[dvipsnames,svgnames]{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,calc,fit,shapes.geometric}
+\usepackage[most]{tcolorbox}
+\usepackage{hyperref}
+\usepackage{caption}
+\usepackage{float}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{microtype}
+\IfFontExistsTF{Times New Roman}{\setmainfont{Times New Roman}}{\setmainfont{Liberation Serif}}
+\IfFontExistsTF{Noto Sans CJK SC}{\setCJKmainfont{Noto Sans CJK SC}}{}
+\IfFontExistsTF{Noto Sans CJK SC}{\setCJKsansfont{Noto Sans CJK SC}}{}
+\IfFontExistsTF{DejaVu Sans Mono}{\setmonofont{DejaVu Sans Mono}}{\setmonofont{Latin Modern Mono}}
+\definecolor{mainblue}{HTML}{0B5CAD}
+\definecolor{softblue}{HTML}{EAF4FF}
+\definecolor{darktext}{HTML}{1F2937}
+\definecolor{softgray}{HTML}{F5F7FA}
+\definecolor{accent}{HTML}{F59E0B}
+\definecolor{goodgreen}{HTML}{2E7D32}
+\definecolor{badred}{HTML}{B91C1C}
+\definecolor{purple}{HTML}{6D5BD0}
+\hypersetup{colorlinks=true,linkcolor=mainblue,urlcolor=DarkOrange,citecolor=mainblue}
+\setlength{\parindent}{2em}
+\setlength{\headheight}{14pt}
+\setlength{\parskip}{0.22em}
+\setlist[itemize]{leftmargin=2em,itemsep=0.23em,topsep=0.25em}
+\setlist[enumerate]{leftmargin=2.2em,itemsep=0.23em,topsep=0.25em}
+\renewcommand{\arraystretch}{1.2}
+\captionsetup{font=small,labelfont=bf}
+\titleformat{\section}{\Large\bfseries\sffamily\color{mainblue}}{\thesection}{0.7em}{}
+\titleformat{\subsection}{\large\bfseries\sffamily\color{darktext}}{\thesubsection}{0.6em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries\sffamily\color{darktext}}{\thesubsubsection}{0.55em}{}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\sffamily vHeat: Building Vision Models upon Heat Condu}
+\fancyhead[R]{\small\sffamily \leftmark}
+\fancyfoot[C]{\small\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\newtcolorbox{infobox}[1]{enhanced,breakable,colback=softblue,colframe=mainblue!70!black,boxrule=0.8pt,arc=2mm,left=1.5mm,right=1.5mm,top=1mm,bottom=1mm,title=\bfseries #1}
+\newtcolorbox{keybox}[1]{enhanced,breakable,colback=softgray,colframe=darktext!45,boxrule=0.6pt,arc=2mm,left=1.5mm,right=1.5mm,top=1mm,bottom=1mm,title=\bfseries #1}
+\newtcolorbox{notebox}[1]{enhanced,breakable,colback=accent!8,colframe=accent!80!black,boxrule=0.7pt,arc=2mm,left=1.5mm,right=1.5mm,top=1mm,bottom=1mm,title=\bfseries #1}
+\newcommand{\term}[1]{\textbf{\textcolor{mainblue}{#1}}}
+\begin{document}
+
+\section{论文基本信息}
+\begin{center}
+\begin{tabularx}{0.94\linewidth}{>{\bfseries}p{0.18\linewidth}X}
+\toprule
+题目 & vHeat: Building Vision Models upon Heat Conduction\\
+课件日期 & 2025-05-22\\
+研究方向 & 视觉模型 / 热传导 / 高效全局建模\\
+一句话概括 & 用热传导方程类比视觉语义在二维空间中的扩散,以较低复杂度获得全局感受野,并构造物理启发的视觉骨干网络。\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\begin{infobox}{摘要要点}
+用热传导方程类比视觉语义在二维空间中的扩散,以较低复杂度获得全局感受野,并构造物理启发的视觉骨干网络。 本说明按“研究问题—核心机制—基础公式—实验阅读—局限与优化”的顺序重新组织，不保留原始材料的封面、目录和页码对应。
+\end{infobox}
+
+\section{研究问题与动机}
+这项工作的出发点不是简单地替换某个网络层，而是识别现有范式中最影响\term{质量、效率、可靠性或可部署性}的瓶颈。结合论文所讨论的问题，可以将研究动机概括为以下几点：
+\begin{itemize}
+\item 引言 CNNs在视觉任务中的局限性(第一章) ViTs的高计算复杂度问题(第一章) 热传导原理与视觉语义传播的相似性(第一章) vHeat模型的提出背景和目标(第一章) Building Vision Models upon Heat Conduction
+\item 相关工作 CNNs的发展历程及其局限性(第二章) ViTs的创新点及其计算复杂度问题(第二章) State Space Models在视觉任务中的应用(第二章) 生物学和物理学启发的模型研究现状(第二章) Building Vision Models upon Heat Conduction
+\item 动态热扩散率 动态热扩散率的引入动机(第三章) 可学习的频率值嵌入(FVEs)的作用(第三章) 动态热扩散率对模型性能的影响(第三章) Building Vision Models upon Heat Conduction
+\end{itemize}
+
+\begin{notebox}{理解重点}
+阅读这类论文时，应把“问题是否真实存在”“方法是否直接解决该问题”“实验是否排除了其他解释”分开判断。仅凭更大的模型、更多数据或更长训练得到的提升，不能自动视为结构创新带来的收益。
+\end{notebox}
+
+\section{核心思想与整体流程}
+用热传导方程类比视觉语义在二维空间中的扩散,以较低复杂度获得全局感受野,并构造物理启发的视觉骨干网络。 从信息流角度看，其基本流程可以整理为下图。
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[>=Latex,node distance=0.78cm]
+\tikzstyle{procstep}=[draw,rounded corners,fill=softblue,align=center,minimum width=3.05cm,minimum height=0.95cm,text width=2.75cm]
+\node[procstep] (a) {局部视觉特征};
+\node[procstep,right=of a] (b) {热扩散算子};
+\node[procstep,right=of b] (c) {频率调制};
+\node[procstep,right=of c] (d) {全局表征};
+\draw[->,thick,mainblue] (a)--(b);
+\draw[->,thick,mainblue] (b)--(c);
+\draw[->,thick,mainblue] (c)--(d);
+\end{tikzpicture}
+\caption{核心信息流与处理阶段。}
+\end{figure}
+
+\subsection{方法组成与信息流}
+\begin{itemize}
+\item 热传导原理 热传导方程的数学描述(第三章) 二维热传导方程的傅里叶变换解(第三章) 离散余弦变换(DCT)的实现方法(第三章) Building Vision Models upon Heat Conduction
+\item vHeat模型架构 vHeat模型的整体架构(第三章) HCO层的设计细节(第三章) vHeat模型的Tiny/Small/Base三种规模(第三章) Building Vision Models upon Heat Conduction
+\item 热传导算子(HCO) HCO的物理意义和数学实现(第三章) HCO的计算复杂度分析(第三章) HCO与自注意力机制的对比(第三章) Building Vision Models upon Heat Conduction
+\item 引言 CNNs在视觉任务中的局限性(第一章) ViTs的高计算复杂度问题(第一章) 热传导原理与视觉语义传播的相似性(第一章) vHeat模型的提出背景和目标(第一章) Building Vision Models upon Heat Conduction
+\item 相关工作 CNNs的发展历程及其局限性(第二章) ViTs的创新点及其计算复杂度问题(第二章) State Space Models在视觉任务中的应用(第二章) 生物学和物理学启发的模型研究现状(第二章) Building Vision Models upon Heat Conduction
+\item vHeat模型通过引入热传导算子(HCO),实现了全局感受 野、低计算复杂度和高可解释性。(第五章) vHeat模型的潜在应用和未来发展方向。进一步应用于更多视觉任务,例如视频分析 和三维视觉。(第五章) Building Vision Models upon Heat Conduction
+\item 模型总结与展望 vHeat模型的主要贡献。
+\end{itemize}
+
+\begin{keybox}{结构解析}
+\begin{itemize}
+\item 3 提出方法的优劣势 优势1： 全局感受野，能够捕捉图像中的长距离依赖关系（第三章） 优势2： 计算复杂度低（O(N\\textasciicircum{}1.5)），相比自注意力机制（O(N\\textasciicircum{}2)）效率更高（第三章） 优势3： 物理启发的可解释性，
+\end{itemize}
+\end{keybox}
+
+上述内容以文字方式保留方法结构，避免把整张幻灯片作为独立页面嵌入正文。
+
+\section{数学与机制理解}
+本节给出理解该工作的基础数学结构。公式用于解释方法所属范式，并不替代原论文中的完整推导。
+\begin{equation}
+y(p)=\sum_{q\in\mathcal N(p)}K(p,q)\,x(q)
+\end{equation}
+视觉骨干的核心是把邻域或全局位置 $q$ 的信息聚合到位置 $p$。不同方法通过动态卷积、物理扩散、大核或多分支结构改变核 $K(p,q)$ 的范围与适应性。
+
+\begin{keybox}{从公式回到方法}
+应重点观察论文究竟改变了公式中的哪一部分：是输入表示、连接矩阵、条件变量、参数化方式、训练目标，还是求解与调度过程。真正的创新通常可以在这一层被准确定位。
+\end{keybox}
+
+
+\section{实验结果应如何阅读}
+\begin{itemize}
+\item 图像分类实验 ·vHeat在ImageNet-1K数据集上的性能(第四章) ·与其他模型的性能对比(第四章) ·vHeat的计算效率优势(第四章) Building Vision Models upon Heat Conduction
+\item 语义分割实验 vHeat在ADE20K数据集上的语义分割性能(第四章) 与其他模型的性能对比(第四章) vHeat的计算效率优势(第四章) Building Vision Models upon Heat Conduction
+\item 目标检测和实例分割实验 vHeat在COCO数据集上的目标检测和实例分割性能(第四章) 与其他模型的性能对比(第四章) vHeat的推理速度优势(第四章) Building Vision Models upon Heat Conduction
+\item 低级视觉任务实验 vHeatIR在图像去噪和JPEG压缩伪影去除任务中的性能(第四章) 与其他模型的性能对比(第四章) Building Vision Models upon Heat Conduction
+\item 动态热扩散率的消融实验 固定热扩散率与预测热扩散率的对比(第四章) 使用共享FVEs预测热扩散率的优势(第四章) Building Vision Models upon Heat Conduction
+\item 鲁棒性评估 vHeat在ObjectNet和ImageNet-A数据集上的鲁棒性表现(第四章) 与其他模型的鲁棒性对比(第四章) Building Vision Models upon Heat Conduction
+\item 热传导算子(HCO) HCO的物理意义和数学实现(第三章) HCO的计算复杂度分析(第三章) HCO与自注意力机制的对比(第三章) Building Vision Models upon Heat Conduction
+\end{itemize}
+
+\begin{notebox}{结果解读}
+\begin{itemize}
+\item 11 目标检测和实例分割实验 vHeat在COCO数据集上的目标检测和实例分割性能（第四章） 与其他模型的性能对比（第四章） vHeat的推理速度优势（第四章） Building Vision Models upon Heat Conduction
+\end{itemize}
+\end{notebox}
+
+下图用于直观呈现主要对比、消融、定性样例或效率结果。
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.94\linewidth,height=0.43\textheight,keepaspectratio]{result_evidence.jpg}
+\caption{代表性实验对比、消融结果或定性样例。}
+\end{figure}
+实验部分不应只看单一最好数字。还需要核对模型规模、训练数据、训练步数、采样或解码预算、硬件条件以及是否使用额外蒸馏、检索或后处理。只有比较条件接近时，结果才能真正说明方法本身的优势。
+
+\section{优点、局限与可优化空间}
+\subsection{主要优点}
+\begin{itemize}
+\item \term{问题与方法对应明确}：论文围绕一个可识别的核心瓶颈展开，方法结构能够直接映射到该瓶颈。
+\item \term{可复用的设计思想}：即使不完整复现模型，其中的分解、稀疏化、递归、条件控制或系统优化思想也可迁移到相邻任务。
+\item \term{实验提供了多角度证据}：实验通常同时展示主结果、效率比较、案例或消融，使结论不完全依赖单一指标。
+\end{itemize}
+
+\subsection{局限与进一步优化}
+\begin{itemize}
+\item 需要进一步区分\term{结构收益}与更大算力、更多数据、不同训练技巧带来的收益，并在等参数、等计算预算下进行严格比较。
+\item 对超参数、输入分布和模型规模的敏感性仍应系统分析；在一个数据集上的最优配置不一定能直接迁移。
+\item 实际部署还要考虑显存峰值、并发、延迟抖动、失败案例和鲁棒性，而不仅是离线平均指标。
+\item 可尝试将该方法与蒸馏、量化、缓存复用、动态路由或更强的表示学习结合，验证不同优化是否互补。
+\end{itemize}
+
+\section{结论}
+总体而言，用热传导方程类比视觉语义在二维空间中的扩散，以较低复杂度获得全局感受野，并构造物理启发的视觉骨干网络。。 进一步需要注意：vHeat模型通过引入热传导算子(HCO),实现了全局感受 野、低计算复杂度和高可解释性。(第五章) vHeat模型的潜在应用和未来发展方向。进一步应用于更多视觉任务,例如视频分析 和三维视觉。(第五章) Building Vision Models upon Heat Conduction;模型总结与展望 vHeat模型的主要贡献。。
+
+\end{document}

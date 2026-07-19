@@ -1,0 +1,598 @@
+\documentclass[UTF8,12pt,a4paper,fontset=none]{ctexart}
+\usepackage[a4paper,left=1.82cm,right=1.82cm,top=1.72cm,bottom=1.82cm,headheight=15pt]{geometry}
+\usepackage{fontspec,xeCJK}
+\setmainfont{Liberation Serif}
+\setsansfont{DejaVu Sans}
+\setmonofont{DejaVu Sans Mono}
+\setCJKmainfont[BoldFont=Noto Serif CJK SC Bold]{Noto Serif CJK SC}
+\setCJKsansfont[BoldFont=Noto Sans CJK SC Bold]{Noto Sans CJK SC}
+\setCJKmonofont{Noto Sans Mono CJK SC}
+\usepackage{amsmath,amssymb,mathtools,bm}
+\usepackage{booktabs,longtable,tabularx,array,multirow}
+\usepackage{enumitem,xcolor}
+\usepackage[most]{tcolorbox}
+\usepackage{fancyhdr,titlesec,hyperref,cleveref,lastpage}
+\usepackage{tikz,float,caption,listings}
+\usetikzlibrary{arrows.meta,positioning,calc,fit,backgrounds,shapes.geometric}
+\definecolor{mainblue}{RGB}{39,82,138}
+\definecolor{deepblue}{RGB}{25,55,95}
+\definecolor{softblue}{RGB}{235,243,252}
+\definecolor{softgreen}{RGB}{238,248,241}
+\definecolor{softorange}{RGB}{255,246,232}
+\definecolor{softgray}{RGB}{245,246,248}
+\definecolor{warnred}{RGB}{160,48,48}
+\hypersetup{unicode=true,colorlinks=true,linkcolor=deepblue,urlcolor=mainblue,citecolor=deepblue}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.36em}
+\setlength{\tabcolsep}{5pt}
+\renewcommand{\arraystretch}{1.2}
+\allowdisplaybreaks[4]
+\emergencystretch=3em
+\sloppy
+\pagestyle{fancy}\fancyhf{}\fancyfoot[C]{\small 第 \thepage\ 页，共 \pageref{LastPage} 页}\renewcommand{\headrulewidth}{0.4pt}
+\titleformat{\section}{\Large\bfseries\color{deepblue}}{\thesection}{0.65em}{}
+\titleformat{\subsection}{\large\bfseries\color{mainblue}}{\thesubsection}{0.55em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries}{\thesubsubsection}{0.5em}{}
+\numberwithin{equation}{section}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Prob}{\mathbb{P}}
+\newcommand{\Loss}{\mathcal{L}}
+\newcommand{\norm}[1]{\left\lVert #1\right\rVert}
+\newcommand{\ip}[2]{\left\langle #1,#2\right\rangle}
+\newcommand{\tr}{\operatorname{Tr}}
+\newcommand{\diag}{\operatorname{diag}}
+\newcommand{\rank}{\operatorname{rank}}
+\newcommand{\softmax}{\operatorname{softmax}}
+\newcommand{\argmin}{\operatorname*{arg\,min}}
+\newcommand{\argmax}{\operatorname*{arg\,max}}
+\newcommand{\sg}{\operatorname{sg}}
+\newcommand{\KL}{D_{\mathrm{KL}}}
+\newcommand{\dd}{\mathrm{d}}
+\newtcolorbox{keybox}[1][]{enhanced,breakable,colback=softblue,colframe=mainblue,boxrule=0.8pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\newtcolorbox{examplebox}[1][]{enhanced,breakable,colback=softgreen,colframe=green!45!black,boxrule=0.7pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\newtcolorbox{notebox}[1][]{enhanced,breakable,colback=softorange,colframe=orange!70!black,boxrule=0.7pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\newtcolorbox{criticalbox}[1][]{enhanced,breakable,colback=red!3,colframe=warnred,boxrule=0.8pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\lstset{basicstyle=\ttfamily\small,breaklines=true,frame=single,backgroundcolor=\color{softgray},numbers=left,numberstyle=\tiny,showstringspaces=false,columns=fullflexible}
+\hypersetup{pdftitle={25 DeepSeek-R1 数学过程详解},pdfauthor={OpenAI}}
+\fancyhead[L]{\small 25 DeepSeek-R1}
+\fancyhead[R]{\small 数学过程详解}
+\setlength{\abovedisplayskip}{0.82em}
+\setlength{\belowdisplayskip}{0.82em}
+\setlength{\abovedisplayshortskip}{0.45em}
+\setlength{\belowdisplayshortskip}{0.45em}
+\begin{document}
+\begin{center}
+{\LARGE\bfseries 25\_DeepSeek-R1 数学过程详解}\par
+\vspace{0.35em}
+{\large GRPO、组内优势、Clip、KL 与规则奖励}
+\end{center}
+\vspace{0.45em}
+\begin{keybox}[本文只处理真正需要推导的部分]
+本文从策略梯度推导 GRPO 的组内标准化、重要性比率、分段 Clip、非负 KL 估计、规则奖励、稀疏成功概率和长思维链长度效应。全文按“公式从哪里来--每个符号是什么--中间步骤为何成立--维度和复杂度如何核对--论文结论依赖哪些假设”的顺序展开；不复述实验表格，也不使用与论文无关的通用背景凑页数。
+\end{keybox}
+\tableofcontents
+\newpage
+
+\section{语言模型策略与序列概率}
+对问题 $q$，策略生成回答 $o=(a_1,\ldots,a_T)$：
+\begin{equation}
+ \pi_\theta(o\mid q)=\prod_{t=1}^{T}\pi_\theta(a_t\mid q,a_{<t}).
+\end{equation}
+序列 log 概率
+\begin{equation}
+ \log\pi_\theta(o\mid q)=\sum_{t=1}^{T}\log\pi_\theta(a_t\mid q,a_{<t}).
+\end{equation}
+策略梯度恒等式来自
+\begin{equation}
+ \nabla_\theta\pi_\theta(o)=\pi_\theta(o)\nabla_\theta\log\pi_\theta(o),
+\end{equation}
+因此
+\begin{equation}
+ \nabla_\theta\E_{o\sim\pi_\theta}R(o)
+ =\E[R(o)\nabla_\theta\log\pi_\theta(o)].
+\end{equation}
+
+\section{GRPO 的组内优势标准化}
+对同一问题采样 $G$ 个输出 $o_1,\ldots,o_G$，奖励 $r_i$。组均值和标准差
+\begin{equation}
+ \bar r=\frac1G\sum_{i=1}^{G}r_i,
+ \qquad s_r=\sqrt{\frac1G\sum_i(r_i-\bar r)^2+\varepsilon}.
+\end{equation}
+优势
+\begin{equation}
+ \boxed{A_i=\frac{r_i-\bar r}{s_r}}.
+\end{equation}
+于是
+\begin{equation}
+ \sum_iA_i\approx0,\qquad \frac1G\sum_iA_i^2\approx1.
+\end{equation}
+这相当于用同一问题的其它回答作为 baseline，去掉“问题本身难度”造成的奖励平移和缩放。
+
+\section{重要性采样比率}
+回答由旧策略 $\pi_{\theta_{\rm old}}$ 采样，但更新新策略 $\pi_\theta$。token 级比率
+\begin{equation}
+ \rho_{i,t}(\theta)=
+ \frac{\pi_\theta(a_{i,t}\mid q,a_{i,<t})}
+ {\pi_{\theta_{\rm old}}(a_{i,t}\mid q,a_{i,<t})}.
+\end{equation}
+对旧分布取期望时
+\begin{equation}
+ \E_{a\sim\pi_{\rm old}}[\rho(a)f(a)]
+ =\sum_a\pi_{\rm old}(a)\frac{\pi_\theta(a)}{\pi_{\rm old}(a)}f(a)
+ =\E_{a\sim\pi_\theta}f(a).
+\end{equation}
+这解释了为何可以复用 rollout 数据。
+
+\section{Clipped Surrogate 的分段推导}
+GRPO 核心项
+\begin{equation}
+ \ell(\rho,A)=\min\{\rho A,\operatorname{clip}(\rho,1-\epsilon,1+\epsilon)A\}.
+\end{equation}
+当 $A>0$，目标希望增大概率；但 $\rho>1+\epsilon$ 后
+\begin{equation}
+ \ell=(1+\epsilon)A
+\end{equation}
+不再增长。若 $A<0$，目标希望减小概率；当 $\rho<1-\epsilon$ 后
+\begin{equation}
+ \ell=(1-\epsilon)A
+\end{equation}
+不再奖励更大幅度下降。因此 clip 只截断“沿优势方向过度更新”的部分。
+
+完整 token 平均目标可写为
+\begin{equation}
+ J_{\rm GRPO}=\E\left[\frac1G\sum_{i=1}^{G}\frac1{|o_i|}
+ \sum_{t=1}^{|o_i|}\ell(\rho_{i,t},A_i)-\beta\KL(\pi_\theta\Vert\pi_{\rm ref})\right].
+\end{equation}
+
+\section{论文采用的无偏 KL 近似}
+令
+\begin{equation}
+ r=\frac{\pi_{\rm ref}(a)}{\pi_\theta(a)}.
+\end{equation}
+论文使用单样本项
+\begin{equation}
+ d(r)=r-\log r-1.
+\end{equation}
+因为对任意 $r>0$，$\log r\le r-1$，所以
+\begin{equation}
+ d(r)\ge0.
+\end{equation}
+对 $a\sim\pi_\theta$ 取期望：
+\begin{align}
+ \E_{\pi_\theta}[r-\log r-1]
+ &=\sum_a\pi_{\rm ref}(a)-1-
+ \E_{\pi_\theta}\log\frac{\pi_{\rm ref}(a)}{\pi_\theta(a)}\\
+ &=\KL(\pi_\theta\Vert\pi_{\rm ref}).
+\end{align}
+因此它是 forward KL 的单样本无偏估计，且逐样本非负。
+
+\section{GRPO 与 PPO 的数学差异}
+PPO 通常训练价值网络 $V_\phi(s)$，优势近似
+\begin{equation}
+ A_t=\sum_{l\ge0}(\gamma\lambda)^l\delta_{t+l},
+ \qquad \delta_t=r_t+\gamma V(s_{t+1})-V(s_t).
+\end{equation}
+GRPO 不训练 critic，而用组内奖励标准化作为整条回答的优势。省掉价值网络参数和前向计算，但优势只在同题组内相对比较；若 $G$ 太小，$\bar r,s_r$ 方差较大。
+
+\section{规则奖励的分解}
+DeepSeek-R1-Zero 使用
+\begin{equation}
+ R(o,q)=w_{\rm acc}R_{\rm acc}+w_{\rm fmt}R_{\rm fmt}.
+\end{equation}
+确定性数学题可令
+\begin{equation}
+ R_{\rm acc}=\mathbf1[\operatorname{Verify}(o,q)=1].
+\end{equation}
+格式奖励可写为多个约束指标之和：
+\begin{equation}
+ R_{\rm fmt}=\sum_j\lambda_j\mathbf1[C_j(o)=1].
+\end{equation}
+离散奖励没有可微梯度，但策略梯度通过 $R\nabla\log\pi$ 把信用分配给生成该回答的 token。
+
+\section{奖励稀疏性与组采样成功概率}
+若单个回答正确概率为 $p$，一组 $G$ 个样本至少有一个正确的概率
+\begin{equation}
+ P_{\ge1}=1-(1-p)^G.
+\end{equation}
+当 $p\ll1$ 时
+\begin{equation}
+ P_{\ge1}\approx Gp.
+\end{equation}
+增大组大小可提高发现正奖励轨迹的概率，但 rollout 成本线性增长。若一组全错且奖励完全相同，则 $A_i\approx0$，该问题几乎不给策略更新信号。
+
+\section{长度归一化与长思维链}
+若不除以 $|o_i|$，序列目标是 token 项之和，长回答产生更大梯度范数。按长度平均
+\begin{equation}
+ \frac1{|o|}\sum_t\ell_{t}
+\end{equation}
+减少纯长度偏置，但奖励本身仍可能偏好更长推理。设正确率随长度 $L$ 增长而计算代价为 $cL$，理想效用为
+\begin{equation}
+ U(L)=P_{\rm correct}(L)-\lambda cL.
+\end{equation}
+若训练奖励只包含正确性，$\lambda=0$，策略会自然延长思考直到边际正确率收益趋近 0。
+
+\section{参考模型更新与 KL 信赖域}
+固定参考模型时目标近似在
+\begin{equation}
+ \KL(\pi_\theta\Vert\pi_{\rm ref})\lesssim\delta
+\end{equation}
+的邻域优化。周期性把参考替换为最新策略，相当于移动信赖域中心。若每阶段 KL 很小，总分布变化仍可逐步累积；这兼顾稳定性与长期能力增长。
+
+\section{奖励黑客的数学表述}
+真实效用 $U(o)$ 不可直接观测，训练使用代理奖励 $R(o)$。若存在输出使
+\begin{equation}
+ R(o)\gg R(o')\quad\text{但}\quad U(o)<U(o'),
+\end{equation}
+优化 $R$ 会偏离真实目标。规则验证器在可判定任务上缩小 $R-U$ 的差距；神经奖励模型存在分布外外推误差，策略会主动搜索其高误差区域，因此大规模 RL 更易暴露 reward hacking。
+% AUGMENTED_DETAILED_MATH
+
+\section{从期望奖励到策略梯度}
+目标
+\begin{equation}
+ J(\theta)=\E_{o\sim\pi_\theta(\cdot\mid q)}[R(q,o)].
+\end{equation}
+展开离散求和并用 log-derivative trick：
+\begin{align}
+ \nabla_\theta J
+ &=\sum_oR(o)\nabla_\theta\pi_\theta(o)\\
+ &=\sum_o\pi_\theta(o)R(o)\nabla_\theta\log\pi_\theta(o)\\
+ &=\E[R(o)\nabla_\theta\log\pi_\theta(o)].
+\end{align}
+减去与动作无关 baseline $b(q)$ 不改变期望，因为
+\begin{equation}
+ \E[b\nabla\log\pi]=b\nabla\sum_o\pi(o)=0.
+\end{equation}
+GRPO 的组均值就是不训练 value network 的经验 baseline。
+
+\section{序列概率与 token 级梯度}
+回答 $o=(o_1,\ldots,o_T)$ 的策略概率
+\begin{equation}
+ \pi_\theta(o\mid q)=\prod_{t=1}^{T}\pi_\theta(o_t\mid q,o_{<t}).
+\end{equation}
+因此
+\begin{equation}
+ \nabla\log\pi_\theta(o\mid q)
+ =\sum_{t=1}^{T}\nabla\log\pi_\theta(o_t\mid q,o_{<t}).
+\end{equation}
+一个序列级奖励会同样乘到所有 token 梯度上，形成 credit assignment 粗糙的问题；长度越长，梯度项数量越多，若不归一化会天然偏向长回答。
+
+\section{组内标准化的零和性质}
+同一问题采样 $G$ 个回答，奖励 $R_i$，
+\begin{equation}
+ \bar R=\frac1G\sum_iR_i,
+ \qquad
+ s_R=\sqrt{\frac1G\sum_i(R_i-\bar R)^2+\epsilon},
+\end{equation}
+优势
+\begin{equation}
+ A_i=\frac{R_i-\bar R}{s_R}.
+\end{equation}
+立即有
+\begin{equation}
+ \sum_iA_i=0,
+ \qquad
+ \frac1G\sum_iA_i^2\approx1.
+\end{equation}
+它消除不同问题奖励尺度差异。若组内所有奖励相同，则 $A_i=0$，该问题不提供梯度；因此纯 0/1 奖励下需要组内同时出现成功和失败样本。
+
+\section{组 baseline 的有限样本偏差}
+对样本 $i$，baseline $\bar R$ 包含自身奖励。写成 leave-one-out baseline
+\begin{equation}
+ \bar R_{-i}=\frac1{G-1}\sum_{j\ne i}R_j.
+\end{equation}
+则
+\begin{equation}
+ R_i-\bar R=\frac{G-1}{G}(R_i-\bar R_{-i}).
+\end{equation}
+所以包含自身主要带来比例缩放 $(G-1)/G$；标准差归一化后关系更复杂，但大组时影响减小。组标准化还使样本之间梯度相关，不能把 $G$ 个回答视为完全独立。
+
+\section{重要性采样比率}
+数据由旧策略 $\pi_{\mathrm{old}}$ 采样，希望估计新策略期望：
+\begin{equation}
+ \E_{o\sim\pi_\theta}[f(o)]
+ =\E_{o\sim\pi_{\mathrm{old}}}
+ \left[\frac{\pi_\theta(o)}{\pi_{\mathrm{old}}(o)}f(o)\right].
+\end{equation}
+序列比率可能指数不稳定，因此 PPO/GRPO 使用 token 比率
+\begin{equation}
+ r_t(\theta)=
+ \frac{\pi_\theta(o_t\mid h_t)}
+ {\pi_{\mathrm{old}}(o_t\mid h_t)}.
+\end{equation}
+若新旧策略差异大，$r_t$ 方差高，剪裁限制单步更新。
+
+\section{Clipped surrogate 的分段梯度}
+单 token 目标
+\begin{equation}
+ L_t=-\min(r_tA,\operatorname{clip}(r_t,1-\epsilon,1+\epsilon)A).
+\end{equation}
+当 $A>0$，目标希望增大概率：
+\begin{equation}
+ L_t=
+ \begin{cases}
+ -r_tA,&r_t\le1+\epsilon,\\
+ -(1+\epsilon)A,&r_t>1+\epsilon.
+ \end{cases}
+\end{equation}
+超过上界后梯度为零。当 $A<0$，目标希望减小概率，下界起作用：
+\begin{equation}
+ L_t=
+ \begin{cases}
+ -(1-\epsilon)A,&r_t<1-\epsilon,\\
+ -r_tA,&r_t\ge1-\epsilon.
+ \end{cases}
+\end{equation}
+因此 clip 是不对称的“有利方向限幅”，不是简单把所有 $r_t$ 截断后再乘优势。
+
+\section{KL 正则的无偏非负估计}
+令
+\begin{equation}
+ r=\frac{\pi_{\mathrm{ref}}(a\mid s)}{\pi_\theta(a\mid s)},
+ \qquad a\sim\pi_\theta.
+\end{equation}
+论文常用
+\begin{equation}
+ k(r)=r-\log r-1.
+\end{equation}
+因为 $x-\log x-1\ge0$，样本估计非负。取期望
+\begin{align}
+ \E_{\pi_\theta}[r]&=\sum_a\pi_\theta(a)\frac{\pi_{\mathrm{ref}}(a)}{\pi_\theta(a)}=1,\\
+ \E_{\pi_\theta}[-\log r]
+ &=\E_{\pi_\theta}\log\frac{\pi_\theta}{\pi_{\mathrm{ref}}}
+ =\KL(\pi_\theta\Vert\pi_{\mathrm{ref}}).
+\end{align}
+故
+\begin{equation}
+ \E[k(r)]=\KL(\pi_\theta\Vert\pi_{\mathrm{ref}}).
+\end{equation}
+
+\section{奖励稀疏与组内有效梯度概率}
+若单个回答成功概率为 $p$，组大小 $G$，全部失败概率
+\begin{equation}
+ (1-p)^G,
+\end{equation}
+全部成功概率
+\begin{equation}
+ p^G.
+\end{equation}
+只有组内奖励有差异时标准化优势非零，所以有效组概率
+\begin{equation}
+ \boxed{P_{\mathrm{useful}}=1-p^G-(1-p)^G.}
+\end{equation}
+当 $p\ll1$，
+\begin{equation}
+ P_{\mathrm{useful}}\approx Gp.
+\end{equation}
+增大组大小可提高看到至少一个成功解的概率，但采样成本线性增加。
+
+\section{长度归一化的两种选择}
+序列目标若直接求和
+\begin{equation}
+ L_i=\sum_{t=1}^{T_i}\ell_{it},
+\end{equation}
+长序列梯度规模近似随 $T_i$ 增长。按长度平均
+\begin{equation}
+ \bar L_i=\frac1{T_i}\sum_t\ell_{it}
+\end{equation}
+使每个回答权重相近，但会降低关键长推理链中每个 token 的总贡献。一般化为
+\begin{equation}
+ L_i^{(\alpha)}=T_i^{-\alpha}\sum_t\ell_{it},
+ \qquad 0\le\alpha\le1.
+\end{equation}
+$\alpha$ 控制长度偏置；这不是纯工程细节，而会改变最优策略对回答长度的偏好。
+
+\section{KL 信赖域的二阶几何}
+对小参数更新 $\Delta\theta$，策略 KL 二阶展开
+\begin{equation}
+ \KL(\pi_{\theta}\Vert\pi_{\theta+\Delta\theta})
+ \approx\frac12\Delta\theta^\top F(\theta)\Delta\theta,
+\end{equation}
+其中 $F$ 是 Fisher 信息矩阵。KL 正则近似限制更新落在 Fisher 椭球
+\begin{equation}
+ \Delta\theta^\top F\Delta\theta\le 2\delta
+\end{equation}
+内。clip 是逐样本比率的近似信赖域，KL 项是分布平均的几何约束，两者共同抑制策略突变。
+\clearpage
+\section{从期望奖励到策略梯度}
+对问题 $q$，策略生成回答序列 $o=(o_1,\ldots,o_T)$，目标
+\begin{equation}
+ J(\theta)=\E_{o\sim\pi_\theta(\cdot\mid q)}[R(q,o)].
+\end{equation}
+对参数求导：
+\begin{align}
+ \nabla_\theta J
+ &=\sum_o \nabla_\theta\pi_\theta(o\mid q)R(q,o)\\
+ &=\sum_o\pi_\theta(o\mid q)
+ \nabla_\theta\log\pi_\theta(o\mid q)R(q,o)\\
+ &=\E\left[R(q,o)\nabla_\theta\log\pi_\theta(o\mid q)\right].
+\end{align}
+自回归概率分解
+\begin{equation}
+ \log\pi_\theta(o\mid q)=
+ \sum_{t=1}^{T}\log\pi_\theta(o_t\mid q,o_{<t}),
+\end{equation}
+因此
+\begin{equation}
+ \nabla_\theta J
+ =\E\left[
+ \sum_t R(q,o)\nabla_\theta\log\pi_\theta(o_t\mid q,o_{<t})
+ \right].
+\end{equation}
+同一个序列奖励被分配给所有 token，这是序列级 RL 的基本信用分配形式。
+
+\section{Baseline 不改变期望梯度}
+对任意只依赖问题或状态、不依赖当前动作的 baseline $b$，
+\begin{align}
+ \E_{a\sim\pi}[b\nabla_\theta\log\pi(a\mid s)]
+ &=b\sum_a\pi(a\mid s)\nabla_\theta\log\pi(a\mid s)\\
+ &=b\sum_a\nabla_\theta\pi(a\mid s)\\
+ &=b\nabla_\theta1=0.
+\end{align}
+因此用优势 $A=R-b$ 替代 $R$ 不改变期望，但可以降低方差。PPO 使用价值网络估计 baseline；GRPO 用同题组内奖励均值代替。
+
+\section{组内标准化的零和性质}
+同一个问题采样 $G$ 个回答，奖励 $r_1,\ldots,r_G$。定义
+\begin{equation}
+ \bar r=\frac1G\sum_{i=1}^{G}r_i,
+ \qquad
+ s_r=\sqrt{\frac1G\sum_i(r_i-\bar r)^2+\epsilon},
+\end{equation}
+\begin{equation}
+ A_i=\frac{r_i-\bar r}{s_r}.
+\end{equation}
+则
+\begin{equation}
+ \sum_iA_i=0,
+ \qquad
+ \frac1G\sum_iA_i^2\approx1.
+\end{equation}
+这使每个问题的梯度尺度相对稳定，不受奖励绝对量纲影响。但如果组内所有奖励相同，$A_i=0$，该问题不给策略梯度。
+
+\section{组 baseline 的有限样本依赖}
+严格地说，$\bar r$ 包含当前样本自己的奖励，因此 $A_i$ 与动作相关。若不使用 leave-one-out，baseline 不是完全独立于动作。写成
+\begin{equation}
+ r_i-\bar r
+ =\frac{G-1}{G}\left(r_i-\bar r_{-i}\right),
+\end{equation}
+其中
+\begin{equation}
+ \bar r_{-i}=\frac1{G-1}\sum_{j\ne i}r_j.
+\end{equation}
+可见自包含均值只是 leave-one-out 优势乘以 $(G-1)/G$。当 $G$ 较大时差异小；小组时会缩小优势幅度。
+
+\section{重要性采样比率的序列与 token 形式}
+数据由旧策略 $\pi_{\theta_{\rm old}}$ 生成，新策略期望需要重要性采样：
+\begin{equation}
+ \E_{o\sim\pi_\theta}[f(o)]
+ =\E_{o\sim\pi_{\rm old}}
+ \left[\frac{\pi_\theta(o)}{\pi_{\rm old}(o)}f(o)\right].
+\end{equation}
+序列比率
+\begin{equation}
+ \rho(o)=\prod_t
+ \frac{\pi_\theta(o_t\mid o_{<t})}
+ {\pi_{\rm old}(o_t\mid o_{<t})}
+\end{equation}
+容易随长度指数爆炸或消失，所以 PPO/GRPO 使用 token 级比率
+\begin{equation}
+ \rho_t=\exp\left(
+ \log\pi_\theta(o_t\mid s_t)-
+ \log\pi_{\rm old}(o_t\mid s_t)
+ \right).
+\end{equation}
+
+\section{Clipped Surrogate 的分段梯度}
+单 token 目标
+\begin{equation}
+ \ell(\rho,A)=
+ \min\left(\rho A,
+ \operatorname{clip}(\rho,1-\epsilon,1+\epsilon)A\right).
+\end{equation}
+若 $A>0$，希望增大该动作概率：
+\begin{equation}
+ \ell=\begin{cases}
+ \rho A,&\rho\le1+\epsilon,\\
+ (1+\epsilon)A,&\rho>1+\epsilon.
+ \end{cases}
+\end{equation}
+超过上界后梯度为零。若 $A<0$，希望减小概率：
+\begin{equation}
+ \ell=\begin{cases}
+ (1-\epsilon)A,&\rho<1-\epsilon,\\
+ \rho A,&\rho\ge1-\epsilon.
+ \end{cases}
+\end{equation}
+低于下界后停止继续减小。clip 因此形成近似信赖域。
+
+\section{KL 正则估计量为何非负且无偏}
+令
+\begin{equation}
+ r=\frac{\pi_{\rm ref}(a\mid s)}{\pi_\theta(a\mid s)}.
+\end{equation}
+论文常用
+\begin{equation}
+ k(r)=r-\log r-1.
+\end{equation}
+因为 $\log r\le r-1$，所以 $k(r)\ge0$。在 $a\sim\pi_\theta$ 下
+\begin{align}
+ \E_{\pi_\theta}[k(r)]
+ &=\sum_a\pi_\theta(a)
+ \left(\frac{\pi_{\rm ref}(a)}{\pi_\theta(a)}
+ -\log\frac{\pi_{\rm ref}(a)}{\pi_\theta(a)}-1\right)\\
+ &=1-1+\sum_a\pi_\theta(a)
+ \log\frac{\pi_\theta(a)}{\pi_{\rm ref}(a)}\\
+ &=\KL(\pi_\theta\|\pi_{\rm ref}).
+\end{align}
+因此该估计逐样本非负，期望等于 forward KL。
+
+\section{GRPO 完整目标的数学结构}
+对第 $i$ 个回答、第 $t$ 个 token，目标可写为
+\begin{align}
+ J_{\rm GRPO}(\theta)=
+ \E\Biggl[\frac1G\sum_{i=1}^{G}
+ \frac1{|o_i|}\sum_t
+ \Bigl(&\min(\rho_{it}A_i,
+ \operatorname{clip}(\rho_{it},1-\epsilon,1+\epsilon)A_i)\\
+ &-\beta k_{it}\Bigr)\Biggr].
+\end{align}
+第一项提升高于组均值的回答，降低低于组均值的回答；第二项限制偏离参考模型。$1/|o_i|$ 是 token 平均，避免长回答仅因 token 多而贡献更大总梯度。
+
+\section{奖励稀疏时组内出现有效梯度的概率}
+假设每个回答独立以概率 $p$ 获得正确奖励 1，否则 0。组内至少一个成功且至少一个失败，才会产生非零相对优势。概率为
+\begin{equation}
+ P_{\rm useful}=1-(1-p)^G-p^G.
+\end{equation}
+当 $p\ll1$，
+\begin{equation}
+ P_{\rm useful}\approx Gp.
+\end{equation}
+增加组大小提高看到成功样本的概率，但计算成本也线性增加。当 $p\approx1$ 时，所有样本都成功的概率 $p^G$ 上升，组内优势再次趋零。
+
+\section{一个四样本数值例子}
+奖励为
+\begin{equation}
+ r=(1,0.6,0.2,0.2).
+\end{equation}
+均值
+\begin{equation}
+ \bar r=0.5.
+\end{equation}
+方差
+\begin{equation}
+ s_r^2=\frac14(0.5^2+0.1^2+(-0.3)^2+(-0.3)^2)=0.11,
+\end{equation}
+所以 $s_r\approx0.3317$，优势约
+\begin{equation}
+ A\approx(1.508,0.302,-0.904,-0.904).
+\end{equation}
+若第一个回答某 token 的比率 $\rho=1.3$，$\epsilon=0.2$，因为 $A>0$，clip 后使用 $1.2A$ 而不是 $1.3A$；若第三个回答 $\rho=0.7$，因为 $A<0$，使用 $0.8A$，阻止概率下降过快。
+
+\section{KL 信赖域的二阶几何}
+当新旧参数差 $\delta\theta$ 很小时，
+\begin{equation}
+ \KL(\pi_{\theta+\delta}\|\pi_\theta)
+ \approx\frac12\delta\theta^\top F(\theta)\delta\theta,
+\end{equation}
+其中 Fisher 信息矩阵
+\begin{equation}
+ F(\theta)=\E_{a\sim\pi_\theta}
+ [\nabla\log\pi_\theta(a)\nabla\log\pi_\theta(a)^\top].
+\end{equation}
+因此 KL 正则在局部给参数更新施加 Fisher 度量下的二次惩罚，而不是普通欧氏 $\|\delta\theta\|^2$。
+
+\section{奖励黑客的优化表达}
+若真实目标为 $U(o)$，训练使用代理奖励 $R(o)$，策略实际求解
+\begin{equation}
+ \max_\pi\E_\pi[R(o)]
+\end{equation}
+而非
+\begin{equation}
+ \max_\pi\E_\pi[U(o)].
+\end{equation}
+当存在回答使 $R$ 很高但 $U$ 很低，优化会集中到这些漏洞。加入多个规则奖励
+\begin{equation}
+ R=\sum_k\lambda_kR_k
+\end{equation}
+只能缓解已知漏洞，不能保证与真实效用完全一致。KL 约束限制搜索距离，但若漏洞就在参考策略附近，仍可能被利用。
+\end{document}

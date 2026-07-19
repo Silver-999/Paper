@@ -1,0 +1,182 @@
+\documentclass[UTF8,11pt,a4paper]{ctexart}
+\usepackage[a4paper,left=1.45cm,right=1.45cm,top=1.55cm,bottom=1.65cm]{geometry}
+\usepackage{amsmath,amssymb,bm}
+\usepackage{graphicx}
+\usepackage{booktabs,tabularx,array,longtable}
+\usepackage{enumitem}
+\usepackage[dvipsnames,svgnames]{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,calc,fit,shapes.geometric}
+\usepackage[most]{tcolorbox}
+\usepackage{hyperref}
+\usepackage{caption}
+\usepackage{float}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{microtype}
+\IfFontExistsTF{Times New Roman}{\setmainfont{Times New Roman}}{\setmainfont{Liberation Serif}}
+\IfFontExistsTF{Noto Sans CJK SC}{\setCJKmainfont{Noto Sans CJK SC}}{}
+\IfFontExistsTF{Noto Sans CJK SC}{\setCJKsansfont{Noto Sans CJK SC}}{}
+\IfFontExistsTF{DejaVu Sans Mono}{\setmonofont{DejaVu Sans Mono}}{\setmonofont{Latin Modern Mono}}
+\definecolor{mainblue}{HTML}{0B5CAD}
+\definecolor{softblue}{HTML}{EAF4FF}
+\definecolor{darktext}{HTML}{1F2937}
+\definecolor{softgray}{HTML}{F5F7FA}
+\definecolor{accent}{HTML}{F59E0B}
+\definecolor{goodgreen}{HTML}{2E7D32}
+\definecolor{badred}{HTML}{B91C1C}
+\definecolor{purple}{HTML}{6D5BD0}
+\hypersetup{colorlinks=true,linkcolor=mainblue,urlcolor=DarkOrange,citecolor=mainblue}
+\setlength{\parindent}{2em}
+\setlength{\headheight}{14pt}
+\setlength{\parskip}{0.22em}
+\setlist[itemize]{leftmargin=2em,itemsep=0.23em,topsep=0.25em}
+\setlist[enumerate]{leftmargin=2.2em,itemsep=0.23em,topsep=0.25em}
+\renewcommand{\arraystretch}{1.2}
+\captionsetup{font=small,labelfont=bf}
+\titleformat{\section}{\Large\bfseries\sffamily\color{mainblue}}{\thesection}{0.7em}{}
+\titleformat{\subsection}{\large\bfseries\sffamily\color{darktext}}{\thesubsection}{0.6em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries\sffamily\color{darktext}}{\thesubsubsection}{0.55em}{}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\sffamily LoRI: Reducing Cross-Task Interference in Mul}
+\fancyhead[R]{\small\sffamily \leftmark}
+\fancyfoot[C]{\small\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\newtcolorbox{infobox}[1]{enhanced,breakable,colback=softblue,colframe=mainblue!70!black,boxrule=0.8pt,arc=2mm,left=1.5mm,right=1.5mm,top=1mm,bottom=1mm,title=\bfseries #1}
+\newtcolorbox{keybox}[1]{enhanced,breakable,colback=softgray,colframe=darktext!45,boxrule=0.6pt,arc=2mm,left=1.5mm,right=1.5mm,top=1mm,bottom=1mm,title=\bfseries #1}
+\newtcolorbox{notebox}[1]{enhanced,breakable,colback=accent!8,colframe=accent!80!black,boxrule=0.7pt,arc=2mm,left=1.5mm,right=1.5mm,top=1mm,bottom=1mm,title=\bfseries #1}
+\newcommand{\term}[1]{\textbf{\textcolor{mainblue}{#1}}}
+\begin{document}
+
+\section{论文基本信息}
+\begin{center}
+\begin{tabularx}{0.94\linewidth}{>{\bfseries}p{0.18\linewidth}X}
+\toprule
+题目 & LoRI: Reducing Cross-Task Interference in Multi-Task Low-Rank Adaptation\\
+课件日期 & 2025-05-08\\
+研究方向 & 多任务学习 / LoRA / 稀疏适配\\
+一句话概括 & 冻结随机投影并对任务特定低秩分量施加稀疏掩码,减少不同任务之间的参数干扰,同时进一步压缩可训练参数。\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\begin{infobox}{摘要要点}
+冻结随机投影并对任务特定低秩分量施加稀疏掩码,减少不同任务之间的参数干扰,同时进一步压缩可训练参数。 本说明按“研究问题—核心机制—基础公式—实验阅读—局限与优化”的顺序重新组织，不保留原始材料的封面、目录和页码对应。
+\end{infobox}
+
+\section{研究问题与动机}
+这项工作的出发点不是简单地替换某个网络层，而是识别现有范式中最影响\term{质量、效率、可靠性或可部署性}的瓶颈。结合论文所讨论的问题，可以将研究动机概括为以下几点：
+\begin{itemize}
+\item 结论与未来工作 LoRI: Reducing Cross-Task Interference in Multi-Task Low Rank Adaptation
+\item LoRI 的优劣势 优势 1:相比 LoRA 最多减少 95\% 的可训练参数
+\item 优势 2:有效减少多任务场景下的参数干扰
+\item 优势 3:在持续学习中缓解灾难性遗忘
+\item 劣势 1:稀疏掩码校准需要额外的计算资源
+\item 劣势 2:对超参数设置较为敏感
+\end{itemize}
+
+\begin{notebox}{理解重点}
+阅读这类论文时，应把“问题是否真实存在”“方法是否直接解决该问题”“实验是否排除了其他解释”分开判断。仅凭更大的模型、更多数据或更长训练得到的提升，不能自动视为结构创新带来的收益。
+\end{notebox}
+
+\section{核心思想与整体流程}
+冻结随机投影并对任务特定低秩分量施加稀疏掩码,减少不同任务之间的参数干扰,同时进一步压缩可训练参数。 从信息流角度看，其基本流程可以整理为下图。
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[>=Latex,node distance=0.78cm]
+\tikzstyle{procstep}=[draw,rounded corners,fill=softblue,align=center,minimum width=3.05cm,minimum height=0.95cm,text width=2.75cm]
+\node[procstep] (a) {共享随机投影};
+\node[procstep,right=of a] (b) {任务稀疏掩码};
+\node[procstep,right=of b] (c) {低秩更新};
+\node[procstep,right=of c] (d) {多任务输出};
+\draw[->,thick,mainblue] (a)--(b);
+\draw[->,thick,mainblue] (b)--(c);
+\draw[->,thick,mainblue] (c)--(d);
+\end{tikzpicture}
+\caption{核心信息流与处理阶段。}
+\end{figure}
+
+\subsection{方法组成与信息流}
+\begin{itemize}
+\item 结论与未来工作 LoRI: Reducing Cross-Task Interference in Multi-Task Low Rank Adaptation
+\item LoRI 的方法细节 Figure2(a)展示了 LoRI 的方法结构,包括冻结后的投影矩阵 A 和稀疏更新的矩阵 B
+\item Figure2(c)展示了 LoRI 在持续学习中的应用,通过稀疏掩码实现安全适配器的构建和 任务适应。
+\item Figure2(b)展示了 LoRI 适配器合并的方式,通过保持适配器的正交性来减少干扰
+\item 拼接合并(加权平均)和线性合并(任务算术)两种合并方法 LoRI: Reducing Cross-Task Interference in Multi-Task Low Rank Adaptation
+\item 单任务性能 在自然语言理解、数学推理、代码生成和安全对齐等任务上,LoRI-D 和 LoRI-S 的性能接 近或优于 LoRA 和 DoRA,同时显著减少了可训练参数。
+\item Adapters合并 多任务合并时,LoRI 的拼接合并方法性能接近单任务基线;与 LoRA 合并方法相比, LoRI 在代码生成和安全对齐任务上表现更优。
+\end{itemize}
+
+\begin{keybox}{结构解析}
+\begin{itemize}
+\item 18 结论与未来工作 LoRI 在减少可训练参数和降低任务干扰方面表现出色
+\item 未来可探索结构化稀疏模式，将 LoRI 扩展到多模态模型
+\end{itemize}
+\end{keybox}
+
+下图补充展示模块连接、数据流或训练阶段之间的关系。
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.94\linewidth,height=0.43\textheight,keepaspectratio]{method_diagram.jpg}
+\caption{模型结构、数据流或主要训练阶段。}
+\end{figure}
+
+\section{数学与机制理解}
+本节给出理解该工作的基础数学结构。公式用于解释方法所属范式，并不替代原论文中的完整推导。
+\begin{equation}
+W'=W+\Delta W,\qquad \Delta W=BA,\quad \operatorname{rank}(\Delta W)\le r
+\end{equation}
+参数高效微调冻结原权重 $W$，只学习低秩更新 $BA$。相关方法的创新通常围绕稀疏、共享、路由或低维参数生成展开。
+
+\begin{keybox}{从公式回到方法}
+应重点观察论文究竟改变了公式中的哪一部分：是输入表示、连接矩阵、条件变量、参数化方式、训练目标，还是求解与调度过程。真正的创新通常可以在这一层被准确定位。
+\end{keybox}
+
+
+\section{实验结果应如何阅读}
+\begin{itemize}
+\item 消融实验 - 合并权重 合并权重对多任务性能有平衡作用,权重不同,各领域性能表现不同。
+\item 消融实验 - 掩码粒度 模型级掩码效果最佳;细粒度掩码(如矩阵级)导致性能下降。
+\item 消融实验 - 校准步骤 校准步骤越多,稀疏掩码校准得越准确,模型性能越好。
+\item 消融实验 - 稀疏比率 不同层和投影类型的稀疏比率差异,馈前向(FFN)投影保留更多参数,顶部层比底部层 稀疏度低。
+\item 数据集(自然语言理解、数学推理、代码生成、安全对齐)
+\item 基线方法(全量微调、LoRA、DoRA 等)
+\item 超参数设置(如学习率、批大小等)。
+\end{itemize}
+
+\begin{notebox}{结果解读}
+\begin{itemize}
+\item 合并权重 合并权重对多任务性能有平衡作用，权重不同，各领域性能表现不同
+\end{itemize}
+\end{notebox}
+
+下图用于直观呈现主要对比、消融、定性样例或效率结果。
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.94\linewidth,height=0.43\textheight,keepaspectratio]{result_evidence.jpg}
+\caption{代表性实验对比、消融结果或定性样例。}
+\end{figure}
+实验部分不应只看单一最好数字。还需要核对模型规模、训练数据、训练步数、采样或解码预算、硬件条件以及是否使用额外蒸馏、检索或后处理。只有比较条件接近时，结果才能真正说明方法本身的优势。
+
+\section{优点、局限与可优化空间}
+\subsection{主要优点}
+\begin{itemize}
+\item \term{问题与方法对应明确}：论文围绕一个可识别的核心瓶颈展开，方法结构能够直接映射到该瓶颈。
+\item \term{可复用的设计思想}：即使不完整复现模型，其中的分解、稀疏化、递归、条件控制或系统优化思想也可迁移到相邻任务。
+\item \term{实验提供了多角度证据}：实验通常同时展示主结果、效率比较、案例或消融，使结论不完全依赖单一指标。
+\end{itemize}
+
+\subsection{局限与进一步优化}
+\begin{itemize}
+\item 需要进一步区分\term{结构收益}与更大算力、更多数据、不同训练技巧带来的收益，并在等参数、等计算预算下进行严格比较。
+\item 对超参数、输入分布和模型规模的敏感性仍应系统分析；在一个数据集上的最优配置不一定能直接迁移。
+\item 实际部署还要考虑显存峰值、并发、延迟抖动、失败案例和鲁棒性，而不仅是离线平均指标。
+\item 可尝试将该方法与蒸馏、量化、缓存复用、动态路由或更强的表示学习结合，验证不同优化是否互补。
+\end{itemize}
+
+\section{结论}
+总体而言，冻结随机投影并对任务特定低秩分量施加稀疏掩码，减少不同任务之间的参数干扰，同时进一步压缩可训练参数。。 进一步需要注意：结论与未来工作 LoRI: Reducing Cross-Task Interference in Multi-Task Low Rank Adaptation;结论与未来工作 LoRI 在减少可训练参数和降低任务干扰方面表现出色。
+
+\end{document}

@@ -1,0 +1,501 @@
+\documentclass[11pt]{article}
+\usepackage{fontspec}
+\setmainfont[
+  Path=fonts/,
+  Extension=.ttf,
+  UprightFont=*-400,
+  BoldFont=*-700
+]{NotoSerifSC}
+\setsansfont[
+  Path=fonts/,
+  Extension=.ttf,
+  UprightFont=*-400,
+  BoldFont=*-700
+]{NotoSerifSC}
+\XeTeXlinebreaklocale "zh"
+\XeTeXlinebreakskip=0pt plus 1pt
+\usepackage[a4paper,margin=1.70cm]{geometry}
+\usepackage{amsmath,amssymb,mathtools,bm}
+\usepackage{booktabs,longtable,array}
+\usepackage{enumitem}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\setlist{nosep,leftmargin=2em}
+\allowdisplaybreaks[3]
+\numberwithin{equation}{section}
+\pagestyle{plain}
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Pp}{\mathbb{P}}
+\newcommand{\1}{\mathbf{1}}
+\newcommand{\T}{\mathsf{T}}
+\newcommand{\F}{\mathrm{F}}
+\newcommand{\cN}{\mathcal{N}}
+\newcommand{\cL}{\mathcal{L}}
+\newcommand{\cS}{\mathcal{S}}
+\newcommand{\cH}{\mathcal{H}}
+\newcommand{\cA}{\mathcal{A}}
+\newcommand{\cM}{\mathcal{M}}
+\newcommand{\cT}{\mathcal{T}}
+\newcommand{\diag}{\operatorname{diag}}
+\newcommand{\tr}{\operatorname{tr}}
+\newcommand{\Var}{\operatorname{Var}}
+\newcommand{\Cov}{\operatorname{Cov}}
+\newcommand{\softmax}{\operatorname{softmax}}
+\newcommand{\KL}{D_{\mathrm{KL}}}
+\newcommand{\sg}{\operatorname{sg}}
+\begin{document}
+    \begin{center}
+      {\LARGE\bfseries 12\_MUDDFormer}
+    \end{center}
+    \vspace{0.8em}
+
+    \section{符号与维度}
+    \begin{longtable}{>{$}l<{$} >{$}l<{$} p{10cm}}
+    \toprule
+    \text{符号} & \text{维度} & \text{含义}\\
+    \midrule
+    X & \R^{T\times d} & 长度为 $T$ 的隐藏状态序列。\\
+Q,K,V & \R^{T\times d_h} & 查询、键和值。\\
+A & \R^{T\times T} & 行归一化注意力矩阵。\\
+M & \R^{T\times T} & 因果或结构掩码。\\
+H,d_h & \mathbb N & 注意力头数与单头维度，$Hd_h=d$。\\
+X_i & \R^{T\times d} & 第 $i$ 层隐藏状态。\\
+        a_i & \R^{i+1} & 第 $i$ 层的动态跨层权重。\\
+    \bottomrule
+    \end{longtable}
+
+    所有向量默认是列向量；未特别说明时，期望同时对数据、噪声和采样时刻取值。下文只展开论文中承担方法逻辑的公式，并把所需假设写在推导发生的位置。
+
+\section{缩放点积注意力的逐项推导}
+
+设单头输入为 $X\in\R^{n\times d}$，投影矩阵为
+$W_Q,W_K\in\R^{d\times d_k}$、$W_V\in\R^{d\times d_v}$。于是
+\begin{equation}
+ Q=XW_Q,\qquad K=XW_K,\qquad V=XW_V,
+ \qquad S=\frac{QK^\T}{\sqrt{d_k}},
+ \qquad P=\operatorname{softmax}_{\rm row}(S),
+ \qquad O=PV.
+\end{equation}
+维度依次为 $Q,K\in\R^{n\times d_k}$、$S,P\in\R^{n\times n}$、
+$V,O\in\R^{n\times d_v}$。
+
+\subsection{为什么除以 $\sqrt{d_k}$}
+
+令某一对 query、key 的坐标独立、均值为零、方差为 $\sigma^2$，则
+\begin{align}
+ q^\T k&=\sum_{a=1}^{d_k}q_ak_a,\\
+ \E[q^\T k]&=\sum_a\E[q_a]\E[k_a]=0,\\
+ \Var(q^\T k)
+ &=\sum_a\Var(q_ak_a)
+ =\sum_a\E[q_a^2]\E[k_a^2]
+ =d_k\sigma^4.
+\end{align}
+因此未缩放 logit 的标准差为 $\sqrt{d_k}\sigma^2$；缩放后
+\begin{equation}
+ \Var\!\left(\frac{q^\T k}{\sqrt{d_k}}\right)=\sigma^4.
+\end{equation}
+这不是让注意力必然均匀，而是避免初始化时维度增大直接把 softmax 推入饱和区。
+
+\subsection{softmax Jacobian 的完整形式}
+
+对一行 $p_i=e^{s_i}/Z$，$Z=\sum_j e^{s_j}$。逐坐标求导得
+\begin{align}
+ \frac{\partial p_i}{\partial s_j}
+ &=\frac{\delta_{ij}e^{s_i}Z-e^{s_i}e^{s_j}}{Z^2}\\
+ &=p_i(\delta_{ij}-p_j).
+\end{align}
+写成矩阵即
+\begin{equation}
+ J_{\rm sm}(p)=\diag(p)-pp^\T.
+\end{equation}
+它是半正定矩阵，因为任意 $z$ 满足
+\begin{align}
+ z^\T J_{\rm sm}(p)z
+ &=\sum_i p_i z_i^2-\left(\sum_i p_i z_i\right)^2\\
+ &=\Var_{i\sim p}(z_i)\ge0.
+\end{align}
+又因 $J_{\rm sm}(p)\1=0$，给所有 logit 加同一常数不改变 softmax。
+
+设损失对输出一行的梯度为 $g_o\in\R^{d_v}$。由 $o=\sum_jp_jv_j$，
+\begin{align}
+ \frac{\partial\cL}{\partial p_j}&=g_o^\T v_j,\\
+ \frac{\partial\cL}{\partial s_j}
+ &=\sum_i\frac{\partial\cL}{\partial p_i}
+       \frac{\partial p_i}{\partial s_j}\\
+ &=p_j g_o^\T(v_j-o).
+\end{align}
+所以一个 key 的梯度由它相对当前加权均值 $o$ 的偏差决定；这给出了注意力各位置梯度耦合的精确来源。
+
+\subsection{对 $Q,K,V$ 的矩阵梯度}
+
+记 $G_O=\partial\cL/\partial O$。矩阵微分
+\begin{equation}
+ dO=dP\,V+P\,dV
+\end{equation}
+与 Frobenius 内积 $d\cL=\langle G_O,dO\rangle_\F$ 给出
+\begin{equation}
+ G_V=P^\T G_O,
+ \qquad
+ G_P=G_O V^\T.
+\end{equation}
+对每行应用 softmax Jacobian，令
+\begin{equation}
+ G_S=P\odot\left(G_P-\bigl((G_P\odot P)\1\bigr)\1^\T\right),
+\end{equation}
+其中括号中的列向量在行内广播。再由
+\begin{equation}
+ dS=\frac{dQK^\T+QdK^\T}{\sqrt{d_k}}
+\end{equation}
+得到
+\begin{equation}
+ \boxed{
+ G_Q=\frac{G_SK}{\sqrt{d_k}},\qquad
+ G_K=\frac{G_S^{\T}Q}{\sqrt{d_k}},\qquad
+ G_V=P^{\T}G_O.}
+\end{equation}
+最后通过 $Q=XW_Q$ 等式继续链式求导：
+\begin{align}
+ G_{W_Q}&=X^{\T}G_Q,&G_X^{(Q)}&=G_QW_Q^\T,\\
+ G_{W_K}&=X^{\T}G_K,&G_X^{(K)}&=G_KW_K^\T,\\
+ G_{W_V}&=X^{\T}G_V,&G_X^{(V)}&=G_VW_V^\T.
+\end{align}
+同一输入同时产生三条梯度路径，故
+$G_X=G_X^{(Q)}+G_X^{(K)}+G_X^{(V)}$。
+
+\section{掩码、稀疏化与复杂度}
+
+令二值可见性矩阵 $M\in\{0,1\}^{n\times n}$。严格掩码写成
+\begin{equation}
+ \widetilde S_{ij}=
+ \begin{cases}
+ S_{ij},&M_{ij}=1,\\
+ -\infty,&M_{ij}=0,
+ \end{cases}
+ \qquad
+ \widetilde P_{ij}=\frac{M_{ij}e^{S_{ij}}}
+ {\sum_\ell M_{i\ell}e^{S_{i\ell}}}.
+\end{equation}
+因此被掩码项的概率与梯度都严格为零。若第 $i$ 行只保留 $s_i$ 个 key，
+注意力乘法量为
+\begin{equation}
+ \Theta\!\left(d_k\sum_i s_i+d_v\sum_i s_i\right).
+\end{equation}
+稠密情形 $s_i=n$ 为 $\Theta(n^2(d_k+d_v))$；若 $s_i\le s\ll n$，
+则为 $\Theta(ns(d_k+d_v))$。但只有稀疏索引和 kernel 真正跳过零块时，理论乘法量才会转化为实际加速。
+
+\subsection{稀疏截断的输出误差}
+
+对一行概率 $p$，保留集合 $S$，被删除概率质量
+$\varepsilon=\sum_{j\notin S}p_j$。重新归一化后
+\begin{equation}
+ \widehat p_j=
+ \begin{cases}
+ p_j/(1-\varepsilon),&j\in S,\\
+ 0,&j\notin S.
+ \end{cases}
+\end{equation}
+直接计算其 $\ell_1$ 距离：
+\begin{align}
+ \|p-\widehat p\|_1
+ &=\sum_{j\in S}p_j\frac{\varepsilon}{1-\varepsilon}
+   +\sum_{j\notin S}p_j\\
+ &=\varepsilon+\varepsilon=2\varepsilon.
+\end{align}
+若 $\|v_j\|_2\le V_{\max}$，则输出误差满足
+\begin{equation}
+ \|o-\widehat o\|_2
+ =\left\|\sum_j(p_j-\widehat p_j)v_j\right\|_2
+ \le 2\varepsilon V_{\max}.
+\end{equation}
+这说明 top-$k$ 的关键不是 $k$ 本身，而是被丢弃的注意力质量。
+
+\subsection{KV 缓存的精确规模}
+
+自回归解码第 $t$ 步只新增一个 key/value。若有 $L$ 层、$h_{kv}$ 个 KV 头、
+每头维度 $d_h$、每元素 $b$ 字节，则缓存量为
+\begin{equation}
+ \operatorname{Mem}_{KV}=2Lth_{kv}d_hb.
+\end{equation}
+其中因子 $2$ 来自 key 与 value。多查询或分组查询通过令
+$h_{kv}<h_q$ 降低缓存；它改变的是存储与带宽，不改变 query 头的数量。
+
+\section{残差路径与归一化的稳定性}
+
+对 pre-norm 块
+\begin{equation}
+ x_{\ell+1}=x_\ell+F_\ell(\operatorname{LN}(x_\ell)),
+\end{equation}
+Jacobian 为
+\begin{equation}
+ \frac{\partial x_{\ell+1}}{\partial x_\ell}
+ =I+J_{F_\ell}J_{\rm LN}.
+\end{equation}
+跨 $L$ 层梯度是这些矩阵的乘积。与没有残差时只乘
+$J_{F_\ell}J_{\rm LN}$ 相比，恒等项提供直接通路。若
+$\|J_{F_\ell}J_{\rm LN}\|_2\le\eta_\ell$，则
+\begin{equation}
+ \left\|\prod_{\ell=1}^{L}(I+A_\ell)\right\|_2
+ \le\prod_{\ell=1}^{L}(1+\eta_\ell)
+ \le\exp\!\left(\sum_{\ell=1}^{L}\eta_\ell\right).
+\end{equation}
+这给出稳定性的充分条件；它不是“残差必然防止爆炸”的无条件结论。
+
+对向量 $x\in\R^d$，忽略可学习仿射项时
+\begin{equation}
+ \mu=\frac1d\1^{\T}x,\qquad
+ \sigma^2=\frac1d\|x-\mu\1\|_2^2,\qquad
+ y=\frac{x-\mu\1}{\sqrt{\sigma^2+\epsilon}}.
+\end{equation}
+令 $P_c=I-\frac1d\1\1^\T$、$u=P_cx$、$s=\sqrt{d^{-1}u^{\T}u+\epsilon}$，
+则逐步微分得
+\begin{align}
+ du&=P_c\,dx,\\
+ ds&=\frac{u^{\T}du}{d s},\\
+ dy&=\frac1sP_c\,dx-\frac{u\,u^{\T}P_c\,dx}{d s^3},
+\end{align}
+故
+\begin{equation}
+ J_{\rm LN}=\frac1sP_c-\frac{uu^\T}{d s^3}.
+\end{equation}
+该式显示归一化会消除全常数方向，并对样本方差方向施加额外投影。
+
+\section{多头分解与合并}
+
+第 $a$ 个头输出 $O_a=P_aV_a\in\R^{n\times d_h}$，拼接后
+\begin{equation}
+ Y=[O_1\|\cdots\|O_h]W_O,
+ \qquad W_O\in\R^{hd_h\times d}.
+\end{equation}
+因此多头不是把概率矩阵简单平均，而是在不同投影子空间中分别形成概率矩阵，
+再由 $W_O$ 线性混合。参数量（忽略偏置）为
+\begin{equation}
+ d(hd_k)+d(hd_k)+d(hd_v)+(hd_v)d.
+\end{equation}
+常用 $hd_k=hd_v=d$ 时等于 $4d^2$。注意力矩阵的主内存项仍为
+$h n^2$；Flash 类实现通过分块在线维护 softmax 的行最大值与归一化和，避免物化完整矩阵，
+但其数学输出仍与上述 softmax 等价。
+
+\section{自回归似然与 token 梯度}
+
+对序列 $x_{1:T}$，因果语言模型按概率链式法则分解
+\begin{equation}
+ p_\theta(x_{1:T})=\prod_{t=1}^{T}p_\theta(x_t\mid x_{<t}).
+\end{equation}
+负对数似然
+\begin{equation}
+ \cL_{\rm NLL}=-\sum_{t=1}^{T}\log p_\theta(x_t\mid x_{<t}).
+\end{equation}
+若第 $t$ 步 logits 为 $z_t\in\R^{V}$，概率
+$p_{tj}=e^{z_{tj}}/\sum_ke^{z_{tk}}$，真实 token 索引 $y_t$，则
+\begin{equation}
+ \ell_t=-z_{t,y_t}+\log\sum_ke^{z_{tk}},
+\end{equation}
+逐 logit 梯度
+\begin{equation}
+ \frac{\partial\ell_t}{\partial z_{tj}}
+ =p_{tj}-\1\{j=y_t\}.
+\end{equation}
+Hessian 正是 softmax Jacobian
+\begin{equation}
+ \nabla_z^2\ell_t=\diag(p_t)-p_tp_t^T\succeq0.
+\end{equation}
+所以交叉熵关于 logits 凸，但关于深网参数并不凸。
+
+对非 padding token 集合 $\mathcal I$，平均损失和困惑度
+\begin{equation}
+ \bar L=\frac1{|\mathcal I|}\sum_{t\in\mathcal I}\ell_t,
+ \qquad \operatorname{PPL}=e^{\bar L}.
+\end{equation}
+因此 PPL 是真实 token 概率倒数的几何平均：
+\begin{equation}
+ \operatorname{PPL}=\left(
+ \prod_{t\in\mathcal I}\frac1{p_\theta(x_t\mid x_{<t})}
+ \right)^{1/|\mathcal I|}.
+\end{equation}
+不同 tokenizer 的 token 粒度不同，PPL 不能不经换算直接横向比较。
+
+\section{旋转位置编码的相对位置恒等式}
+
+对二维坐标对，定义旋转
+\begin{equation}
+ R(m\omega)=
+ \begin{bmatrix}
+ \cos(m\omega)&-\sin(m\omega)\\
+ \sin(m\omega)&\cos(m\omega)
+ \end{bmatrix}.
+\end{equation}
+位置 $m,n$ 的 query、key 分别为
+$q_m=R(m\omega)q$、$k_n=R(n\omega)k$。内积
+\begin{align}
+ q_m^Tk_n
+ &=q^TR(m\omega)^TR(n\omega)k\\
+ &=q^TR((n-m)\omega)k.
+\end{align}
+第二步用到 $R(a)^T=R(-a)$ 和 $R(a)R(b)=R(a+b)$。
+所以绝对位置旋转后的内积只依赖相对距离 $n-m$。
+
+在 $d_h$ 维中对相邻坐标对使用频率
+\begin{equation}
+ \omega_j=\theta^{-2j/d_h},\qquad j=0,\ldots,d_h/2-1.
+\end{equation}
+低 $j$ 频率高、分辨近距离，高 $j$ 频率低、覆盖远距离。若推理长度远超训练长度，
+相位 $m\omega_j$ 的外推和周期混叠会改变注意力几何；位置插值本质上是重新缩放这些相位。
+
+\section{RMSNorm 的 Jacobian}
+
+忽略可学习增益，RMSNorm
+\begin{equation}
+ y=\frac{x}{s},\qquad
+ s=\sqrt{\frac1d x^Tx+\epsilon}.
+\end{equation}
+微分
+\begin{equation}
+ ds=\frac{x^Tdx}{d s},
+\end{equation}
+因此
+\begin{align}
+ dy&=\frac1s dx-\frac{x}{s^2}ds\\
+ &=\left(\frac1sI-\frac{xx^T}{d s^3}\right)dx.
+\end{align}
+故
+\begin{equation}
+ J_{\rm RMS}=\frac1sI-\frac{xx^T}{d s^3}.
+\end{equation}
+与 LayerNorm 相比，它没有去均值投影
+$I-d^{-1}\1\1^T$，因此不消除常数方向。加上逐坐标增益 $g$ 后，
+Jacobain 左乘 $\diag(g)$。
+
+谱上，对任意 $v\perp x$，$Jv=v/s$；沿 $x$ 方向
+\begin{equation}
+ Jx=\left(\frac1s-\frac{\|x\|^2}{d s^3}\right)x
+ =\frac{\epsilon}{s^3}x.
+\end{equation}
+当 $\epsilon$ 很小，径向尺度方向被强烈压制，而切向方向按 $1/s$ 缩放。
+
+\section{SwiGLU 前馈层的逐项梯度}
+
+SwiGLU 可写
+\begin{equation}
+ a=xW_a,\qquad b=xW_b,\qquad
+ h=\operatorname{swish}(a)\odot b,\qquad
+ y=hW_o,
+\end{equation}
+其中
+\begin{equation}
+ \operatorname{swish}(a)=a\sigma(a).
+\end{equation}
+其导数
+\begin{align}
+ \frac d{da}[a\sigma(a)]
+ &=\sigma(a)+a\sigma(a)(1-\sigma(a)).
+\end{align}
+令 $g_h=\partial\cL/\partial h$，则
+\begin{align}
+ g_a&=g_h\odot b\odot
+ [\sigma(a)+a\sigma(a)(1-\sigma(a))],\\
+ g_b&=g_h\odot\operatorname{swish}(a),\\
+ \nabla_{W_a}\cL&=x^Tg_a,\qquad
+ \nabla_{W_b}\cL=x^Tg_b,\\
+ \nabla_x\cL&=g_aW_a^T+g_bW_b^T.
+\end{align}
+门分支 $b$ 同时调制激活和 $a$ 分支梯度，故两个投影不是可独立解释的普通 MLP。
+
+\section{MoE 路由与负载}
+
+对 token $x_i$，router logits $r_i=W_rx_i$，概率
+\begin{equation}
+ p_{ie}=\frac{e^{r_{ie}}}{\sum_{j=1}^{E}e^{r_{ij}}}.
+\end{equation}
+若 top-$k$ 专家集合 $S_i$，归一化门
+\begin{equation}
+ \widetilde p_{ie}=\frac{p_{ie}\1\{e\in S_i\}}
+ {\sum_{j\in S_i}p_{ij}},
+ \qquad
+ y_i=\sum_{e\in S_i}\widetilde p_{ie}F_e(x_i).
+\end{equation}
+固定集合 $S_i$ 内可正常求导；集合边界的 arg-top-$k$ 不连续，几乎处处把未选专家梯度置零。
+
+令软重要性
+\begin{equation}
+ P_e=\frac1N\sum_ip_{ie},
+\end{equation}
+硬负载
+\begin{equation}
+ F_e=\frac1N\sum_i\1\{e\in S_i\}/k.
+\end{equation}
+常见平衡项
+\begin{equation}
+ L_{\rm bal}=E\sum_eP_eF_e
+\end{equation}
+在均匀 $P_e=F_e=1/E$ 时等于 $1$。把硬 $F_e$ 停止梯度后，
+router 梯度只通过 $P_e$，会降低当前过载专家的概率；它是训练启发式，不等同于严格容量约束。
+
+若每专家容量为
+\begin{equation}
+ C_e=\left\lceil\frac{Nk}{E}\,c_{\rm cap}\right\rceil,
+\end{equation}
+超过容量的 token 必须丢弃或转送。即使平均负载均匀，局部批次方差仍可能溢出。
+
+\section{低秩 KV 潜变量的吸收}
+
+设 key/value 由共享潜变量
+\begin{equation}
+ c_t=W_cx_t\in\R^{d_c},\qquad
+ k_t=W_kc_t,\qquad v_t=W_vc_t.
+\end{equation}
+注意力 logit
+\begin{equation}
+ q_s^Tk_t=q_s^TW_kc_t=(W_k^Tq_s)^Tc_t.
+\end{equation}
+因此解码时可把 $W_k$ 吸收到 query 投影，缓存 $c_t$ 而非完整 $k_t$。
+若 value 聚合
+\begin{equation}
+ o_s=\sum_tp_{st}W_vc_t=W_v\left(\sum_tp_{st}c_t\right),
+\end{equation}
+$W_v$ 可放到加权和之后。缓存从每 token 的 $d_k+d_v$ 降为 $d_c$，
+前提是位置编码等操作不破坏这些线性交换关系；对只作用在部分 key 维度的 RoPE，需把旋转部分另行缓存或重构。
+
+\section{多 token 预测的联合似然}
+
+若同一隐藏状态 $h_t$ 用 $K$ 个头预测 $x_{t+1},\ldots,x_{t+K}$，
+\begin{equation}
+ \cL_t=\sum_{k=1}^{K}\lambda_k
+ [-\log p_{\theta,k}(x_{t+k}\mid h_t)].
+\end{equation}
+共享骨干梯度
+\begin{equation}
+ \nabla_{h_t}\cL_t=\sum_{k=1}^{K}\lambda_k g_{t,k}.
+\end{equation}
+其平方范数精确展开
+\begin{equation}
+ \left\|\sum_k\lambda_kg_{t,k}\right\|^2
+ =\sum_k\lambda_k^2\|g_{t,k}\|^2
+ +2\sum_{j<k}\lambda_j\lambda_k g_{t,j}^Tg_{t,k}.
+\end{equation}
+交叉内积为负时存在任务冲突；辅助头退火相当于训练后期逐渐去掉这些交叉项，
+使最终目标回到下一 token 似然。
+
+\section{跨层稠密聚合}
+设第 $i$ 层可访问 $X_0,\ldots,X_i$，动态权重 $a_i\in\R^{i+1}$ 经 softmax 归一化，
+\begin{equation}
+  \tilde X_i=\sum_{j=0}^{i}a_{ij}X_j,
+  \qquad a_{ij}\ge0,\quad\sum_ja_{ij}=1.
+\end{equation}
+这使每个 token 的跨层聚合是凸组合。若权重 logits 为 $s_i$，则
+\begin{equation}
+  \frac{\partial\tilde X_i}{\partial s_{ik}}
+  =a_{ik}(X_k-\tilde X_i),
+\end{equation}
+所以某层状态只有在偏离当前加权均值时才产生较大门控梯度。
+
+\section{与注意力的对应}
+若把深度索引看成长度 $i+1$ 的序列，权重可写成
+\begin{equation}
+  a_i=\softmax(q_iK_i^{\T}),\qquad
+  \tilde X_i=a_iV_i.
+\end{equation}
+普通 token 注意力沿空间维混合；MUDDFormer 的动态稠密连接沿深度维混合。两者矩阵形式相同，但键值的索引语义不同，复杂度分别依赖 $T^2$ 与 $L^2$。
+
+\end{document}

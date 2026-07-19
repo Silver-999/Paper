@@ -1,0 +1,394 @@
+\documentclass[11pt]{article}
+\usepackage{fontspec}
+\setmainfont[
+  Path=fonts/,
+  Extension=.ttf,
+  UprightFont=*-400,
+  BoldFont=*-700
+]{NotoSerifSC}
+\setsansfont[
+  Path=fonts/,
+  Extension=.ttf,
+  UprightFont=*-400,
+  BoldFont=*-700
+]{NotoSerifSC}
+\XeTeXlinebreaklocale "zh"
+\XeTeXlinebreakskip=0pt plus 1pt
+\usepackage[a4paper,margin=1.70cm]{geometry}
+\usepackage{amsmath,amssymb,mathtools,bm}
+\usepackage{booktabs,longtable,array}
+\usepackage{enumitem}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\setlist{nosep,leftmargin=2em}
+\allowdisplaybreaks[3]
+\numberwithin{equation}{section}
+\pagestyle{plain}
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Pp}{\mathbb{P}}
+\newcommand{\1}{\mathbf{1}}
+\newcommand{\T}{\mathsf{T}}
+\newcommand{\F}{\mathrm{F}}
+\newcommand{\cN}{\mathcal{N}}
+\newcommand{\cL}{\mathcal{L}}
+\newcommand{\cS}{\mathcal{S}}
+\newcommand{\cH}{\mathcal{H}}
+\newcommand{\cA}{\mathcal{A}}
+\newcommand{\cM}{\mathcal{M}}
+\newcommand{\cT}{\mathcal{T}}
+\newcommand{\diag}{\operatorname{diag}}
+\newcommand{\tr}{\operatorname{tr}}
+\newcommand{\Var}{\operatorname{Var}}
+\newcommand{\Cov}{\operatorname{Cov}}
+\newcommand{\softmax}{\operatorname{softmax}}
+\newcommand{\KL}{D_{\mathrm{KL}}}
+\newcommand{\sg}{\operatorname{sg}}
+\begin{document}
+    \begin{center}
+      {\LARGE\bfseries 08\_Building Vision Models upon Heat Conduction}
+    \end{center}
+    \vspace{0.8em}
+
+    \section{符号与维度}
+    \begin{longtable}{>{$}l<{$} >{$}l<{$} p{10cm}}
+    \toprule
+    \text{符号} & \text{维度} & \text{含义}\\
+    \midrule
+    u(x,y,t) & \R & 连续温度或特征场。\\
+        \kappa & \R_{\ge0} & 热扩散系数。\\
+        \omega_x,\omega_y & \R & 二维空间频率。\\
+        U^t & \R^{H\times W} & 离散视觉特征图。\\
+        H_t & \R^{H\times W} & 频域热核。\\
+    \bottomrule
+    \end{longtable}
+
+    所有向量默认是列向量；未特别说明时，期望同时对数据、噪声和采样时刻取值。下文只展开论文中承担方法逻辑的公式，并把所需假设写在推导发生的位置。
+
+\section{热方程的谱解}
+
+连续热方程
+\begin{equation}
+ \partial_tu(x,t)=\kappa\Delta u(x,t),\qquad \kappa>0
+\end{equation}
+在矩形区域上配 Neumann 边界 $\partial_nu=0$。先看一维 $x\in[0,L]$，分离变量
+$u(x,t)=X(x)T(t)$：
+\begin{equation}
+ X(x)T'(t)=\kappa X''(x)T(t).
+\end{equation}
+两边除以 $\kappa XT$ 得常数 $-\lambda$，所以
+\begin{equation}
+ X''+\lambda X=0,\qquad T'+\kappa\lambda T=0.
+\end{equation}
+边界 $X'(0)=X'(L)=0$ 给出本征函数和本征值
+\begin{equation}
+ X_k(x)=\cos(k\pi x/L),\qquad
+ \lambda_k=(k\pi/L)^2,\qquad k=0,1,\ldots
+\end{equation}
+时间解
+\begin{equation}
+ T_k(t)=e^{-\kappa\lambda_kt}T_k(0).
+\end{equation}
+故 Fourier--cosine 系数逐频率衰减：
+\begin{equation}
+ \widehat u_k(t)=e^{-\kappa(k\pi/L)^2t}\widehat u_k(0).
+\end{equation}
+二维本征函数是两个余弦的乘积，
+\begin{equation}
+ \widehat u_{k\ell}(t)=
+ e^{-\kappa[(k\pi/L_x)^2+(\ell\pi/L_y)^2]t}
+ \widehat u_{k\ell}(0).
+\end{equation}
+高频因指数中的平方频率而更快衰减，零频 $k=\ell=0$ 保持不变。
+
+\section{离散 DCT 与 Neumann 边界}
+
+一维网格的反射边界可写为虚拟点
+$u_{-1}=u_1$、$u_N=u_{N-2}$。离散 Laplacian
+\begin{equation}
+ (Lu)_j=u_{j-1}-2u_j+u_{j+1}
+\end{equation}
+由离散余弦基向量对角化。对无限/周期直觉，代入模式
+$u_j=e^{i\omega j}$：
+\begin{align}
+ (Lu)_j
+ &=e^{i\omega j}(e^{-i\omega}-2+e^{i\omega})\\
+ &=-4\sin^2(\omega/2)u_j.
+\end{align}
+反射边界选择实余弦模式，故 DCT 矩阵 $C$ 满足
+\begin{equation}
+ L=C^T\Lambda C,\qquad
+ \Lambda_{kk}=-4\sin^2(\omega_k/2)\le0.
+\end{equation}
+离散热半群为
+\begin{equation}
+ e^{\kappa tL}=C^T\diag(e^{\kappa t\lambda_k})C.
+\end{equation}
+二维可分离情形用 $C_y\otimes C_x$ 对角化，特征值相加。
+
+\section{显式迭代与稳定条件}
+
+显式 Euler 离散
+\begin{equation}
+ u^{n+1}=u^n+\eta Lu^n=(I+\eta L)u^n.
+\end{equation}
+在特征模态 $k$ 上放大因子为
+\begin{equation}
+ g_k=1+\eta\lambda_k.
+\end{equation}
+稳定要求 $|g_k|\le1$ 对所有 $k$ 成立，即
+\begin{equation}
+ -2\le\eta\lambda_k\le0.
+\end{equation}
+若一维未除网格步长的 Laplacian 有 $\lambda_{\min}\ge-4$，充分条件为
+$0\le\eta\le1/2$；二维五点格式最小特征值约 $-8$，充分条件变为
+$\eta\le1/4$。直接使用指数谱门
+$e^{\eta\lambda_k}$ 则对任意 $\eta\ge0$ 都不放大模态。
+
+\section{能量与均值的单调性}
+
+Neumann 边界下积分分部：
+\begin{align}
+ \frac d{dt}\frac12\|u(t)\|_{L^2}^2
+ &=\int_\Omega u\partial_tu\,dx\\
+ &=\kappa\int_\Omega u\Delta u\,dx\\
+ &=-\kappa\int_\Omega\|\nabla u\|_2^2dx
+ +\kappa\int_{\partial\Omega}u\partial_nu\,dS\\
+ &=-\kappa\|\nabla u\|_{L^2}^2\le0.
+\end{align}
+总质量满足
+\begin{align}
+ \frac d{dt}\int_\Omega u\,dx
+ &=\kappa\int_\Omega\Delta u\,dx
+ =\kappa\int_{\partial\Omega}\partial_nu\,dS=0.
+\end{align}
+因此热扩散保留均值但降低非恒定部分能量。
+
+离散对称半负定 $L$ 也有
+\begin{equation}
+ \frac d{dt}\frac12\|u\|_2^2
+ =\kappa u^TLu\le0.
+\end{equation}
+若学习频率门 $g_k$，要保持非扩张，需约束 $|g_k|\le1$；任意可学习门可能放大高频，
+此时模块不再严格对应物理热方程。
+
+\section{频域门的梯度}
+
+设二维 DCT 后 $\widehat X=CXC^T$，输出
+\begin{equation}
+ Y=C^T(G\odot\widehat X)C,
+\end{equation}
+其中 $C$ 正交、$G$ 是频率门。令上游梯度 $H=\partial\cL/\partial Y$，
+利用 Frobenius 内积的正交不变性，
+\begin{align}
+ d\cL
+ &=\langle H,C^T(dG\odot\widehat X+G\odot d\widehat X)C\rangle_F\\
+ &=\langle CHC^T, dG\odot\widehat X+G\odot d\widehat X\rangle_F.
+\end{align}
+故
+\begin{equation}
+ \nabla_G\cL=(CHC^T)\odot\widehat X,
+\end{equation}
+以及
+\begin{equation}
+ \nabla_X\cL=C^T\left(G\odot(CHC^T)\right)C.
+\end{equation}
+若 $G_{k\ell}=e^{-t\lambda_{k\ell}}$ 且 $\lambda_{k\ell}\ge0$，
+\begin{equation}
+ \frac{\partial G_{k\ell}}{\partial t}=-\lambda_{k\ell}G_{k\ell},
+\end{equation}
+所以大频率对扩散时间的梯度更敏感。
+
+\section{复杂度比较}
+
+直接空间卷积核大小 $K\times K$、通道 $C$ 的深度卷积量为
+$O(HWCK^2)$。二维快速 DCT 的量约为
+\begin{equation}
+ O(CHW(\log H+\log W)),
+\end{equation}
+再加逐频率门 $O(CHW)$。频域方法一次覆盖全局感受野；
+但小分辨率或小卷积核时，变换常数和内存搬运可能使理论复杂度优势无法兑现。
+
+\section{光滑损失的下降引理}
+
+若 $L$ 的梯度是 $\beta$-Lipschitz：
+\begin{equation}
+ \|\nabla L(x)-\nabla L(y)\|
+ \le\beta\|x-y\|,
+\end{equation}
+则沿线段积分
+\begin{align}
+ L(y)-L(x)
+ &=\int_0^1\nabla L(x+t(y-x))^T(y-x)dt\\
+ &=\nabla L(x)^T(y-x)+R,
+\end{align}
+余项满足
+\begin{align}
+ |R|
+ &\le\int_0^1\beta t\|y-x\|^2dt
+ =\frac\beta2\|y-x\|^2.
+\end{align}
+故下降引理
+\begin{equation}
+ L(y)\le L(x)+\nabla L(x)^T(y-x)
+ +\frac\beta2\|y-x\|^2.
+\end{equation}
+取梯度步 $y=x-\eta\nabla L(x)$：
+\begin{equation}
+ L(y)\le L(x)-\eta\left(1-\frac{\beta\eta}{2}\right)
+ \|\nabla L(x)\|^2.
+\end{equation}
+当 $0<\eta<2/\beta$ 时每个精确梯度步下降；深网中 $\beta$ 未知且随位置变化，
+这仍解释了学习率过大造成不稳定的局部机制。
+
+\section{二阶近似与曲率方向}
+
+在 $x$ 附近 Taylor 展开
+\begin{equation}
+ L(x+\Delta)=L(x)+g^T\Delta
+ +\frac12\Delta^TH\Delta+O(\|\Delta\|^3).
+\end{equation}
+若 $H=U\diag(\lambda_i)U^T$，在本征方向 $u_i$ 上步长 $a$ 的变化
+\begin{equation}
+ \Delta L\approx a g_i+\frac12\lambda_i a^2.
+\end{equation}
+$\lambda_i>0$ 为局部碗形，$\lambda_i<0$ 是负曲率逃离鞍点方向。
+加阻尼的 Newton 步
+\begin{equation}
+ \Delta=-(H+\lambda I)^{-1}g
+\end{equation}
+在特征方向缩放为 $-g_i/(\lambda_i+\lambda)$，避免接近零或负特征值造成巨大步长。
+
+\section{链式 Jacobian 与条件数}
+
+复合映射 $y=f_L\circ\cdots\circ f_1(x)$ 的 Jacobian
+\begin{equation}
+ J_{y\leftarrow x}=J_LJ_{L-1}\cdots J_1.
+\end{equation}
+谱范数上界
+\begin{equation}
+ \|J_{y\leftarrow x}\|_2\le\prod_{\ell=1}^{L}\|J_\ell\|_2.
+\end{equation}
+若各层最小奇异值存在，
+\begin{equation}
+ \sigma_{\min}(J_{y\leftarrow x})
+ \ge\prod_\ell\sigma_{\min}(J_\ell).
+\end{equation}
+因此条件数至多乘法累积：
+\begin{equation}
+ \kappa(J_{y\leftarrow x})
+ \le\prod_\ell\kappa(J_\ell).
+\end{equation}
+低维映射、递归模块和物理传播都面临同一问题：表示存在不代表反向梯度数值良态。
+
+\section{随机梯度的偏差与方差}
+
+设样本梯度 $g(\theta;\xi)$ 满足
+\begin{equation}
+ \E_\xi g(\theta;\xi)=\nabla L(\theta),
+ \qquad \E\|g-\nabla L\|^2\le\sigma^2.
+\end{equation}
+独立批量 $B$ 的平均
+\begin{equation}
+ \bar g_B=\frac1B\sum_{i=1}^{B}g_i
+\end{equation}
+满足
+\begin{equation}
+ \E\bar g_B=\nabla L,\qquad
+ \E\|\bar g_B-\nabla L\|^2\le\frac{\sigma^2}{B}.
+\end{equation}
+若样本相关，协方差项出现：
+\begin{equation}
+ \Var(\bar g_B)=\frac1{B^2}\left[
+ \sum_i\Var(g_i)+\sum_{i\ne j}\Cov(g_i,g_j)
+ \right].
+\end{equation}
+扩大批量只有在交叉协方差不主导时才近似按 $1/B$ 降噪。
+
+若使用有偏估计 $\E\widehat g=\nabla L+b$，均方误差分解
+\begin{equation}
+ \E\|\widehat g-\nabla L\|^2
+ =\|b\|^2+\tr\Cov(\widehat g).
+\end{equation}
+直通估计、停止梯度目标和截断反传通常以可控偏差换低方差或低内存。
+
+\section{Adam 的尺度归一化}
+
+逐坐标 Adam 更新
+\begin{align}
+ m_t&=\beta_1m_{t-1}+(1-\beta_1)g_t,\\
+ v_t&=\beta_2v_{t-1}+(1-\beta_2)g_t^2,\\
+ \widehat m_t&=m_t/(1-\beta_1^t),\\
+ \widehat v_t&=v_t/(1-\beta_2^t),\\
+ \theta_{t+1}&=\theta_t-\eta
+ \frac{\widehat m_t}{\sqrt{\widehat v_t}+\epsilon}.
+\end{align}
+若梯度长期乘常数 $c>0$，忽略 $\epsilon$ 时
+$\widehat m$ 乘 $c$、$\sqrt{\widehat v}$ 也乘 $c$，更新近似不变。
+但瞬态、符号变化和 $\epsilon$ 会破坏精确尺度不变性。
+
+AdamW 把权重衰减解耦：
+\begin{equation}
+ \theta_{t+1}=(1-\eta\lambda)\theta_t
+ -\eta\frac{\widehat m_t}{\sqrt{\widehat v_t}+\epsilon}.
+\end{equation}
+这不同于把 $\lambda\theta$ 加入梯度后再经过自适应分母；后者会按坐标二阶矩缩放正则化。
+
+\section{范数约束与投影梯度}
+
+约束集合 $\mathcal C$ 上的投影梯度
+\begin{equation}
+ \theta^+=\Pi_{\mathcal C}(\theta-\eta g),
+ \qquad
+ \Pi_{\mathcal C}(x)=\arg\min_{y\in\mathcal C}\|x-y\|^2.
+\end{equation}
+对欧氏球 $\mathcal C=\{x:\|x\|\le R\}$，
+\begin{equation}
+ \Pi_{\mathcal C}(x)=
+ \begin{cases}
+ x,&\|x\|\le R,\\
+ Rx/\|x\|,&\|x\|>R.
+ \end{cases}
+\end{equation}
+对流形约束，局部一阶步先投影到切空间，再用 retraction 回到流形；
+仅把参数写成 $g(z)$ 相当于用参数化隐式满足约束，但会引入 $J_g^TJ_g$ 的坐标度量。
+
+\section{Lipschitz 误差的层间传播}
+
+真实模块 $f_\ell$、近似模块 $\widehat f_\ell$ 满足
+\begin{equation}
+ \|f_\ell(x)-\widehat f_\ell(x)\|\le\epsilon_\ell,
+ \qquad
+ \|f_\ell(x)-f_\ell(y)\|\le L_\ell\|x-y\|.
+\end{equation}
+令真实、近似中间状态差 $e_\ell$。三角不等式给出
+\begin{align}
+ e_{\ell+1}
+ &=\|f_\ell(h_\ell)-\widehat f_\ell(\widehat h_\ell)\|\\
+ &\le L_\ell e_\ell+\epsilon_\ell.
+\end{align}
+递归展开
+\begin{equation}
+ e_L\le
+ \left(\prod_{j=0}^{L-1}L_j\right)e_0
+ +\sum_{\ell=0}^{L-1}
+ \left(\prod_{j=\ell+1}^{L-1}L_j\right)\epsilon_\ell.
+\end{equation}
+早期层误差乘更多后续 Lipschitz 因子，所以量化、低秩近似或局部训练的相同单层误差，
+放在不同深度并不等价。
+
+\section{复杂度必须区分四个量}
+
+参数量、FLOPs、激活内存和通信量是不同指标。以线性层
+$Y=XW$、$X\in\R^{B\times n}$、$W\in\R^{n\times m}$ 为例：
+\begin{align}
+ \text{参数量}&=nm,\\
+ \text{前向乘加量}&\asymp Bnm,\\
+ \text{主要激活量}&=B(n+m),\\
+ \text{数据并行梯度通信}&\asymp nm.
+\end{align}
+低秩因子可同时减少参数与乘法，但动态稀疏若实现仍做稠密 kernel，参数/FLOPs 公式不会自动转化为墙钟加速。
+冻结参数减少梯度和优化器状态，却不一定减少前向计算或输入梯度计算。
+
+\end{document}

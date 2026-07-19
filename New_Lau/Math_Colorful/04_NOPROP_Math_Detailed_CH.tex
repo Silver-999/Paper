@@ -1,0 +1,720 @@
+\documentclass[UTF8,12pt,a4paper,fontset=none]{ctexart}
+\usepackage[a4paper,left=1.82cm,right=1.82cm,top=1.72cm,bottom=1.82cm,headheight=15pt]{geometry}
+\usepackage{fontspec,xeCJK}
+\setmainfont{Liberation Serif}
+\setsansfont{DejaVu Sans}
+\setmonofont{DejaVu Sans Mono}
+\setCJKmainfont[BoldFont=Noto Serif CJK SC Bold]{Noto Serif CJK SC}
+\setCJKsansfont[BoldFont=Noto Sans CJK SC Bold]{Noto Sans CJK SC}
+\setCJKmonofont{Noto Sans Mono CJK SC}
+\usepackage{amsmath,amssymb,mathtools,bm}
+\usepackage{booktabs,longtable,tabularx,array,multirow}
+\usepackage{enumitem,xcolor}
+\usepackage[most]{tcolorbox}
+\usepackage{fancyhdr,titlesec,hyperref,cleveref,lastpage}
+\usepackage{tikz,float,caption,listings}
+\usetikzlibrary{arrows.meta,positioning,calc,fit,backgrounds,shapes.geometric}
+\definecolor{mainblue}{RGB}{39,82,138}
+\definecolor{deepblue}{RGB}{25,55,95}
+\definecolor{softblue}{RGB}{235,243,252}
+\definecolor{softgreen}{RGB}{238,248,241}
+\definecolor{softorange}{RGB}{255,246,232}
+\definecolor{softgray}{RGB}{245,246,248}
+\definecolor{warnred}{RGB}{160,48,48}
+\hypersetup{unicode=true,colorlinks=true,linkcolor=deepblue,urlcolor=mainblue,citecolor=deepblue}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.36em}
+\setlength{\tabcolsep}{5pt}
+\renewcommand{\arraystretch}{1.2}
+\allowdisplaybreaks[4]
+\emergencystretch=3em
+\sloppy
+\pagestyle{fancy}\fancyhf{}\fancyfoot[C]{\small 第 \thepage\ 页，共 \pageref{LastPage} 页}\renewcommand{\headrulewidth}{0.4pt}
+\titleformat{\section}{\Large\bfseries\color{deepblue}}{\thesection}{0.65em}{}
+\titleformat{\subsection}{\large\bfseries\color{mainblue}}{\thesubsection}{0.55em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries}{\thesubsubsection}{0.5em}{}
+\numberwithin{equation}{section}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Prob}{\mathbb{P}}
+\newcommand{\Loss}{\mathcal{L}}
+\newcommand{\norm}[1]{\left\lVert #1\right\rVert}
+\newcommand{\ip}[2]{\left\langle #1,#2\right\rangle}
+\newcommand{\tr}{\operatorname{Tr}}
+\newcommand{\diag}{\operatorname{diag}}
+\newcommand{\rank}{\operatorname{rank}}
+\newcommand{\softmax}{\operatorname{softmax}}
+\newcommand{\argmin}{\operatorname*{arg\,min}}
+\newcommand{\argmax}{\operatorname*{arg\,max}}
+\newcommand{\sg}{\operatorname{sg}}
+\newcommand{\KL}{D_{\mathrm{KL}}}
+\newcommand{\dd}{\mathrm{d}}
+\newtcolorbox{keybox}[1][]{enhanced,breakable,colback=softblue,colframe=mainblue,boxrule=0.8pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\newtcolorbox{examplebox}[1][]{enhanced,breakable,colback=softgreen,colframe=green!45!black,boxrule=0.7pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\newtcolorbox{notebox}[1][]{enhanced,breakable,colback=softorange,colframe=orange!70!black,boxrule=0.7pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\newtcolorbox{criticalbox}[1][]{enhanced,breakable,colback=red!3,colframe=warnred,boxrule=0.8pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\lstset{basicstyle=\ttfamily\small,breaklines=true,frame=single,backgroundcolor=\color{softgray},numbers=left,numberstyle=\tiny,showstringspaces=false,columns=fullflexible}
+\hypersetup{pdftitle={04 NoProp 数学过程详解},pdfauthor={OpenAI}}
+\fancyhead[L]{\small 04 NoProp}
+\fancyhead[R]{\small 数学过程详解}
+\setlength{\abovedisplayskip}{0.82em}
+\setlength{\belowdisplayskip}{0.82em}
+\setlength{\abovedisplayshortskip}{0.45em}
+\setlength{\belowdisplayshortskip}{0.45em}
+\begin{document}
+\begin{center}
+{\LARGE\bfseries 04\_NoProp 数学过程详解}\par
+\vspace{0.35em}
+{\large ELBO、高斯条件分布、SNR 权重与局部独立训练的完整推导}
+\end{center}
+\vspace{0.45em}
+\begin{keybox}[本文只处理真正需要推导的部分]
+本文重点还原论文附录 A.1--A.4：从证据下界到高斯 KL，再到 SNR 差分加权的逐层平方误差，并解释连续时间和 Flow Matching 版本。全文按“公式从哪里来--每个符号是什么--中间步骤为何成立--维度和复杂度如何核对--论文结论依赖哪些假设”的顺序展开；不复述实验表格，也不使用与论文无关的通用背景凑页数。
+\end{keybox}
+\tableofcontents
+\newpage
+
+\section{NoProp 的概率模型：把网络深度改写成潜变量链}
+论文令类别标签 $y\in\{1,\ldots,m\}$ 对应嵌入 $u_y\in\R^d$。深度方向的隐状态记为 $z_0,z_1,\ldots,z_T$。生成方向（论文称 forward process）为
+\begin{equation}
+ p(z_{0:T},y\mid x)=p(z_0)\prod_{t=1}^{T}p_\theta(z_t\mid z_{t-1},x)\,p_{\theta_{\rm out}}(y\mid z_T).
+\end{equation}
+辅助后验方向为
+\begin{equation}
+ q(z_{0:T}\mid y,x)=q(z_T\mid y)\prod_{t=T}^{1}q(z_{t-1}\mid z_t,y).
+\end{equation}
+这里 $q$ 只依赖标签嵌入并被固定成可解析高斯扩散；$p_\theta$ 由每一层独立网络块拟合。NoProp 的“无全局前向/反向传播”来自：每个 $t$ 的训练样本 $z_{t-1}$ 可以直接从 $q(z_{t-1}\mid y)$ 采样，而不必先运行前面所有块。
+
+\section{ELBO 从哪里来：逐步恢复论文公式}
+从边缘似然
+\begin{equation}
+ p(y\mid x)=\int p(z_{0:T},y\mid x)\,\dd z_{0:T}
+\end{equation}
+出发，乘除任意后验 $q(z_{0:T}\mid y,x)$：
+\begin{align}
+ \log p(y\mid x)
+ &=\log\int q(z_{0:T}\mid y,x)
+ \frac{p(z_{0:T},y\mid x)}{q(z_{0:T}\mid y,x)}\,\dd z_{0:T}.
+\end{align}
+由于 $\log$ 为凹函数，Jensen 不等式给出
+\begin{equation}
+ \boxed{\log p(y\mid x)\ge
+ \E_q\left[\log p(z_{0:T},y\mid x)-\log q(z_{0:T}\mid y,x)\right].}
+\end{equation}
+把两个链式分解代入并重排，可得
+\begin{align}
+ \operatorname{ELBO}
+ =&\;\E_{q(z_T\mid y)}\log p_{\theta_{\rm out}}(y\mid z_T)
+ -\KL\!\left(q(z_0\mid y)\Vert p(z_0)\right)\\
+ &-\sum_{t=1}^{T}\E_{q(z_{t-1}\mid y)}
+ \KL\!\left(q(z_t\mid z_{t-1},y)\Vert p_\theta(z_t\mid z_{t-1},x)\right).
+\end{align}
+因此最小化负 ELBO 会产生三个部分：输出交叉熵、初始分布 KL、每层条件高斯 KL。
+
+\section{固定 OU 扩散后验的边缘分布}
+论文使用方差保持的离散 Ornstein--Uhlenbeck 过程。设单步系数 $\alpha_t\in(0,1)$，累乘
+\begin{equation}
+ \bar\alpha_t=\prod_{s=t+1}^{T}\alpha_s
+\end{equation}
+（索引方向按论文由 $z_T$ 向 $z_0$ 的后验链约定）。边缘分布写成
+\begin{equation}
+ \boxed{q(z_t\mid y)=\mathcal N\!\left(z_t;\sqrt{\bar\alpha_t}u_y,(1-\bar\alpha_t)I\right).}
+\end{equation}
+所以可直接重参数化采样
+\begin{equation}
+ z_t=\sqrt{\bar\alpha_t}u_y+\sqrt{1-\bar\alpha_t}\,\epsilon,
+ \qquad \epsilon\sim\mathcal N(0,I).
+\end{equation}
+均值保留标签信号，方差注入噪声。信噪比为
+\begin{equation}
+ \operatorname{SNR}(t)=\frac{\bar\alpha_t}{1-\bar\alpha_t}.
+\end{equation}
+
+\section{条件高斯均值 $a_tu_y+b_tz_{t-1}$ 的推导思想}
+联合变量 $(z_{t-1},z_t)$ 在给定 $y$ 时为高斯，因此条件分布仍为高斯：
+\begin{equation}
+ q(z_t\mid z_{t-1},y)=\mathcal N\!\left(z_t;\mu_t(z_{t-1},u_y),c_tI\right).
+\end{equation}
+高斯条件均值公式
+\begin{equation}
+ \E[z_t\mid z_{t-1},y]
+ =\mu_t^{(0)}+\Sigma_{t,t-1}\Sigma_{t-1,t-1}^{-1}(z_{t-1}-\mu_{t-1}^{(0)})
+\end{equation}
+说明条件均值必为 $z_{t-1}$ 与 $u_y$ 的线性组合，因此可写成
+\begin{equation}
+ \mu_t(z_{t-1},u_y)=a_tu_y+b_tz_{t-1}.
+\end{equation}
+论文给出的系数为
+\begin{align}
+ a_t&=\frac{\sqrt{\bar\alpha_t}(1-\alpha_{t-1})}{1-\bar\alpha_{t-1}},\\
+ b_t&=\frac{\sqrt{\alpha_{t-1}}(1-\bar\alpha_t)}{1-\bar\alpha_{t-1}},\\
+ c_t&=\frac{(1-\bar\alpha_t)(1-\alpha_{t-1})}{1-\bar\alpha_{t-1}}.
+\end{align}
+这些系数并非可学习参数，而是由噪声日程唯一决定。
+
+\section{网络转移与残差结构}
+模型把真实标签嵌入 $u_y$ 替换成网络预测 $\hat u_{\theta_t}(z_{t-1},x)$：
+\begin{equation}
+ p_\theta(z_t\mid z_{t-1},x)
+ =\mathcal N\!\left(z_t;
+ a_t\hat u_{\theta_t}(z_{t-1},x)+b_tz_{t-1},c_tI\right).
+\end{equation}
+重参数化后
+\begin{equation}
+ \boxed{z_t=a_t\hat u_{\theta_t}(z_{t-1},x)+b_tz_{t-1}+\sqrt{c_t}\epsilon_t.}
+\end{equation}
+$b_tz_{t-1}$ 是显式跳连，$a_t\hat u_{\theta_t}$ 是当前块对标签原型的估计，噪声项保证与扩散后验方差一致。
+
+\section{高斯 KL 如何化为逐层平方误差}
+两个协方差完全相同的高斯
+\begin{equation}
+ q=\mathcal N(\mu_q,c_tI),\qquad p=\mathcal N(\mu_p,c_tI)
+\end{equation}
+满足
+\begin{equation}
+ \KL(q\Vert p)=\frac{1}{2c_t}\norm{\mu_q-\mu_p}_2^2.
+\end{equation}
+本论文中
+\begin{align}
+ \mu_q&=a_tu_y+b_tz_{t-1},\\
+ \mu_p&=a_t\hat u_{\theta_t}(z_{t-1},x)+b_tz_{t-1}.
+\end{align}
+跳连项相消：
+\begin{equation}
+ \mu_q-\mu_p=a_t\left(u_y-\hat u_{\theta_t}\right).
+\end{equation}
+于是
+\begin{equation}
+ \KL(q\Vert p)=\frac{a_t^2}{2c_t}
+orm{\hat u_{\theta_t}-u_y}_2^2.
+\end{equation}
+代入 $a_t,c_t$ 并化简：
+\begin{align}
+ \frac{a_t^2}{2c_t}
+ &=\frac12\frac{\bar\alpha_t(1-\alpha_{t-1})}
+ {(1-\bar\alpha_t)(1-\bar\alpha_{t-1})}\\
+ &=\frac12\left[
+ \frac{\bar\alpha_t}{1-\bar\alpha_t}
+ -\frac{\bar\alpha_{t-1}}{1-\bar\alpha_{t-1}}
+ \right]\\
+ &=\frac12\left[\operatorname{SNR}(t)-\operatorname{SNR}(t-1)\right].
+\end{align}
+所以每层 KL 正好变成 SNR 增量加权的原型回归损失。
+
+\section{NoProp 离散目标的完整形式}
+取负 ELBO，并用均匀采样 $t\sim U\{1,\ldots,T\}$ 对求和做无偏估计，得到
+\begin{align}
+ \Loss_{\mathrm{NoProp}}
+ =&\;\E_{q(z_T\mid y)}[-\log \hat p_{\theta_{\rm out}}(y\mid z_T)]
+ +\KL(q(z_0\mid y)\Vert p(z_0))\\
+ &+\frac{\eta T}{2}\E_{t,z_{t-1}}
+ \left[(\operatorname{SNR}(t)-\operatorname{SNR}(t-1))
+ \norm{\hat u_{\theta_t}(z_{t-1},x)-u_y}_2^2\right].
+\end{align}
+若实现中遍历所有 $t$，则不需要 $T$ 的 Monte Carlo 补偿；若随机抽一个 $t$ 估计总和，则必须乘 $T$ 才严格无偏。论文公式将常数吸收到超参数 $\eta$ 中。
+
+\section{为什么每个块可以独立训练}
+第 $t$ 块的局部损失为
+\begin{equation}
+ \ell_t(\theta_t)=w_t\norm{\hat u_{\theta_t}(z_{t-1},x)-u_y}_2^2,
+ \qquad w_t=\operatorname{SNR}(t)-\operatorname{SNR}(t-1).
+\end{equation}
+训练输入 $z_{t-1}$ 直接从已知 $q(z_{t-1}\mid y)$ 采样，所以
+\begin{equation}
+ \nabla_{\theta_t}\ell_t
+ =2w_tJ_{\theta_t}\hat u_{\theta_t}^{\top}(\hat u_{\theta_t}-u_y)
+\end{equation}
+不包含 $\theta_1,\ldots,\theta_{t-1}$ 的导数。标准反向传播则需要
+\begin{equation}
+ \frac{\partial\Loss}{\partial\theta_t}
+ =\frac{\partial\Loss}{\partial z_T}
+ \prod_{s=t+1}^{T}\frac{\partial z_s}{\partial z_{s-1}}
+ \frac{\partial z_t}{\partial\theta_t}.
+\end{equation}
+NoProp 用固定后验提供局部监督，避免了这个长 Jacobian 乘积，但代价是优化目标变成变分下界而非直接端到端分类损失。
+
+\section{连续时间极限}
+令时间间隔 $\tau=1/T$。离散权重可写成差商
+\begin{equation}
+ \frac{\operatorname{SNR}(t+\tau)-\operatorname{SNR}(t)}{\tau}.
+\end{equation}
+当 $T\to\infty$、$\tau\to0$ 时
+\begin{equation}
+ \frac{\operatorname{SNR}(t+\tau)-\operatorname{SNR}(t)}{\tau}
+ \to \operatorname{SNR}'(t).
+\end{equation}
+连续目标为
+\begin{align}
+ \Loss_{\mathrm{CT}}
+ =&\;\E[-\log\hat p(y\mid z_1)]
+ +\KL(q(z_0\mid y)\Vert p(z_0))\\
+ &+\frac{\eta}{2}\E_{t\sim U[0,1]}
+ \left[\operatorname{SNR}'(t)
+ \norm{\hat u_\theta(z_t,x,t)-u_y}_2^2\right].
+\end{align}
+离散版本每个时刻一个块；连续版本用同一网络并把 $t$ 作为输入。
+
+\section{Flow Matching 版本}
+取 $z_0\sim\mathcal N(0,I)$、$z_1=u_y$，定义高斯路径
+\begin{equation}
+ p_t(z_t\mid z_0,z_1,x)=\mathcal N\!\left(z_t;t z_1+(1-t)z_0,\sigma^2I\right).
+\end{equation}
+均值轨迹的导数为
+\begin{equation}
+ \frac{\dd}{\dd t}\left[t z_1+(1-t)z_0\right]=z_1-z_0.
+\end{equation}
+故条件向量场是常量 $z_1-z_0$，训练目标
+\begin{equation}
+ \boxed{\Loss_{\mathrm{FM}}=
+ \E\norm{v_\theta(z_t,x,t)-(u_y-z_0)}_2^2.}
+\end{equation}
+与离散 NoProp 相同，它也允许随机抽取时间训练，不需要把整条 ODE 路径展开后反向传播。
+
+\section{输出分类器与标签嵌入重构}
+最后输出 logits $f_{\theta_{\rm out}}(z_T)\in\R^m$，概率
+\begin{equation}
+ \hat p(y\mid z_T)=\frac{\exp f_y(z_T)}{\sum_{j=1}^{m}\exp f_j(z_T)}.
+\end{equation}
+若将概率重新映射回嵌入空间，
+\begin{equation}
+ \tilde y=\softmax(f(z_T))W_{\rm Embed},
+\end{equation}
+则 $\tilde y$ 是所有类别原型的凸组合。平方重构
+\begin{equation}
+ \norm{\tilde y-u_y}_2^2
+\end{equation}
+不仅惩罚分类错误，还利用类别嵌入之间的几何距离；若原型不正交，两个错误类别的惩罚可以不同。
+
+\section{NoProp 结论的严格边界}
+\begin{criticalbox}[“不需要前向传播”不等于推理不前向]
+训练第 $t$ 块时不需要先运行 $1,\ldots,t-1$ 块，也不需要把最终损失反传穿过全部深度；但推理时仍需按 $z_0\to z_1\to\cdots\to z_T$ 运行网络链。局部目标来自固定后验与 ELBO，因此其最优解是否达到端到端训练性能取决于后验设计、标签嵌入容量和各局部块的拟合误差。
+\end{criticalbox}
+% AUGMENTED_DETAILED_MATH
+
+\section{ELBO 的逐步 Jensen 推导}
+观测标签为 $y$，潜变量链为 $z_{0:T}$。边缘似然
+\begin{equation}
+ p_\theta(y\mid x)=\int p_\theta(y,z_{0:T}\mid x)\dd z_{0:T}.
+\end{equation}
+插入任意变分分布 $q(z_{0:T}\mid y)$：
+\begin{align}
+ \log p_\theta(y\mid x)
+ &=\log\E_q\left[
+ \frac{p_\theta(y,z_{0:T}\mid x)}{q(z_{0:T}\mid y)}
+ \right]\\
+ &\ge\E_q\log
+ \frac{p_\theta(y,z_{0:T}\mid x)}{q(z_{0:T}\mid y)}
+ =\mathcal E(\theta),
+\end{align}
+不等号来自 $\log$ 的凹性。两者差值恰好是
+\begin{equation}
+ \log p_\theta(y\mid x)-\mathcal E
+ =\KL(q(z_{0:T}\mid y)\Vert p_\theta(z_{0:T}\mid y,x))\ge0.
+\end{equation}
+因此最大化 ELBO 等价于让模型后验逼近固定的标签扩散后验。
+
+\section{Markov 分解如何产生逐层 KL}
+若
+\begin{equation}
+ q(z_{0:T}\mid y)=q(z_0\mid y)\prod_{t=1}^{T}q(z_t\mid z_{t-1},y)
+\end{equation}
+且生成模型
+\begin{equation}
+ p_\theta(y,z_{0:T}\mid x)
+ =p(y\mid z_T)p(z_0)\prod_{t=1}^{T}p_{\theta_t}(z_t\mid z_{t-1},x),
+\end{equation}
+则对数比值拆成各因子的对数之和。取期望后
+\begin{align}
+ \mathcal E
+ &=\E_q\log p(y\mid z_T)
+ -\KL(q(z_0\mid y)\Vert p(z_0))\\
+ &\quad-\sum_{t=1}^{T}
+ \E_{q(z_{t-1}\mid y)}
+ \KL(q(z_t\mid z_{t-1},y)
+ \Vert p_{\theta_t}(z_t\mid z_{t-1},x)).
+\end{align}
+每个 $\theta_t$ 只出现在第 $t$ 个 KL 中，这是可局部训练的概率根源。
+
+\section{OU 边缘分布的 SDE 解}
+连续 OU 过程
+\begin{equation}
+ \dd z_t=-\frac12\beta(t)z_t\dd t+\sqrt{\beta(t)}\dd W_t,
+ \qquad z_0=u_y
+\end{equation}
+的积分因子为
+\begin{equation}
+ a(t)=\exp\left(-\frac12\int_0^t\beta(s)\dd s\right).
+\end{equation}
+解为
+\begin{equation}
+ z_t=a(t)u_y+
+ a(t)\int_0^t\frac{\sqrt{\beta(s)}}{a(s)}\dd W_s.
+\end{equation}
+随机积分是零均值高斯，方差
+\begin{align}
+ a(t)^2\int_0^t\frac{\beta(s)}{a(s)^2}\dd s
+ &=a(t)^2[a(t)^{-2}-1]\\
+ &=1-a(t)^2.
+\end{align}
+故
+\begin{equation}
+ \boxed{q(z_t\mid y)=\mathcal N(a(t)u_y,(1-a(t)^2)I).}
+\end{equation}
+离散记号中 $a(t)^2$ 对应 $\bar\alpha_t$。
+
+\section{高斯条件后验的配方法}
+设
+\begin{equation}
+ q(z_{t-1}\mid y)=\mathcal N(m_{t-1},s_{t-1}^2I),
+\end{equation}
+转移
+\begin{equation}
+ q(z_t\mid z_{t-1})=\mathcal N(\sqrt{\alpha_t}z_{t-1},(1-\alpha_t)I).
+\end{equation}
+Bayes 后验的负对数中与 $z_{t-1}$ 有关的项为
+\begin{equation}
+ \frac{\norm{z_{t-1}-m_{t-1}}^2}{2s_{t-1}^2}
+ +\frac{\norm{z_t-\sqrt{\alpha_t}z_{t-1}}^2}{2(1-\alpha_t)}.
+\end{equation}
+展开并收集二次项，精度矩阵
+\begin{equation}
+ \Lambda=\frac1{s_{t-1}^2}I+\frac{\alpha_t}{1-\alpha_t}I.
+\end{equation}
+均值为
+\begin{equation}
+ \mu=\Lambda^{-1}
+ \left(\frac{m_{t-1}}{s_{t-1}^2}
+ +\frac{\sqrt{\alpha_t}}{1-\alpha_t}z_t\right).
+\end{equation}
+代入 $m_{t-1}=\sqrt{\bar\alpha_{t-1}}u_y$ 与 $s_{t-1}^2=1-\bar\alpha_{t-1}$，即可整理成论文的
+\begin{equation}
+ \mu_t=a_tu_y+b_tz_t,
+\end{equation}
+并得到闭式方差 $c_tI$。
+
+\section{等协方差高斯 KL 的完整化简}
+一般高斯 KL 为
+\begin{align}
+ \KL(\mathcal N(\mu_q,\Sigma_q)\Vert
+ \mathcal N(\mu_p,\Sigma_p))
+ &=\frac12\left[
+ \tr(\Sigma_p^{-1}\Sigma_q)
+ +(\mu_p-\mu_q)^\top\Sigma_p^{-1}(\mu_p-\mu_q)
+ \right.\\
+ &\quad\left.-d+\log\frac{\det\Sigma_p}{\det\Sigma_q}
+ \right].
+\end{align}
+当 $\Sigma_q=\Sigma_p=c_tI$ 时，迹项为 $d$，对数行列式为 0，与 $-d$ 抵消，只剩
+\begin{equation}
+ \KL=\frac1{2c_t}\norm{\mu_q-\mu_p}^2.
+\end{equation}
+若两均值只在标签嵌入预测上不同
+\begin{equation}
+ \mu_q-\mu_p=a_t(u_y-\widehat u_{\theta_t}),
+\end{equation}
+则
+\begin{equation}
+ \boxed{
+ \KL=\frac{a_t^2}{2c_t}
+orm{u_y-\widehat u_{\theta_t}}^2.
+ }
+\end{equation}
+这说明论文逐层 MSE 不是随意设计，而是精确高斯 KL。
+
+\section{局部目标为何不需要跨层反向传播}
+第 $t$ 层损失
+\begin{equation}
+ \Loss_t(\theta_t)=
+ \E_{y,x,z_{t-1}}
+ w_t\norm{u_y-f_{\theta_t}(z_{t-1},x)}^2.
+\end{equation}
+采样 $z_{t-1}$ 来自固定 $q$，不依赖任何前层参数。因此
+\begin{equation}
+ \frac{\partial z_{t-1}}{\partial\theta_s}=0,
+ \qquad s<t.
+\end{equation}
+于是
+\begin{equation}
+ \nabla_{\theta_s}\Loss_t=0\quad(s\ne t),
+\end{equation}
+每个块可独立优化。与 backprop 的差别不是链式法则被“近似”，而是概率构造主动切断了参数依赖图。
+
+\section{连续时间 Flow Matching 目标}
+在连续时间中，标签条件路径 $q_t(z\mid y)$ 满足连续性方程
+\begin{equation}
+ \partial_tq_t+\nabla\cdot(q_tu_t^y)=0.
+\end{equation}
+模型场 $v_\theta(z,t,x)$ 用条件平方损失学习
+\begin{equation}
+ \Loss_{\mathrm{FM}}
+ =\E_{t,y,z_t}\norm{v_\theta(z_t,t,x)-u_t^y(z_t)}^2.
+\end{equation}
+对固定 $(z,t,x)$，最优模型同样是条件期望
+\begin{equation}
+ v^*(z,t,x)=\E[u_t^y(z)\mid z_t=z,x].
+\end{equation}
+因此离散高斯 KL 版与连续 FM 版都在学习“由输入 $x$ 预测标签扩散方向”，只是一者通过转移密度，一者通过速度场表达。
+
+\section{内存复杂度对比}
+普通 $T$ 层网络反向传播需保存各层激活，内存近似
+\begin{equation}
+ M_{\mathrm{BP}}=O(TBd),
+\end{equation}
+其中 $B$ 为 batch，$d$ 为激活宽度。NoProp 单独训练某块时只需该块输入与局部中间量
+\begin{equation}
+ M_{\mathrm{NP}}=O(Bd)+M_{\mathrm{block}}.
+\end{equation}
+但总计算并不自动减少：若每个块都需要单独采样和更新，总训练 FLOPs 仍与 $T$ 近似线性。其主要收益是并行性、局部优化和激活内存，而不是“免费训练”。
+
+\section{输出分类器与标签嵌入几何}
+若最终表示 $z_T$ 与类别嵌入 $u_c$ 用距离分类
+\begin{equation}
+ p(y=c\mid z_T)
+ =\frac{\exp(-\norm{z_T-u_c}^2/\tau)}
+ {\sum_j\exp(-\norm{z_T-u_j}^2/\tau)},
+\end{equation}
+展开平方距离
+\begin{equation}
+ -\norm{z-u_c}^2
+ =2z^\top u_c-\norm{u_c}^2-\norm z^2.
+\end{equation}
+对所有类别公共的 $-\norm z^2$ 在 softmax 中抵消，故等价于带类别偏置的线性分类器
+\begin{equation}
+ \operatorname{logit}_c=\frac{2}{\tau}z^\top u_c-\frac1\tau\norm{u_c}^2.
+\end{equation}
+\clearpage
+\section{从联合分布到 ELBO 的逐行推导}
+设潜变量链为 $z_{0:T}$，观测标签为 $y$，输入 $x$ 作为条件。模型联合分布
+\begin{equation}
+ p_\theta(y,z_{0:T}\mid x)
+ =p(z_0)\prod_{t=1}^{T}p_\theta(z_t\mid z_{t-1},x)\,p_\theta(y\mid z_T).
+\end{equation}
+引入任意后验近似 $q(z_{0:T}\mid x,y)$，有
+\begin{align}
+ \log p_\theta(y\mid x)
+ &=\log\int q(z_{0:T}\mid x,y)
+ \frac{p_\theta(y,z_{0:T}\mid x)}{q(z_{0:T}\mid x,y)}\,\dd z_{0:T}\\
+ &=\log\E_q\left[
+ \frac{p_\theta(y,z_{0:T}\mid x)}{q(z_{0:T}\mid x,y)}\right].
+\end{align}
+由 $\log$ 的凹性与 Jensen 不等式，
+\begin{equation}
+ \log p_\theta(y\mid x)
+ \ge \E_q\left[
+ \log p_\theta(y,z_{0:T}\mid x)-\log q(z_{0:T}\mid x,y)
+ \right].
+\end{equation}
+右侧即 ELBO。差距恰好为
+\begin{equation}
+ \log p_\theta(y\mid x)-\mathrm{ELBO}
+ =\KL\bigl(q(z_{0:T}\mid x,y)\|p_\theta(z_{0:T}\mid x,y)\bigr)\ge0.
+\end{equation}
+所以最大化 ELBO 等价于同时提高数据似然并使近似后验接近真实后验。
+
+\section{反向 Markov 分解如何产生逐层 KL}
+论文选择反向扩散后验
+\begin{equation}
+ q(z_{0:T}\mid y)=q(z_T\mid y)\prod_{t=1}^{T}q(z_{t-1}\mid z_t,y).
+\end{equation}
+把它与前向模型相除并取对数：
+\begin{align}
+ \log\frac{q(z_{0:T}\mid y)}{p_\theta(y,z_{0:T}\mid x)}
+ &=\log\frac{q(z_T\mid y)}{p_\theta(y\mid z_T)}
+ +\sum_{t=1}^{T}
+ \log\frac{q(z_{t-1}\mid z_t,y)}{p_\theta(z_t\mid z_{t-1},x)}
+ -\log p(z_0).
+\end{align}
+为了得到标准扩散式逐步 KL，需要利用 Bayes 关系把 $q(z_{t-1}\mid z_t,y)$ 与前向条件写到同一方向。整理后每一层都出现一个只涉及该层转移参数的 KL 或平方误差项。这是 NoProp 能局部训练的概率根源，而不是简单地“截断反向传播”。
+
+\section{线性高斯 OU 边缘分布的递推证明}
+考虑
+\begin{equation}
+ z_t=\alpha_t z_{t-1}+\sqrt{1-\alpha_t^2}\,\epsilon_t,
+ \qquad \epsilon_t\sim\mathcal N(0,I).
+\end{equation}
+假设
+\begin{equation}
+ z_{t-1}\mid y\sim
+ \mathcal N(\bar\alpha_{t-1}u_y,(1-\bar\alpha_{t-1}^2)I),
+\end{equation}
+其中 $\bar\alpha_t=\prod_{s=1}^{t}\alpha_s$。线性高斯变换给出均值
+\begin{equation}
+ \E[z_t\mid y]=\alpha_t\bar\alpha_{t-1}u_y=\bar\alpha_tu_y,
+\end{equation}
+方差
+\begin{align}
+ \operatorname{Var}(z_t\mid y)
+ &=\alpha_t^2(1-\bar\alpha_{t-1}^2)I+(1-\alpha_t^2)I\\
+ &=(1-\alpha_t^2\bar\alpha_{t-1}^2)I
+ =(1-\bar\alpha_t^2)I.
+\end{align}
+由数学归纳法，
+\begin{equation}
+ \boxed{z_t\mid y\sim
+ \mathcal N(\bar\alpha_tu_y,(1-\bar\alpha_t^2)I).}
+\end{equation}
+
+\section{两个高斯相乘得到条件后验的配方法}
+标量情形先看清结构。若
+\begin{equation}
+ q(z_t\mid z_{t-1})=\mathcal N(az_{t-1},\sigma^2),
+ \qquad
+ q(z_{t-1}\mid y)=\mathcal N(m,s^2),
+\end{equation}
+则
+\begin{align}
+ \log q(z_{t-1}\mid z_t,y)
+ &=-\frac{(z_t-az_{t-1})^2}{2\sigma^2}
+ -\frac{(z_{t-1}-m)^2}{2s^2}+\mathrm{const}.
+\end{align}
+收集 $z_{t-1}^2$ 和一次项：
+\begin{equation}
+ -\frac12\left(\frac{a^2}{\sigma^2}+\frac1{s^2}\right)z_{t-1}^2
+ +\left(\frac{az_t}{\sigma^2}+\frac{m}{s^2}\right)z_{t-1}.
+\end{equation}
+因此后验方差与均值为
+\begin{equation}
+ \tilde s^2=\left(\frac{a^2}{\sigma^2}+\frac1{s^2}\right)^{-1},
+ \qquad
+ \tilde m=\tilde s^2\left(\frac{az_t}{\sigma^2}+\frac{m}{s^2}\right).
+\end{equation}
+多维各向同性情形逐维相同。论文中的系数 $a_t,b_t,c_t$ 正是把该后验均值写成
+\begin{equation}
+ \tilde m_t=a_tu_y+b_tz_t
+\end{equation}
+后的闭式系数。
+
+\section{等协方差高斯 KL 为什么变成平方误差}
+对
+\begin{equation}
+ q=\mathcal N(\mu_q,\Sigma),\qquad
+ p=\mathcal N(\mu_p,\Sigma),
+\end{equation}
+一般高斯 KL 为
+\begin{align}
+ \KL(q\|p)=\frac12\Bigl[
+ \tr(\Sigma^{-1}\Sigma)
+ +(\mu_p-\mu_q)^\top\Sigma^{-1}(\mu_p-\mu_q)
+ -d+\log\frac{\det\Sigma}{\det\Sigma}
+ \Bigr].
+\end{align}
+迹项等于 $d$，行列式项为零，于是
+\begin{equation}
+ \KL(q\|p)=\frac12
+ \|\mu_p-\mu_q\|_{\Sigma^{-1}}^2.
+\end{equation}
+若 $\Sigma=c_tI$，则
+\begin{equation}
+ \KL(q\|p)=\frac1{2c_t}\|\mu_p-\mu_q\|_2^2.
+\end{equation}
+当两者均值只在 $u_y$ 与网络预测 $\hat u_{\theta_t}$ 上不同，便得到加权局部回归损失
+\begin{equation}
+ \Loss_t=\lambda_t\|\hat u_{\theta_t}(z_{t-1},x)-u_y\|_2^2.
+\end{equation}
+
+\section{局部梯度为何不包含其他块参数}
+设第 $t$ 块损失为
+\begin{equation}
+ \Loss_t(\theta_t)=\E_{z_{t-1}\sim q}
+ \|u_{\theta_t}(z_{t-1},x)-u_y\|^2.
+\end{equation}
+关键是 $z_{t-1}$ 来自固定的教师后验 $q$，不是由前面可训练块生成。于是对 $s\ne t$，
+\begin{equation}
+ \frac{\partial\Loss_t}{\partial\theta_s}=0.
+\end{equation}
+对本块
+\begin{equation}
+ \nabla_{\theta_t}\Loss_t
+ =2\E J_{\theta_t}u_{\theta_t}^{\top}
+ (u_{\theta_t}-u_y).
+\end{equation}
+如果改成把模型自己的 $z_{t-1}(\theta_{<t})$ 喂给第 $t$ 块，则链式法则产生
+\begin{equation}
+ \frac{\partial\Loss_t}{\partial\theta_s}
+ =\frac{\partial\Loss_t}{\partial z_{t-1}}
+ \frac{\partial z_{t-1}}{\partial\theta_s},
+\end{equation}
+局部独立性立即消失。因此 NoProp 的核心是固定噪声教师分布，而非仅仅调用 stop-gradient。
+
+\section{一个 $T=2$ 的完整标量例子}
+令标签嵌入 $u_y=2$，$\alpha_1=\alpha_2=0.8$。则
+\begin{equation}
+ \bar\alpha_1=0.8,
+ \qquad
+ \bar\alpha_2=0.64.
+\end{equation}
+边缘分布为
+\begin{equation}
+ z_1\mid y\sim\mathcal N(1.6,1-0.8^2),
+\end{equation}
+\begin{equation}
+ z_2\mid y\sim\mathcal N(1.28,1-0.64^2).
+\end{equation}
+训练第一块时直接采 $z_0$ 或对应教师变量，回归目标始终是 $2$；训练第二块时独立采 $z_1$，仍回归 $2$。两个优化问题
+\begin{equation}
+ \min_{\theta_1}\E(u_{\theta_1}(z_0,x)-2)^2,
+ \qquad
+ \min_{\theta_2}\E(u_{\theta_2}(z_1,x)-2)^2
+\end{equation}
+可以并行求梯度。推理时才把第一块输出生成的状态传给第二块，因此训练分布与推理分布可能存在偏移，这是局部训练换来的主要代价。
+
+\section{连续时间极限：离散 OU 到 SDE}
+令步长 $\Delta t$ 很小，取
+\begin{equation}
+ \alpha_t=1-\frac12\beta(t)\Delta t+o(\Delta t).
+\end{equation}
+噪声尺度
+\begin{align}
+ \sqrt{1-\alpha_t^2}
+ &=\sqrt{1-\left(1-\beta(t)\Delta t+o(\Delta t)\right)}\\
+ &=\sqrt{\beta(t)\Delta t}+o(\sqrt{\Delta t}).
+\end{align}
+离散更新
+\begin{equation}
+ z_{t+\Delta t}-z_t
+ =-\frac12\beta(t)z_t\Delta t
+ +\sqrt{\beta(t)}\sqrt{\Delta t}\,\epsilon
+\end{equation}
+在极限下成为方差保持 SDE
+\begin{equation}
+ \dd z_t=-\frac12\beta(t)z_t\dd t+\sqrt{\beta(t)}\dd W_t.
+\end{equation}
+其均值衰减因子为
+\begin{equation}
+ \bar\alpha(t)=\exp\left[-\frac12\int_0^t\beta(s)\dd s\right].
+\end{equation}
+
+\section{Flow Matching 版本的条件路径与速度}
+若取桥接路径
+\begin{equation}
+ z_t=(1-t)z_0+t u_y+\sigma\epsilon,
+\end{equation}
+对 $t$ 求导得到条件速度
+\begin{equation}
+ v^*(z_t\mid z_0,u_y)=u_y-z_0.
+\end{equation}
+平方损失的最优向量场为条件期望
+\begin{equation}
+ v_\theta^*(z,t,x)=\E[u_y-z_0\mid z_t=z,x].
+\end{equation}
+由估计终点
+\begin{equation}
+ \widetilde u_y=z_t+(1-t)v_\theta(z_t,t,x),
+\end{equation}
+可以直接接分类器。若 $v_\theta$ 精确，代入路径有
+\begin{equation}
+ z_t+(1-t)(u_y-z_0)=t u_y+(1-t)z_0+(1-t)u_y-(1-t)z_0=u_y
+\end{equation}
+（忽略固定桥噪声时），说明该终点估计公式的系数来自直线运动几何。
+
+\section{内存复杂度的严格比较}
+标准端到端反向传播需要保存所有层激活。若每层激活大小为 $A_t$，峰值激活内存近似
+\begin{equation}
+ M_{\rm BP}=\Theta\left(\sum_{t=1}^{T}A_t\right).
+\end{equation}
+NoProp 每次只训练一个块或并行独立块，不需要保留跨块计算图，单设备顺序训练时
+\begin{equation}
+ M_{\rm NP}=\Theta\left(\max_t A_t\right).
+\end{equation}
+但总前向计算仍包含所有块，且为每层构造教师噪声样本和局部优化器状态。若所有块同时放在多设备上并行训练，总系统内存未必更小，只是单设备的反向图深度被消除。
+\end{document}

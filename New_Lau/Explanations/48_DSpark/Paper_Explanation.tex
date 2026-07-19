@@ -1,0 +1,187 @@
+\documentclass[UTF8,11pt,a4paper]{ctexart}
+\usepackage[a4paper,left=1.45cm,right=1.45cm,top=1.55cm,bottom=1.65cm]{geometry}
+\usepackage{amsmath,amssymb,bm}
+\usepackage{graphicx}
+\usepackage{booktabs,tabularx,array,longtable}
+\usepackage{enumitem}
+\usepackage[dvipsnames,svgnames]{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,calc,fit,shapes.geometric}
+\usepackage[most]{tcolorbox}
+\usepackage{hyperref}
+\usepackage{caption}
+\usepackage{float}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{microtype}
+\IfFontExistsTF{Times New Roman}{\setmainfont{Times New Roman}}{\setmainfont{Liberation Serif}}
+\IfFontExistsTF{Noto Sans CJK SC}{\setCJKmainfont{Noto Sans CJK SC}}{}
+\IfFontExistsTF{Noto Sans CJK SC}{\setCJKsansfont{Noto Sans CJK SC}}{}
+\IfFontExistsTF{DejaVu Sans Mono}{\setmonofont{DejaVu Sans Mono}}{\setmonofont{Latin Modern Mono}}
+\definecolor{mainblue}{HTML}{0B5CAD}
+\definecolor{softblue}{HTML}{EAF4FF}
+\definecolor{darktext}{HTML}{1F2937}
+\definecolor{softgray}{HTML}{F5F7FA}
+\definecolor{accent}{HTML}{F59E0B}
+\definecolor{goodgreen}{HTML}{2E7D32}
+\definecolor{badred}{HTML}{B91C1C}
+\definecolor{purple}{HTML}{6D5BD0}
+\hypersetup{colorlinks=true,linkcolor=mainblue,urlcolor=DarkOrange,citecolor=mainblue}
+\setlength{\parindent}{2em}
+\setlength{\headheight}{14pt}
+\setlength{\parskip}{0.22em}
+\setlist[itemize]{leftmargin=2em,itemsep=0.23em,topsep=0.25em}
+\setlist[enumerate]{leftmargin=2.2em,itemsep=0.23em,topsep=0.25em}
+\renewcommand{\arraystretch}{1.2}
+\captionsetup{font=small,labelfont=bf}
+\titleformat{\section}{\Large\bfseries\sffamily\color{mainblue}}{\thesection}{0.7em}{}
+\titleformat{\subsection}{\large\bfseries\sffamily\color{darktext}}{\thesubsection}{0.6em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries\sffamily\color{darktext}}{\thesubsubsection}{0.55em}{}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\sffamily DSpark}
+\fancyhead[R]{\small\sffamily \leftmark}
+\fancyfoot[C]{\small\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\newtcolorbox{infobox}[1]{enhanced,breakable,colback=softblue,colframe=mainblue!70!black,boxrule=0.8pt,arc=2mm,left=1.5mm,right=1.5mm,top=1mm,bottom=1mm,title=\bfseries #1}
+\newtcolorbox{keybox}[1]{enhanced,breakable,colback=softgray,colframe=darktext!45,boxrule=0.6pt,arc=2mm,left=1.5mm,right=1.5mm,top=1mm,bottom=1mm,title=\bfseries #1}
+\newtcolorbox{notebox}[1]{enhanced,breakable,colback=accent!8,colframe=accent!80!black,boxrule=0.7pt,arc=2mm,left=1.5mm,right=1.5mm,top=1mm,bottom=1mm,title=\bfseries #1}
+\newcommand{\term}[1]{\textbf{\textcolor{mainblue}{#1}}}
+\begin{document}
+
+\section{论文基本信息}
+\begin{center}
+\begin{tabularx}{0.94\linewidth}{>{\bfseries}p{0.18\linewidth}X}
+\toprule
+题目 & DSpark\\
+课件日期 & 2026-06-29\\
+研究方向 & 大模型推理系统 / 并行调度\\
+一句话概括 & 从系统层面对训练和推理链路进行并行化、调度与内存优化,以提高单用户生成速度和高并发有效吞吐。\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\begin{infobox}{摘要要点}
+从系统层面对训练和推理链路进行并行化、调度与内存优化,以提高单用户生成速度和高并发有效吞吐。 本说明按“研究问题—核心机制—基础公式—实验阅读—局限与优化”的顺序重新组织，不保留原始材料的封面、目录和页码对应。
+\end{infobox}
+
+\section{研究问题与动机}
+这项工作的出发点不是简单地替换某个网络层，而是识别现有范式中最影响\term{质量、效率、可靠性或可部署性}的瓶颈。结合论文所讨论的问题，可以将研究动机概括为以下几点：
+\begin{itemize}
+\item 精度高但速度慢,抑或速度快但精度不足 这一矛盾构成投机解码的经典困境 Lau 博士云组会
+\item 频繁出现搭配不当 如「of problem 」等不合理组合
+\item 各位置token 独立预测 位置间缺乏依赖关系
+\item 接受率呈断崖式下降 即所谓的「后缀衰减」现象
+\item 并行草稿的关键问题:后缀衰减
+\item 然而实际生产环境差异显著 不同任务特征各异 代码生成任务语法固定,8 个候选可全部接受 开放对话任务不确定性高,4 个候选可能全部失败
+\end{itemize}
+
+\begin{notebox}{理解重点}
+阅读这类论文时，应把“问题是否真实存在”“方法是否直接解决该问题”“实验是否排除了其他解释”分开判断。仅凭更大的模型、更多数据或更长训练得到的提升，不能自动视为结构创新带来的收益。
+\end{notebox}
+
+\section{核心思想与整体流程}
+从系统层面对训练和推理链路进行并行化、调度与内存优化,以提高单用户生成速度和高并发有效吞吐。 从信息流角度看，其基本流程可以整理为下图。
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[>=Latex,node distance=0.78cm]
+\tikzstyle{procstep}=[draw,rounded corners,fill=softblue,align=center,minimum width=3.05cm,minimum height=0.95cm,text width=2.75cm]
+\node[procstep] (a) {请求与批次};
+\node[procstep,right=of a] (b) {并行调度};
+\node[procstep,right=of b] (c) {缓存/算子优化};
+\node[procstep,right=of c] (d) {高速生成};
+\draw[->,thick,mainblue] (a)--(b);
+\draw[->,thick,mainblue] (b)--(c);
+\draw[->,thick,mainblue] (c)--(d);
+\end{tikzpicture}
+\caption{核心信息流与处理阶段。}
+\end{figure}
+
+\subsection{方法组成与信息流}
+\begin{itemize}
+\item 公式4 :各位置最终概率分布 = 并行骨干基础输出+ 串行头偏移量 经归一化处理后获得 Lau 博士云组会
+\item 设计思路:取长补短 1采用并行骨干确保生成速度 2叠加轻量串行头补偿预测精度
+\item DSpark 的首要核心创新:半自回归生成架构
+\item DSpark 采用全链路优化策略,同时提升三个关键维度 在速度、精度、调度三方面实现协同优化 Lau 博士云组会
+\item DSpark 是一套全链路的系统级加速方案 整合了半自回归架构、置信度评分、硬件感知调度、在线校准四项关键技术
+\item 公式1 :单token 实际延迟= ( 草稿生成耗时+ 验证耗时) / 接受token 数τ
+\item DSpark 为行业提供了一个值得借鉴的工程实践范式 Lau 博士云组会
+\end{itemize}
+
+\begin{keybox}{结构解析}
+\begin{itemize}
+\item 是一套全链路的系统级加速方案 整合了半自回归架构、置信度评分、硬件感知调度、在线校准四项关键技术
+\item 单用户速度提升60\\%-85\\% 高并发场景吞吐量提升约4 倍
+\item 该方案已完成从论文研究到DeepSeek-V4 生产的完整落地
+\item 单点技术红利收窄，全链路系统优化成为未来方向
+\end{itemize}
+\end{keybox}
+
+下图补充展示模块连接、数据流或训练阶段之间的关系。
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.94\linewidth,height=0.43\textheight,keepaspectratio]{method_diagram.jpg}
+\caption{模型结构、数据流或主要训练阶段。}
+\end{figure}
+
+\section{数学与机制理解}
+本节给出理解该工作的基础数学结构。公式用于解释方法所属范式，并不替代原论文中的完整推导。
+\begin{equation}
+\text{Throughput}=\frac{\text{generated tokens}}{\text{time}},\qquad \text{latency}=t_{\mathrm{finish}}-t_{\mathrm{request}}
+\end{equation}
+系统工作必须同时考虑吞吐量、单请求时延、显存、并发公平性和实现复杂度。单一速度数字不足以完整评价真实部署收益。
+
+\begin{keybox}{从公式回到方法}
+应重点观察论文究竟改变了公式中的哪一部分：是输入表示、连接矩阵、条件变量、参数化方式、训练目标，还是求解与调度过程。真正的创新通常可以在这一层被准确定位。
+\end{keybox}
+
+
+\section{实验结果应如何阅读}
+\begin{itemize}
+\item 以Qwen3-14B 为例的关键数据 宏平均接受长度 较Eagle3 提升30.0\% 较DFlash 提升18.3\%
+\item 在Qwen3 (4B/8B/14B) 与Gemma4-12B 上 全面超越Eagle3 与DFlash 基线
+\item 覆盖3 大领域、9 个标准数据集 数学推理、代码生成、日常对话
+\item 在所有测试场景中均表现稳定 Lau 博士云组会
+\item 离线基准测试· 多模型全面验证
+\item DeepSeek 将DSpark 部署于DeepSeek-V4 与现役MTP-1 基线进行真实流量对比
+\item DSpark 平均接受长度 较Eagle3 提升26\%-31\% 较DFlash 提升16\%-18\%
+\end{itemize}
+
+\begin{notebox}{结果解读}
+\begin{itemize}
+\item Figure 7 帕累托前沿结果
+\item DeepSeek 将 部署于DeepSeek-V4 与现役MTP-1 基线进行真实流量对比
+\item 整条性能曲线位于基线外侧
+\item 实际意义 在相同生成速度下，可承载更高总吞吐量 在相同并发量下，用户获得更快响应
+\end{itemize}
+\end{notebox}
+
+下图用于直观呈现主要对比、消融、定性样例或效率结果。
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.94\linewidth,height=0.43\textheight,keepaspectratio]{result_evidence.jpg}
+\caption{代表性实验对比、消融结果或定性样例。}
+\end{figure}
+实验部分不应只看单一最好数字。还需要核对模型规模、训练数据、训练步数、采样或解码预算、硬件条件以及是否使用额外蒸馏、检索或后处理。只有比较条件接近时，结果才能真正说明方法本身的优势。
+
+\section{优点、局限与可优化空间}
+\subsection{主要优点}
+\begin{itemize}
+\item \term{问题与方法对应明确}：论文围绕一个可识别的核心瓶颈展开，方法结构能够直接映射到该瓶颈。
+\item \term{可复用的设计思想}：即使不完整复现模型，其中的分解、稀疏化、递归、条件控制或系统优化思想也可迁移到相邻任务。
+\item \term{实验提供了多角度证据}：实验通常同时展示主结果、效率比较、案例或消融，使结论不完全依赖单一指标。
+\end{itemize}
+
+\subsection{局限与进一步优化}
+\begin{itemize}
+\item 需要进一步区分\term{结构收益}与更大算力、更多数据、不同训练技巧带来的收益，并在等参数、等计算预算下进行严格比较。
+\item 对超参数、输入分布和模型规模的敏感性仍应系统分析；在一个数据集上的最优配置不一定能直接迁移。
+\item 实际部署还要考虑显存峰值、并发、延迟抖动、失败案例和鲁棒性，而不仅是离线平均指标。
+\item 可尝试将该方法与蒸馏、量化、缓存复用、动态路由或更强的表示学习结合，验证不同优化是否互补。
+\end{itemize}
+
+\section{结论}
+总体而言，从系统层面对训练和推理链路进行并行化、调度与内存优化，以提高单用户生成速度和高并发有效吞吐。。 进一步需要注意：对大模型发展的启示 单点技术红利正在逐步收窄 真正的体验提升源于全链路的系统优化 每个环节的精细打磨将累积为显著的体验差异 Lau 博士云组会;DSpark 是一套全链路的系统级加速方案 整合了半自回归架构、置信度评分、硬件感知调度、在线校准四项关键技术。
+
+\end{document}

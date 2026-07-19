@@ -1,0 +1,541 @@
+\documentclass[UTF8,12pt,a4paper,fontset=none]{ctexart}
+\usepackage[a4paper,left=1.82cm,right=1.82cm,top=1.72cm,bottom=1.82cm,headheight=15pt]{geometry}
+\usepackage{fontspec,xeCJK}
+\setmainfont{Liberation Serif}
+\setsansfont{DejaVu Sans}
+\setmonofont{DejaVu Sans Mono}
+\setCJKmainfont[BoldFont=Noto Serif CJK SC Bold]{Noto Serif CJK SC}
+\setCJKsansfont[BoldFont=Noto Sans CJK SC Bold]{Noto Sans CJK SC}
+\setCJKmonofont{Noto Sans Mono CJK SC}
+\usepackage{amsmath,amssymb,mathtools,bm}
+\usepackage{booktabs,longtable,tabularx,array,multirow}
+\usepackage{enumitem,xcolor}
+\usepackage[most]{tcolorbox}
+\usepackage{fancyhdr,titlesec,hyperref,cleveref,lastpage}
+\usepackage{tikz,float,caption,listings}
+\usetikzlibrary{arrows.meta,positioning,calc,fit,backgrounds,shapes.geometric}
+\definecolor{mainblue}{RGB}{39,82,138}
+\definecolor{deepblue}{RGB}{25,55,95}
+\definecolor{softblue}{RGB}{235,243,252}
+\definecolor{softgreen}{RGB}{238,248,241}
+\definecolor{softorange}{RGB}{255,246,232}
+\definecolor{softgray}{RGB}{245,246,248}
+\definecolor{warnred}{RGB}{160,48,48}
+\hypersetup{unicode=true,colorlinks=true,linkcolor=deepblue,urlcolor=mainblue,citecolor=deepblue}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.36em}
+\setlength{\tabcolsep}{5pt}
+\renewcommand{\arraystretch}{1.2}
+\allowdisplaybreaks[4]
+\emergencystretch=3em
+\sloppy
+\pagestyle{fancy}\fancyhf{}\fancyfoot[C]{\small 第 \thepage\ 页，共 \pageref{LastPage} 页}\renewcommand{\headrulewidth}{0.4pt}
+\titleformat{\section}{\Large\bfseries\color{deepblue}}{\thesection}{0.65em}{}
+\titleformat{\subsection}{\large\bfseries\color{mainblue}}{\thesubsection}{0.55em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries}{\thesubsubsection}{0.5em}{}
+\numberwithin{equation}{section}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Prob}{\mathbb{P}}
+\newcommand{\Loss}{\mathcal{L}}
+\newcommand{\norm}[1]{\left\lVert #1\right\rVert}
+\newcommand{\ip}[2]{\left\langle #1,#2\right\rangle}
+\newcommand{\tr}{\operatorname{Tr}}
+\newcommand{\diag}{\operatorname{diag}}
+\newcommand{\rank}{\operatorname{rank}}
+\newcommand{\softmax}{\operatorname{softmax}}
+\newcommand{\argmin}{\operatorname*{arg\,min}}
+\newcommand{\argmax}{\operatorname*{arg\,max}}
+\newcommand{\sg}{\operatorname{sg}}
+\newcommand{\KL}{D_{\mathrm{KL}}}
+\newcommand{\dd}{\mathrm{d}}
+\newtcolorbox{keybox}[1][]{enhanced,breakable,colback=softblue,colframe=mainblue,boxrule=0.8pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\newtcolorbox{examplebox}[1][]{enhanced,breakable,colback=softgreen,colframe=green!45!black,boxrule=0.7pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\newtcolorbox{notebox}[1][]{enhanced,breakable,colback=softorange,colframe=orange!70!black,boxrule=0.7pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\newtcolorbox{criticalbox}[1][]{enhanced,breakable,colback=red!3,colframe=warnred,boxrule=0.8pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\lstset{basicstyle=\ttfamily\small,breaklines=true,frame=single,backgroundcolor=\color{softgray},numbers=left,numberstyle=\tiny,showstringspaces=false,columns=fullflexible}
+\hypersetup{pdftitle={01 Fractal Generative Models 数学过程详解},pdfauthor={OpenAI}}
+\fancyhead[L]{\small 01 Fractal Generative Models}
+\fancyhead[R]{\small 数学过程详解}
+\setlength{\abovedisplayskip}{0.82em}
+\setlength{\belowdisplayskip}{0.82em}
+\setlength{\abovedisplayshortskip}{0.45em}
+\setlength{\belowdisplayshortskip}{0.45em}
+\begin{document}
+\begin{center}
+{\LARGE\bfseries 01\_Fractal Generative Models 数学过程详解}\par
+\vspace{0.35em}
+{\large 递归概率分解、树状复杂度与像素级似然的完整推导}
+\end{center}
+\vspace{0.45em}
+\begin{keybox}[本文只处理真正需要推导的部分]
+本文聚焦递归生成器、块级概率链式分解、树状注意力复杂度、负对数似然和分类器自由引导。全文按“公式从哪里来--每个符号是什么--中间步骤为何成立--维度和复杂度如何核对--论文结论依赖哪些假设”的顺序展开；不复述实验表格，也不使用与论文无关的通用背景凑页数。
+\end{keybox}
+\tableofcontents
+\newpage
+
+\section{递归生成器的数学定义}
+论文先把“生成模型”抽象成可递归调用的生成器。第 $i$ 层生成器记为 $g_i$，上一层的一个输出 $x_i$ 被映射为下一层的一组输出：
+\begin{equation}
+  \{x_{i+1}^{(1)},\ldots,x_{i+1}^{(k)}\}=g_i(x_i).
+\end{equation}
+这里 $k$ 是每次递归产生的分支数。若从根节点开始递归 $n$ 层，叶节点数量为
+\begin{equation}
+  N=k^n.
+\end{equation}
+两边取对数得到
+\begin{equation}
+  \boxed{n=\log_k N=\frac{\log N}{\log k}}.
+\end{equation}
+这一步解释了论文所谓“线性递归深度产生指数数量输出”：输出维度 $N$ 对层数 $n$ 是指数增长，而层数只随 $\log N$ 增长。
+
+\begin{examplebox}[256×256 图像的递归层数]
+若每个生成器固定产生 $k=16$ 个子块，而最终需要 $N=16^4=65536$ 个空间位置，则只需 $n=4$ 层递归。这里“4 层”并不是说网络只有 4 个 Transformer Block，而是指分治树的递归层级。
+\end{examplebox}
+
+\section{联合分布的块级链式分解}
+\subsection{从逐变量链式法则到块链式法则}
+对随机变量 $x_{1:N}$，概率链式法则为
+\begin{equation}
+ p(x_{1:N})=\prod_{j=1}^{N}p(x_j\mid x_{<j}).
+\end{equation}
+论文不直接用长度为 $N$ 的单一自回归序列，而是把变量分成 $k$ 个连续块。令
+\begin{equation}
+ B_i=\left(x_{(i-1)k^{n-1}+1},\ldots,x_{ik^{n-1}}\right),\qquad i=1,\ldots,k.
+\end{equation}
+则原联合分布可严格写成
+\begin{equation}
+ \boxed{p(x_{1:k^n})=\prod_{i=1}^{k}p\!\left(B_i\mid B_{<i}\right)}.
+\end{equation}
+这一式只是把逐变量链式法则按块重新分组，并没有做独立性假设。每个条件分布 $p(B_i\mid B_{<i})$ 仍然是高维分布，于是再由下一层生成器递归分解。
+
+\subsection{第二层递归展开}
+把第 $i$ 个块继续划分为 $k$ 个子块 $B_{i,1},\ldots,B_{i,k}$，则
+\begin{equation}
+ p(B_i\mid B_{<i})
+ =\prod_{j=1}^{k}p\!\left(B_{i,j}\mid B_{<i},B_{i,<j}\right).
+\end{equation}
+代回上一层得到
+\begin{equation}
+ p(x_{1:k^n})
+ =\prod_{i=1}^{k}\prod_{j=1}^{k}
+ p\!\left(B_{i,j}\mid B_{<i},B_{i,<j}\right).
+\end{equation}
+继续递归到叶节点后，最终仍然恢复完整的联合分布。FractalAR 的关键不是改变概率论，而是改变条件概率的计算图：长序列被组织成树状的多个短序列。
+
+\section{负对数似然与 bits-per-dimension}
+训练目标是最大化图像概率，等价于最小化负对数似然：
+\begin{equation}
+ \Loss_{\mathrm{NLL}}(\theta)
+ =-\E_{x\sim p_{\mathrm{data}}}\log p_\theta(x).
+\end{equation}
+利用递归链式分解，单样本损失可以写成所有树节点条件概率的和：
+\begin{equation}
+ -\log p_\theta(x)
+ =-\sum_{\ell=0}^{n-1}\sum_{u\in\mathcal{T}_\ell}
+ \log p_\theta\!\left(x_{\mathrm{child}(u)}\mid x_{\mathrm{context}(u)}\right).
+\end{equation}
+其中 $\mathcal{T}_\ell$ 是第 $\ell$ 层节点集合。图像生成常用 bits-per-dimension：
+\begin{equation}
+ \operatorname{bpd}(x)
+ =-\frac{\log_2 p_\theta(x)}{D}
+ =-\frac{\log p_\theta(x)}{D\log 2},
+\end{equation}
+$D=HWC$ 是标量像素通道总数。bpd 的分母必须使用标量维度而不是 patch 数，否则不同分块方案不能公平比较。
+
+\section{理想化复杂度推导：为什么短序列递归可能更省}
+\subsection{单一长序列注意力}
+若直接对长度 $N$ 的像素序列做全注意力，单层注意力矩阵为 $N\times N$，计算量近似
+\begin{equation}
+ C_{\mathrm{flat}}=O(N^2d),
+\end{equation}
+其中 $d$ 为隐藏维度。
+
+\subsection{固定分支数的树状短序列}
+在理想化分析中，假设每个节点只运行长度 $k$ 的注意力，且第 $\ell$ 层有 $k^\ell$ 个节点。第 $\ell$ 层注意力代价为
+\begin{equation}
+ C_\ell=k^\ell\cdot O(k^2d).
+\end{equation}
+总成本为几何级数
+\begin{align}
+ C_{\mathrm{fractal}}
+ &=O(k^2d)\sum_{\ell=0}^{n-1}k^\ell\\
+ &=O(k^2d)\frac{k^n-1}{k-1}\\
+ &=O\!\left(\frac{k^2}{k-1}Nd\right).
+\end{align}
+当 $k$ 视为常数时，理想复杂度随 $N$ 近似线性增长。这个结论依赖“每个节点只看固定长度局部序列”和“不同节点可以有效批处理”；真实模型还包含跨层条件 token、不同宽度和重复网络计算，因此不能直接把它当成精确 FLOPs 公式。
+
+\subsection{论文像素局部注意力示例的核对}
+对 $256\times256$ 图像，平铺像素注意力矩阵元素数为
+\begin{equation}
+ (256\cdot256)^2=4\,294\,967\,296.
+\end{equation}
+若把图像划为 $64\times64$ 个 $4\times4$ 小块，每块只在 $16$ 个像素上做注意力，则总元素数为
+\begin{equation}
+ (64\cdot64)\times16^2=1\,048\,576.
+\end{equation}
+比值为
+\begin{equation}
+ \frac{4\,294\,967\,296}{1\,048\,576}=4096.
+\end{equation}
+这正是局部短序列结构带来的数量级差异，但它只比较注意力矩阵规模，不等于完整模型端到端加速倍数。
+
+\section{FractalAR 与随机顺序 FractalMAR 的概率差异}
+FractalAR 对子块使用固定顺序：
+\begin{equation}
+ p(B_1,\ldots,B_k)=\prod_{i=1}^{k}p(B_i\mid B_{<i}).
+\end{equation}
+若采用随机顺序 $\pi$，则训练目标对排列取期望：
+\begin{equation}
+ \Loss_{\mathrm{MAR}}
+ =\E_{\pi}\left[-\sum_{i=1}^{k}
+ \log p_\theta\!\left(B_{\pi_i}\mid B_{\pi_{<i}},m_\pi\right)\right],
+\end{equation}
+其中 $m_\pi$ 表示当前可见/遮蔽模式。固定顺序学习一个有向因子分解；随机顺序要求模型在多种条件集合下恢复目标块，训练信号更接近双向条件建模。
+
+\section{分类器自由引导的 logits 推导}
+论文在条件分支和无条件分支分别得到 logits $l_c$ 与 $l_u$，再使用
+\begin{equation}
+ \boxed{l=l_u+\omega(l_c-l_u)}.
+\end{equation}
+当 $\omega=0$ 时完全无条件；$\omega=1$ 时等于条件 logits；$\omega>1$ 是沿条件方向外推。若把 logits 写成未归一化对数概率，
+\begin{equation}
+ l_c(y)\approx \log p(y\mid c)+C_c,\qquad
+ l_u(y)\approx \log p(y)+C_u,
+\end{equation}
+则忽略与类别无关的常数后
+\begin{align}
+ l(y)
+ &\approx (1-\omega)\log p(y)+\omega\log p(y\mid c),\\
+ \exp l(y)
+ &\propto p(y)^{1-\omega}p(y\mid c)^\omega.
+\end{align}
+所以 CFG 实际上重新加权了条件概率与先验概率。它不是把两个 Softmax 概率直接线性平均；若先 Softmax 再组合，结果一般不同。
+
+\section{参数共享与“分形自相似”的严格含义}
+数学分形常要求尺度变换后的严格自相似，而论文中的神经网络分形更接近结构自相似。若所有层共享同一参数 $\theta$，递归可写为
+\begin{equation}
+ x_{\ell+1}=g_\theta(x_\ell),
+\end{equation}
+属于真正的迭代函数系统式参数共享。若不同层使用 $\theta_\ell$，则
+\begin{equation}
+ x_{\ell+1}=g_{\theta_\ell}(x_\ell),
+\end{equation}
+保留拓扑结构相似，但不具有参数层面的严格自相似。论文的主要贡献是生成模块的递归组织，而不是证明生成分布具有经典分形维数。
+
+\section{梯度如何穿过递归树}
+设总损失是所有叶节点损失之和：
+\begin{equation}
+ \Loss=\sum_{v\in\mathcal{L}}\ell_v.
+\end{equation}
+对某个内部节点表示 $h_u$，链式法则给出
+\begin{equation}
+ \frac{\partial\Loss}{\partial h_u}
+ =\sum_{v\in\operatorname{desc}(u)}
+ \frac{\partial\ell_v}{\partial h_u}.
+\end{equation}
+因此内部节点汇总其所有后代的梯度。若同一生成器参数被多个节点共享，则
+\begin{equation}
+ \frac{\partial\Loss}{\partial\theta}
+ =\sum_{u\in\mathcal{T}}
+ \frac{\partial\Loss}{\partial g_\theta(h_u)}
+ \frac{\partial g_\theta(h_u)}{\partial\theta}.
+\end{equation}
+共享提高参数效率，但不同尺度的梯度可能冲突；不共享则参数量随层数增加，却允许不同尺度学习不同统计规律。
+
+\section{容易误解的结论}
+\begin{criticalbox}[三点边界]
+第一，$n=\log_kN$ 只说明递归深度，不说明运行时间一定是对数级；整棵树仍需生成 $N$ 个叶节点。第二，块链式分解是概率恒等式，但用有限容量网络分别拟合各条件分布会产生近似误差。第三，注意力矩阵元素减少 4096 倍不等于端到端速度提升 4096 倍，因为还有 MLP、投影、递归调度与显存访问。
+\end{criticalbox}
+% AUGMENTED_DETAILED_MATH
+
+\section{完整递归树的节点数与计算图}
+设根节点处于第 $0$ 层，每个内部节点产生 $k$ 个子节点，递归深度为 $n$。第 $\ell$ 层节点数为
+\begin{equation}
+ N_\ell=k^\ell,
+\end{equation}
+全部内部节点数为
+\begin{equation}
+ N_{\mathrm{int}}=\sum_{\ell=0}^{n-1}k^\ell
+ =\frac{k^n-1}{k-1}.
+\end{equation}
+叶节点数为 $k^n=N$，总节点数
+\begin{equation}
+ N_{\mathrm{all}}=\frac{k^{n+1}-1}{k-1}.
+\end{equation}
+若每个内部节点都调用同一参数共享生成器 $g_\theta$，参数量不会乘以 $N_{\mathrm{int}}$，但前向调用次数会乘以该数量。这一区分是理解“参数效率”和“计算效率”的关键。
+
+\section{块级链式法则与像素级链式法则完全等价}
+设一维序列被划分成 $k$ 个块 $B_1,\ldots,B_k$。联合概率的链式法则给出
+\begin{equation}
+ p(B_{1:k})=p(B_1)\prod_{i=2}^{k}p(B_i\mid B_{<i}).
+\end{equation}
+再对每个块内部展开
+\begin{equation}
+ p(B_i\mid B_{<i})
+ =\prod_{j=1}^{|B_i|}p(x_{i,j}\mid B_{<i},x_{i,<j}).
+\end{equation}
+把两式相乘，条件集合恰好覆盖所有在全局顺序中位于当前变量之前的变量，因此
+\begin{equation}
+ \prod_i\prod_jp(x_{i,j}\mid B_{<i},x_{i,<j})
+ =\prod_{m=1}^{N}p(x_m\mid x_{<m}).
+\end{equation}
+所以分块没有改变概率模型的合法性；它改变的是条件概率由哪种计算图实现。
+
+\section{层级注意力复杂度的更精确推导}
+在第 $\ell$ 层有 $k^\ell$ 个父节点，每个父节点对 $k$ 个子块做局部注意力。若隐藏维度为 $d$，单个局部注意力的主项为
+\begin{equation}
+ C_{\mathrm{node}}\approx 4kd^2+2k^2d,
+\end{equation}
+其中 $4kd^2$ 来自 $Q,K,V,O$ 线性映射，$2k^2d$ 来自 $QK^\top$ 与概率加权。全树成本
+\begin{align}
+ C_{\mathrm{tree}}
+ &\approx\sum_{\ell=0}^{n-1}k^\ell(4kd^2+2k^2d)\\
+ &=\frac{k^n-1}{k-1}(4kd^2+2k^2d).
+\end{align}
+用 $N=k^n$ 表示
+\begin{equation}
+ C_{\mathrm{tree}}=O\!\left(Nkd^2+Nk^2d\right).
+\end{equation}
+当 $k$ 固定时对 $N$ 近似线性；但如果为了减少深度而让 $k$ 随 $N$ 增长，$k^2$ 项会重新变贵，因此不能只引用 $O(N)$ 而忽略分支数。
+
+\section{递归深度与误差传播}
+设每一层生成映射对输入的 Jacobian 谱范数满足
+\begin{equation}
+ \norm{J_{g_\theta}(h)}_2\le L.
+\end{equation}
+根节点扰动 $\delta h_0$ 传播到深度 $n$ 的某一叶节点满足
+\begin{equation}
+ \norm{\delta h_n}
+ \le\prod_{\ell=0}^{n-1}\norm{J_{g_\theta}(h_\ell)}_2\norm{\delta h_0}
+ \le L^n\norm{\delta h_0}.
+\end{equation}
+若 $L>1$，误差可能指数放大；若 $L<1$，深层特征可能收缩。由于 $n=\log_kN$，上界还可写成
+\begin{equation}
+ L^n=N^{\log_kL}.
+\end{equation}
+这说明递归深度虽为对数，但稳定性仍取决于共享生成器的局部 Lipschitz 常数。
+
+\section{参数共享下的梯度求和}
+同一参数 $\theta$ 在所有内部节点复用。总损失为叶节点损失之和
+\begin{equation}
+ \Loss(\theta)=\sum_{v\in\mathcal L}\ell_v.
+\end{equation}
+链式法则得到
+\begin{equation}
+ \nabla_\theta\Loss
+ =\sum_{u\in\mathcal I}
+ \left(\frac{\partial h_u}{\partial\theta}\right)^\top
+ \nabla_{h_u}\Loss,
+\end{equation}
+其中 $\mathcal I$ 为内部节点集合。参数共享的效果是来自不同空间位置、不同尺度的梯度在同一 $\theta$ 上累加。若不同层级任务冲突，梯度内积
+\begin{equation}
+ \ip{g_{\ell_1}}{g_{\ell_2}}<0
+\end{equation}
+会导致更新相互抵消；这也是共享带来正则化同时可能限制容量的原因。
+
+\section{随机生成顺序目标是排列期望}
+若训练时从分布 $q(\pi)$ 抽取块排列 $\pi$，目标为
+\begin{equation}
+ \Loss(\theta)
+ =\E_{\pi\sim q}\left[-\sum_i
+ \log p_\theta(B_{\pi_i}\mid B_{\pi_{<i}},\pi)\right].
+\end{equation}
+单次排列给出的随机梯度
+\begin{equation}
+ \widehat g(\pi)=\nabla_\theta\Loss_\pi
+\end{equation}
+满足
+\begin{equation}
+ \E_\pi\widehat g(\pi)=\nabla_\theta\E_\pi\Loss_\pi,
+\end{equation}
+只要可交换微分与期望。因此随机顺序训练是无偏 Monte Carlo 优化；代价是梯度方差
+\begin{equation}
+ \operatorname{Var}_\pi[\widehat g]
+ =\E\norm{\widehat g-\E\widehat g}^2
+\end{equation}
+可能较大，需要更多排列或控制变量降低。
+
+\section{分类器自由引导的概率推导}
+条件与无条件 score 分别为
+\begin{equation}
+ s_c(x)=\nabla_x\log p(x\mid c),\qquad
+ s_u(x)=\nabla_x\log p(x).
+\end{equation}
+引导 score
+\begin{equation}
+ s_w=(1+w)s_c-ws_u
+\end{equation}
+可写为某个未归一化密度的梯度：
+\begin{align}
+ s_w
+ &=\nabla_x[(1+w)\log p(x\mid c)-w\log p(x)]\\
+ &=\nabla_x\log\frac{p(x\mid c)^{1+w}}{p(x)^w}.
+\end{align}
+因此 CFG 相当于从
+\begin{equation}
+ \widetilde p_w(x\mid c)\propto
+ p(x\mid c)^{1+w}p(x)^{-w}
+\end{equation}
+采样，强化条件相关方向。$w$ 太大时该分布更尖锐，覆盖率下降并可能产生过饱和。
+\clearpage
+\section{一个 $4\times4$ 离散图像的完整递归概率展开}
+为了把“递归生成”从口号变成可计算对象，考虑每个像素只能取 $K$ 个离散值的 $4\times4$ 图像 $X$。先把图像分成四个 $2\times2$ 子块
+\begin{equation}
+ X=(B_1,B_2,B_3,B_4),\qquad B_i\in\{1,\ldots,K\}^{2\times2}.
+\end{equation}
+顶层模型先生成四个块的摘要变量 $C_1,\ldots,C_4$。若采用固定顺序，则联合分布写成
+\begin{equation}
+ p(C_1,C_2,C_3,C_4)=p(C_1)\prod_{j=2}^{4}p(C_j\mid C_{<j}).
+\end{equation}
+每个块内部再递归分解为四个像素。以 $B_2=(x_{21},x_{22},x_{23},x_{24})$ 为例，
+\begin{equation}
+ p(B_2\mid C_2)=p(x_{21}\mid C_2)
+ p(x_{22}\mid x_{21},C_2)
+ p(x_{23}\mid x_{21:22},C_2)
+ p(x_{24}\mid x_{21:23},C_2).
+\end{equation}
+因此完整图像概率并不是“多个独立小模型概率的乘积”，而是
+\begin{equation}
+ p(X)=p(C_{1:4})\prod_{j=1}^{4}p(B_j\mid C_j,\mathcal C_j),
+\end{equation}
+其中 $\mathcal C_j$ 表示顶层已经生成的上下文。取对数后得到
+\begin{equation}
+ -\log p(X)=-\log p(C_{1:4})-
+ \sum_{j=1}^{4}\sum_{r=1}^{4}
+ \log p(x_{jr}\mid x_{j,<r},C_j,\mathcal C_j).
+\end{equation}
+这一步说明：递归结构只改变了条件概率的组织方式，并没有改变最大似然的基本原则。
+
+\section{树形链式法则与普通像素链式法则为何等价}
+把所有叶子像素按递归遍历顺序记为 $x_{\pi(1)},\ldots,x_{\pi(N)}$。概率链式法则对任何排列 $\pi$ 都成立：
+\begin{equation}
+ p(x_{1:N})=\prod_{i=1}^{N}p\bigl(x_{\pi(i)}\mid x_{\pi(<i)}\bigr).
+\end{equation}
+树中的内部节点本质上是确定性摘要 $c_v=g_v(x_{\mathrm{desc}(v)})$ 或训练时引入的辅助变量。若 $c_v$ 是确定函数，则
+\begin{equation}
+ p(x,c)=p(x)\prod_v \mathbf 1\{c_v=g_v(x)\},
+\end{equation}
+边缘化内部节点得到
+\begin{equation}
+ \sum_c p(x,c)=p(x).
+\end{equation}
+所以“分形”并没有凭空增加概率质量；它只是把长序列分成多层较短条件序列。若内部节点是随机变量，则必须显式积分或求和：
+\begin{equation}
+ p(x)=\sum_c p(c)\,p(x\mid c),
+\end{equation}
+训练时对应的负对数似然不能随意省略 $c$ 的边缘化。
+
+\section{熵的层级分解与 bits-per-dimension}
+对离散图像，平均负对数似然为
+\begin{equation}
+ \Loss_{\mathrm{NLL}}=-\E_{X\sim p_{\rm data}}\log_2 p_\theta(X).
+\end{equation}
+若图像共有 $D=HWC$ 个标量，则
+\begin{equation}
+ \mathrm{bpd}=\frac{\Loss_{\mathrm{NLL}}}{D}.
+\end{equation}
+对层级变量 $(C,X)$，熵链式法则给出
+\begin{equation}
+ H(X,C)=H(C)+H(X\mid C).
+\end{equation}
+若 $C$ 是 $X$ 的确定函数，则 $H(C\mid X)=0$，于是
+\begin{equation}
+ H(X)=H(C)+H(X\mid C).
+\end{equation}
+这正是顶层模型和局部递归模型分别承担的最小理论码长。若顶层摘要压缩得过强，$H(X\mid C)$ 会增大；若摘要过细，$H(C)$ 会增大。两者之间存在信息瓶颈式权衡。
+
+\section{递归计算复杂度的主定理推导}
+设一个长度为 $n$ 的区域被分成 $b$ 个等规模子区域，每个节点的局部 Transformer 处理 $b$ 个子块摘要，局部开销记为 $g(b,d)$。若 $b$ 固定，则递推式为
+\begin{equation}
+ T(n)=bT(n/b)+g(b,d).
+\end{equation}
+递归深度为 $L=\log_b n$，第 $\ell$ 层有 $b^\ell$ 个节点，因此
+\begin{equation}
+ T(n)=\sum_{\ell=0}^{L-1}b^\ell g(b,d)
+ =g(b,d)\frac{b^L-1}{b-1}
+ =O\bigl(n\,g(b,d)\bigr).
+\end{equation}
+若每个节点只对固定数目的子块做注意力，$g(b,d)=O(b^2d)$ 是常数阶的，故总复杂度对叶子数近似线性。相比之下，直接对 $n$ 个像素做全注意力是
+\begin{equation}
+ T_{\rm full}(n)=O(n^2d).
+\end{equation}
+但该线性结论依赖两个条件：分支数固定、跨兄弟子树的全局信息只通过摘要传递。若每层还对全部节点做全局注意力，第 $\ell$ 层开销会成为 $O(b^{2\ell}d)$，总和重新回到二次量级。
+
+\section{参数共享梯度的精确求和}
+同一个递归模块 $f_\theta$ 在树上被调用 $M$ 次，节点 $v$ 的输出为
+\begin{equation}
+ h_v=f_\theta(s_v).
+\end{equation}
+总损失 $\Loss=\sum_{u\in\mathcal L}\ell_u$ 对共享参数的梯度为
+\begin{equation}
+ \nabla_\theta\Loss
+ =\sum_{v=1}^{M}
+ \left(\frac{\partial h_v}{\partial\theta}\right)^{\!\top}
+ \nabla_{h_v}\Loss.
+\end{equation}
+这里每个调用点的局部 Jacobian 都不同，因为输入状态 $s_v$ 不同。参数共享减少了存储参数量，却不会把计算图中的 $M$ 次调用压缩成一次；反向传播仍需累计所有节点贡献。
+
+进一步，若一条根到叶路径长度为 $L$，状态 Jacobian 连乘为
+\begin{equation}
+ \frac{\partial h_L}{\partial h_0}
+ =\prod_{\ell=1}^{L}J_\ell,
+ \qquad J_\ell=\frac{\partial h_\ell}{\partial h_{\ell-1}}.
+\end{equation}
+于是
+\begin{equation}
+ \left\|\frac{\partial h_L}{\partial h_0}\right\|_2
+ \le\prod_{\ell=1}^{L}\|J_\ell\|_2.
+\end{equation}
+若平均谱范数大于 $1$，梯度可能爆炸；小于 $1$，梯度可能衰减。残差连接把 $J_\ell$ 改成 $I+J_{F,\ell}$，可以保留恒等梯度通道。
+
+\section{随机顺序训练目标的无偏性与方差}
+FractalMAR 类方法对生成排列 $\pi$ 取随机样本。完整目标是
+\begin{equation}
+ \Loss(\theta)=\E_{\pi\sim q(\pi)}
+ \E_{X\sim p_{\rm data}}
+ \left[-\sum_{i=1}^{N}\log p_\theta(x_{\pi(i)}\mid x_{\pi(<i)},\pi)\right].
+\end{equation}
+每次只采一个排列得到随机梯度 $g(\pi)$，若满足可交换微分与期望的条件，
+\begin{equation}
+ \E_\pi[g(\pi)]=\nabla_\theta\Loss(\theta),
+\end{equation}
+因此是一阶无偏估计。但其方差为
+\begin{equation}
+ \operatorname{Var}[g(\pi)]
+ =\E\|g(\pi)-\E g(\pi)\|_2^2,
+\end{equation}
+不同排列导致上下文差异越大，方差越高。一个直接的降方差办法是在同一图像上采样多个排列并平均：
+\begin{equation}
+ \bar g_K=\frac1K\sum_{k=1}^{K}g(\pi_k),\qquad
+ \operatorname{Var}(\bar g_K)=\frac1K\operatorname{Var}(g),
+\end{equation}
+代价是计算量约增大 $K$ 倍。
+
+\section{分类器自由引导的概率比解释}
+设条件与无条件 logits 对应分布 $p_c(x)$ 与 $p_u(x)$。引导 logits
+\begin{equation}
+ \ell_{\rm cfg}=(1+w)\ell_c-w\ell_u
+\end{equation}
+经过 softmax 后满足
+\begin{equation}
+ p_{\rm cfg}(x)
+ \propto \exp\bigl((1+w)\ell_c(x)-w\ell_u(x)\bigr)
+ \propto \frac{p_c(x)^{1+w}}{p_u(x)^w}.
+\end{equation}
+因此 $w>0$ 实际上放大条件分布相对于无条件分布的似然比。它提高条件一致性，但也会使分布变尖，降低多样性。若 $p_u(x)$ 在某些事件上极小，概率比会非常大，数值实现中应在 logits 域计算而不是直接做概率除法。
+
+\section{递归预测误差如何向叶子传播}
+设父节点摘要误差为 $e_\ell$，下一层局部生成器对父状态的 Lipschitz 常数为 $L_\ell$，自身近似误差为 $\delta_\ell$，则
+\begin{equation}
+ e_{\ell+1}\le L_\ell e_\ell+\delta_\ell.
+\end{equation}
+递推展开得到
+\begin{equation}
+ e_L\le
+ \left(\prod_{j=0}^{L-1}L_j\right)e_0
+ +\sum_{k=0}^{L-1}
+ \left(\prod_{j=k+1}^{L-1}L_j\right)\delta_k.
+\end{equation}
+这说明高层摘要的错误会影响整棵子树；越靠近根部的误差乘上的 Lipschitz 因子越多。训练时只看最终像素损失虽然能端到端纠错，但也会造成高层信用分配困难，因此分层辅助损失具有明确的数值稳定意义。
+\end{document}

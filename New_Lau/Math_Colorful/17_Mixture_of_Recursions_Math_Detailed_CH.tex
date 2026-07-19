@@ -1,0 +1,404 @@
+\documentclass[UTF8,12pt,a4paper,fontset=none]{ctexart}
+\usepackage[a4paper,left=1.82cm,right=1.82cm,top=1.72cm,bottom=1.82cm,headheight=15pt]{geometry}
+\usepackage{fontspec,xeCJK}
+\setmainfont{Liberation Serif}
+\setsansfont{DejaVu Sans}
+\setmonofont{DejaVu Sans Mono}
+\setCJKmainfont[BoldFont=Noto Serif CJK SC Bold]{Noto Serif CJK SC}
+\setCJKsansfont[BoldFont=Noto Sans CJK SC Bold]{Noto Sans CJK SC}
+\setCJKmonofont{Noto Sans Mono CJK SC}
+\usepackage{amsmath,amssymb,mathtools,bm}
+\usepackage{booktabs,longtable,tabularx,array,multirow}
+\usepackage{enumitem,xcolor}
+\usepackage[most]{tcolorbox}
+\usepackage{fancyhdr,titlesec,hyperref,cleveref,lastpage}
+\usepackage{tikz,float,caption,listings}
+\usetikzlibrary{arrows.meta,positioning,calc,fit,backgrounds,shapes.geometric}
+\definecolor{mainblue}{RGB}{39,82,138}
+\definecolor{deepblue}{RGB}{25,55,95}
+\definecolor{softblue}{RGB}{235,243,252}
+\definecolor{softgreen}{RGB}{238,248,241}
+\definecolor{softorange}{RGB}{255,246,232}
+\definecolor{softgray}{RGB}{245,246,248}
+\definecolor{warnred}{RGB}{160,48,48}
+\hypersetup{unicode=true,colorlinks=true,linkcolor=deepblue,urlcolor=mainblue,citecolor=deepblue}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.36em}
+\setlength{\tabcolsep}{5pt}
+\renewcommand{\arraystretch}{1.2}
+\allowdisplaybreaks[4]
+\emergencystretch=3em
+\sloppy
+\pagestyle{fancy}\fancyhf{}\fancyfoot[C]{\small 第 \thepage\ 页，共 \pageref{LastPage} 页}\renewcommand{\headrulewidth}{0.4pt}
+\titleformat{\section}{\Large\bfseries\color{deepblue}}{\thesection}{0.65em}{}
+\titleformat{\subsection}{\large\bfseries\color{mainblue}}{\thesubsection}{0.55em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries}{\thesubsubsection}{0.5em}{}
+\numberwithin{equation}{section}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Prob}{\mathbb{P}}
+\newcommand{\Loss}{\mathcal{L}}
+\newcommand{\norm}[1]{\left\lVert #1\right\rVert}
+\newcommand{\ip}[2]{\left\langle #1,#2\right\rangle}
+\newcommand{\tr}{\operatorname{Tr}}
+\newcommand{\diag}{\operatorname{diag}}
+\newcommand{\rank}{\operatorname{rank}}
+\newcommand{\softmax}{\operatorname{softmax}}
+\newcommand{\argmin}{\operatorname*{arg\,min}}
+\newcommand{\argmax}{\operatorname*{arg\,max}}
+\newcommand{\sg}{\operatorname{sg}}
+\newcommand{\KL}{D_{\mathrm{KL}}}
+\newcommand{\dd}{\mathrm{d}}
+\newtcolorbox{keybox}[1][]{enhanced,breakable,colback=softblue,colframe=mainblue,boxrule=0.8pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\newtcolorbox{examplebox}[1][]{enhanced,breakable,colback=softgreen,colframe=green!45!black,boxrule=0.7pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\newtcolorbox{notebox}[1][]{enhanced,breakable,colback=softorange,colframe=orange!70!black,boxrule=0.7pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\newtcolorbox{criticalbox}[1][]{enhanced,breakable,colback=red!3,colframe=warnred,boxrule=0.8pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\lstset{basicstyle=\ttfamily\small,breaklines=true,frame=single,backgroundcolor=\color{softgray},numbers=left,numberstyle=\tiny,showstringspaces=false,columns=fullflexible}
+\hypersetup{pdftitle={17 Mixture-of-Recursions 数学过程详解},pdfauthor={OpenAI}}
+\fancyhead[L]{\small 17 Mixture-of-Recursions}
+\fancyhead[R]{\small 数学过程详解}
+\setlength{\abovedisplayskip}{0.82em}
+\setlength{\belowdisplayskip}{0.82em}
+\setlength{\abovedisplayshortskip}{0.45em}
+\setlength{\belowdisplayshortskip}{0.45em}
+\begin{document}
+\begin{center}
+{\LARGE\bfseries 17\_Mixture-of-Recursions 数学过程详解}\par
+\vspace{0.35em}
+{\large 动态递归路由、负载均衡与 KV 缓存复杂度}
+\end{center}
+\vspace{0.45em}
+\begin{keybox}[本文只处理真正需要推导的部分]
+本文推导 expert-choice/token-choice 路由、平均递归深度、KV 内存比、注意力 FLOPs 比、硬门梯度与因果泄漏。全文按“公式从哪里来--每个符号是什么--中间步骤为何成立--维度和复杂度如何核对--论文结论依赖哪些假设”的顺序展开；不复述实验表格，也不使用与论文无关的通用背景凑页数。
+\end{keybox}
+\tableofcontents
+\newpage
+
+\section{递归参数共享的基本计算图}
+设共享递归块为 $f_{\Phi'}$，第 $r$ 次递归的 token 表示为 $H_t^r\in\R^D$。固定深度递归模型执行
+\begin{equation}
+ H_t^{r+1}=f_{\Phi'}(H_t^r),\qquad r=1,\ldots,N_r.
+\end{equation}
+参数量只存一份 $\Phi'$，但 FLOPs 仍随递归次数近似线性增长。Mixture-of-Recursions 的核心是为每个 token 学习不同的有效递归深度 $d_t$。
+
+\section{Expert-choice 路由}
+第 $r$ 个递归专家根据当前隐藏状态计算标量分数
+\begin{equation}
+ g_t^r=\mathcal G\!\left((\theta_r)^\top H_t^r\right),
+\end{equation}
+$\mathcal G$ 可为 sigmoid 或 tanh。令 $P_\beta(G_r)$ 为本批次所有分数的 $\beta$ 分位数阈值，则更新
+\begin{equation}
+ H_t^{r+1}=\begin{cases}
+ g_t^r f_{\Phi'}(H_t^r)+H_t^r,&g_t^r>P_\beta(G_r),\\
+ H_t^r,&\text{otherwise}.
+ \end{cases}
+\end{equation}
+分位数选择保证每层近似固定容量。若保留比例为 $c_r$，则每层处理 token 数约为 $c_rN_{\rm ctx}$。
+
+\subsection{分位数与 top-$k$ 的等价}
+若共有 $N$ 个分数且希望选 $k$ 个，取
+\begin{equation}
+ \beta=1-\frac{k}{N}
+\end{equation}
+的经验分位数。没有并列值时，$g_t>P_\beta$ 与 top-$k$ 等价；有并列值时需额外 tie-breaking 才能保证严格容量。
+
+\section{层级过滤与有效深度分布}
+论文要求只有第 $r$ 步被选中的 token 才能进入第 $r+1$ 步。令二值门
+\begin{equation}
+ m_t^r=\mathbf1[g_t^r>P_\beta(G_r)].
+\end{equation}
+层级约束为
+\begin{equation}
+ m_t^{r+1}\le m_t^r.
+\end{equation}
+有效递归深度可写为
+\begin{equation}
+ d_t=\sum_{r=1}^{N_r}m_t^r.
+\end{equation}
+因此 $d_t$ 是非负整数，并且越难的 token 可被路由到更深层。
+
+\section{Token-choice 路由}
+Token-choice 在第一次递归前一次性决定深度。路由器输出
+\begin{equation}
+ g_t=\softmax(\Theta^\top H_t^1)\in\R^{N_r},
+\end{equation}
+并选择
+\begin{equation}
+ i_t=\argmax_{j\in\{1,\ldots,N_r\}}g_{t,j}.
+\end{equation}
+$i_t$ 表示 token 需要执行的递归次数。递归更新可概括为
+\begin{equation}
+ H_t^{r+1}=\begin{cases}
+ g_{t,r}f_{\Phi'}(H_t^r)+H_t^1,&r=i_t,\\
+ g_{t,r}f_{\Phi'}(H_t^r),&r<i_t.
+ \end{cases}
+\end{equation}
+该设计没有每层 top-$k$ 使用未来批次统计导致的因果泄漏，但不同专家可能负载失衡。
+
+\section{负载均衡损失}
+若批次中分配到专家 $j$ 的比例为
+\begin{equation}
+ f_j=\frac1N\sum_{t=1}^{N}\mathbf1[i_t=j],
+\end{equation}
+平均路由概率为
+\begin{equation}
+ p_j=\frac1N\sum_{t=1}^{N}g_{t,j},
+\end{equation}
+常见 MoE 均衡项为
+\begin{equation}
+ \Loss_{\rm bal}=N_r\sum_{j=1}^{N_r}f_jp_j.
+\end{equation}
+当路由均匀时 $f_j=p_j=1/N_r$，损失为 1。若少数专家同时拥有高分配比例和高概率，乘积增大，梯度推动分布展开。
+
+\section{等计算预算下的容量序列}
+若 token-choice 完美均衡，每个 token 的最终深度 $i\in\{1,\ldots,N_r\}$ 等概率。第 $j$ 次递归会处理所有 $i\ge j$ 的 token，因此处理比例
+\begin{equation}
+ c_j=\Prob(i\ge j)=\frac{N_r-j+1}{N_r}.
+\end{equation}
+总平均递归次数
+\begin{align}
+ \E[d]
+ &=\sum_{j=1}^{N_r}c_j\\
+ &=\frac1{N_r}\sum_{s=1}^{N_r}s\\
+ &=\boxed{\frac{N_r+1}{2}}.
+\end{align}
+Expert-choice 为公平比较使用同样的容量序列
+\begin{equation}
+ 1,\frac{N_r-1}{N_r},\ldots,\frac1{N_r}.
+\end{equation}
+
+\section{Recursion-wise KV 缓存内存比例}
+标准固定递归模型为每个深度保存完整 KV，归一化内存为 $N_rN_{\rm ctx}$。若第 $j$ 层只缓存比例 $c_j$，总缓存 token 数
+\begin{equation}
+ N_{\rm ctx}\sum_{j=1}^{N_r}c_j
+ =N_{\rm ctx}\frac{N_r+1}{2}.
+\end{equation}
+相对比例
+\begin{equation}
+ \boxed{R_{\rm KV}^{\rm cache}
+ =\frac{N_r+1}{2N_r}.}
+\end{equation}
+当 $N_r\to\infty$ 时趋近 $1/2$，说明该方案最多约节省一半递归块 KV，而不是随递归数无限缩小。
+
+\section{Recursive KV sharing 的内存比例}
+若只在第一次递归缓存完整 KV，后续全部共享，则总缓存为 $N_{\rm ctx}$，相对固定深度模型
+\begin{equation}
+ \boxed{R_{\rm KV}^{\rm share}=\frac1{N_r}.}
+\end{equation}
+内存节省更大，但每一深度的 query 仍需读取同一份完整 KV，因此 IO 比例不一定同样降低。
+
+\section{注意力 FLOPs 比例}
+全注意力单层主要成本与
+\begin{equation}
+ QK^\top:\quad O(N_qN_kD)
+\end{equation}
+成正比。
+
+Recursion-wise caching 中，query 和 key 都只含 $k$ 个激活 token：
+\begin{equation}
+ R_{\rm attn}^{\rm cache}
+ =\frac{k^2}{N_{\rm ctx}^2}
+ =\boxed{\left(\frac{k}{N_{\rm ctx}}\right)^2}.
+\end{equation}
+Recursive sharing 中 query 只有 $k$，key 仍为全长 $N_{\rm ctx}$：
+\begin{equation}
+ R_{\rm attn}^{\rm share}
+ =\frac{kN_{\rm ctx}}{N_{\rm ctx}^2}
+ =\boxed{\frac{k}{N_{\rm ctx}}}.
+\end{equation}
+这解释了为什么共享方案内存最省，但注意力 FLOPs 降幅不如局部缓存平方级。
+
+\section{路由门的可导性}
+硬 top-$k$ 与 $\argmax$ 不可导。训练时常把路径选择视作停止梯度，并通过被选 token 的连续门值 $g_t^r$ 传梯度：
+\begin{equation}
+ H_t^{r+1}=m_t^r g_t^r f(H_t^r)+(1-m_t^r)H_t^r.
+\end{equation}
+对路由分数
+\begin{equation}
+ \frac{\partial H_t^{r+1}}{\partial g_t^r}=m_t^r f(H_t^r).
+\end{equation}
+未被选择的 token 得不到主任务梯度，因此需要辅助路由器、均衡损失或软路由预热避免门控早期塌缩。
+
+\section{参数共享与梯度累积}
+共享块 $\Phi'$ 在多个递归步被调用，总梯度为
+\begin{equation}
+ \nabla_{\Phi'}\Loss
+ =\sum_{r=1}^{N_r}\sum_{t:m_t^r=1}
+ \frac{\partial\Loss}{\partial H_t^{r+1}}
+ \frac{\partial f_{\Phi'}(H_t^r)}{\partial\Phi'}g_t^r.
+\end{equation}
+因此同一参数同时接收不同深度与不同 token 难度的信号。共享减少参数，却可能造成递归步间梯度冲突；入口/出口层不共享可缓解所有层完全同质化。
+
+\section{因果泄漏问题}
+Expert-choice 在训练时对整段序列分数排序。对位置 $t$ 的阈值
+\begin{equation}
+ P_\beta(G_r)
+\end{equation}
+可能依赖未来位置 $s>t$ 的分数，因此当前 token 是否继续计算间接看到了未来统计，违反自回归因果性。推理时未来 token 不存在，路由分布可能偏移。辅助路由器的目标是用仅依赖当前/过去信息的函数近似训练时 top-$k$ 决策。
+
+\section{结论边界}
+\begin{criticalbox}[动态深度的三个成本不能混为一谈]
+参数量由共享决定，FLOPs 由平均激活递归次数决定，KV 内存/IO 又由缓存策略决定。共享参数并不自动减少 FLOPs；减少 KV 内存也不必然减少 KV 读取；top-$k$ 静态容量保证负载，却可能引入因果泄漏。
+\end{criticalbox}
+\section{最终公式路线图}
+\begin{keybox}[阅读完成后应掌握]
+本文的数学主线已经被压缩为：先明确随机变量或张量的定义，再由概率分解、微分方程、优化目标或矩阵运算得到论文核心公式；最后用维度、极限情形、参数量和复杂度进行反向核验。遇到论文中的简写式，应先恢复被省略的条件变量、求和指标与归一化常数，再讨论其算法含义。
+\end{keybox}
+\clearpage
+\section{共享递归块与有效深度}
+设同一个 Transformer 块 $F_\theta$ 重复应用 $R$ 次：
+\begin{equation}
+ h^{(r+1)}=F_\theta(h^{(r)}),\qquad r=0,\ldots,R-1.
+\end{equation}
+若每个 token $i$ 有停止深度 $d_i$，则其最终表示为
+\begin{equation}
+ y_i=h_i^{(d_i)}.
+\end{equation}
+整个 batch 的平均有效深度
+\begin{equation}
+ \bar d=\frac1{BT}\sum_{b,i}d_{bi}
+\end{equation}
+直接决定主要计算量。参数量只包含一份 $\theta$，而计算量仍与 $\bar d$ 成正比。
+
+\section{Token-choice 路由的概率模型}
+令路由器在第 $r$ 次递归给 token $i$ 输出继续概率
+\begin{equation}
+ p_{ir}=\sigma(s_{ir}).
+\end{equation}
+若每次独立做 Bernoulli 决策，token 至少执行到第 $r$ 次的生存概率为
+\begin{equation}
+ S_{ir}=\prod_{k=1}^{r-1}p_{ik}.
+\end{equation}
+停止于第 $r$ 次的概率
+\begin{equation}
+ \Pr(d_i=r)=S_{ir}(1-p_{ir}),
+\end{equation}
+最后一层强制停止时需把剩余概率并入 $r=R$。期望深度可用尾和公式：
+\begin{equation}
+ \E[d_i]=\sum_{r=1}^{R}\Pr(d_i\ge r)=\sum_{r=1}^{R}S_{ir}.
+\end{equation}
+这给出一个可微的计算预算正则
+\begin{equation}
+ \Loss_{\rm compute}=\lambda\frac1{BT}\sum_{b,i,r}S_{bir}.
+\end{equation}
+
+\section{Expert-choice 与 Token-choice 的容量差异}
+Token-choice 中每个 token 自己选择是否继续，某轮被选 token 数
+\begin{equation}
+ N_r=\sum_i\mathbf 1(s_{ir}>\tau_r)
+\end{equation}
+是随机的，可能导致负载不均。Expert-choice 则由第 $r$ 个递归“专家”选 top-$C_r$ 个 token：
+\begin{equation}
+ \mathcal I_r=\operatorname{TopK}(s_{1:T,r},C_r).
+\end{equation}
+于是每轮计算量严格固定为 $C_r$。但 token 的选择不再独立，某 token 是否被选取取决于其他 token 的分数排序。
+
+\section{层级过滤与有效深度分布}
+若要求“进入第 $r+1$ 轮必须先进入第 $r$ 轮”，掩码满足
+\begin{equation}
+ m_{i,r+1}\le m_{ir}.
+\end{equation}
+可用累乘构造
+\begin{equation}
+ m_{ir}=\prod_{k=1}^{r}g_{ik},\qquad g_{ik}\in\{0,1\}.
+\end{equation}
+于是深度分布天然形成嵌套集合
+\begin{equation}
+ \mathcal I_{r+1}\subseteq\mathcal I_r.
+\end{equation}
+这防止 token “跳过中间递归后又重新出现”，保持计算图因果一致。
+
+\section{硬路由的 Straight-Through 梯度}
+前向硬门
+\begin{equation}
+ m=\mathbf 1(p>\tau)
+\end{equation}
+对分数的真实导数几乎处处为零。STE 可写为
+\begin{equation}
+ \widetilde m=\sg(m-p)+p.
+\end{equation}
+前向数值为 $m$，因为 $\sg(m-p)$ 保留值；反向
+\begin{equation}
+ \frac{\partial\widetilde m}{\partial s}
+ =\frac{\partial p}{\partial s}=p(1-p).
+\end{equation}
+因此路由器能收到梯度，但该梯度并非离散 top-$k$ 目标的真实梯度。温度降低会使 $p$ 更接近 0/1，同时令 $p(1-p)$ 变小，存在探索与梯度消失权衡。
+
+\section{负载均衡损失的梯度方向}
+设第 $r$ 轮理想负载比例为 $q_r$，实际软负载
+\begin{equation}
+ \hat q_r=\frac1{BT}\sum_i p_{ir}.
+\end{equation}
+平方负载损失
+\begin{equation}
+ \Loss_{\rm bal}=\sum_r(\hat q_r-q_r)^2.
+\end{equation}
+对某个 logit $s_{ir}$，
+\begin{equation}
+ \frac{\partial\Loss_{\rm bal}}{\partial s_{ir}}
+ =\frac{2}{BT}(\hat q_r-q_r)p_{ir}(1-p_{ir}).
+\end{equation}
+若该轮负载过高，梯度下降会降低所有相关 logits；若负载过低，则提升它们。
+
+\section{参数共享下的梯度累积与时间 Jacobian}
+总损失对共享参数
+\begin{equation}
+ \nabla_\theta\Loss
+ =\sum_{r=0}^{R-1}
+ \left(\frac{\partial h^{(r+1)}}{\partial\theta}\right)^\top
+ \nabla_{h^{(r+1)}}\Loss.
+\end{equation}
+状态梯度沿递归展开：
+\begin{equation}
+ \frac{\partial h^{(R)}}{\partial h^{(0)}}
+ =\prod_{r=0}^{R-1}J_r,
+ \qquad J_r=\frac{\partial F_\theta(h^{(r)})}{\partial h^{(r)}}.
+\end{equation}
+共享参数不消除 BPTT 式 Jacobian 连乘，因此递归很深时仍可能梯度爆炸或消失。残差形式 $F(h)=h+G(h)$ 把每个因子变为 $I+J_G$。
+
+\section{KV 缓存的三种内存公式}
+设序列长度 $T$，每层 KV 维度总计 $2d_{kv}$，字节数 $b$。普通 $L$ 层模型缓存
+\begin{equation}
+ M_{\rm standard}=2LTd_{kv}b.
+\end{equation}
+若共享递归块但每次递归保留独立 KV，
+\begin{equation}
+ M_{\rm recursion}=2RTd_{kv}b.
+\end{equation}
+若 recursion-wise KV sharing，只保留一份，
+\begin{equation}
+ M_{\rm shared}=2Td_{kv}b.
+\end{equation}
+相对普通模型比例为
+\begin{equation}
+ \frac{M_{\rm shared}}{M_{\rm standard}}=\frac1L.
+\end{equation}
+但共享 KV 意味着不同递归深度无法保存各自的键值表示，表达能力可能下降。
+
+\section{一个四 token 的路由例子}
+四个 token 在三轮的继续概率为
+\begin{equation}
+ P=\begin{pmatrix}
+ 0.9&0.8&0.5\\
+ 0.8&0.2&0.1\\
+ 0.6&0.6&0.6\\
+ 0.3&0.2&0.1
+ \end{pmatrix}.
+\end{equation}
+第一个 token 的期望深度
+\begin{equation}
+ \E[d_1]=1+0.9+0.9\times0.8=2.62.
+\end{equation}
+第四个 token
+\begin{equation}
+ \E[d_4]=1+0.3+0.3\times0.2=1.36.
+\end{equation}
+因此路由器把更多计算分配给认为更困难的 token。若使用 top-$2$ expert-choice，则每轮恰好两个 token 继续，计算固定，但期望深度公式需基于排序事件而不是独立 Bernoulli。
+
+\section{因果泄漏为何会发生}
+在自回归生成中，第 $i$ 个 token 的路由决策只能依赖 $x_{\le i}$。若为了全序列负载平衡，用未来 token 分数共同决定当前 token 是否进入递归，
+\begin{equation}
+ m_i=\operatorname{TopK}(s_{1:T})_i,
+\end{equation}
+则 $m_i$ 依赖 $s_{j},j>i$，从而间接泄漏未来信息。安全做法是逐前缀决策、训练时使用因果掩码，或只在已经给定的 prompt token 上做全局 expert-choice。
+\end{document}

@@ -1,0 +1,686 @@
+\documentclass[UTF8,12pt,a4paper,fontset=none]{ctexart}
+\usepackage[a4paper,left=1.82cm,right=1.82cm,top=1.72cm,bottom=1.82cm,headheight=15pt]{geometry}
+\usepackage{fontspec,xeCJK}
+\setmainfont{Liberation Serif}
+\setsansfont{DejaVu Sans}
+\setmonofont{DejaVu Sans Mono}
+\setCJKmainfont[BoldFont=Noto Serif CJK SC Bold]{Noto Serif CJK SC}
+\setCJKsansfont[BoldFont=Noto Sans CJK SC Bold]{Noto Sans CJK SC}
+\setCJKmonofont{Noto Sans Mono CJK SC}
+\usepackage{amsmath,amssymb,mathtools,bm}
+\usepackage{booktabs,longtable,tabularx,array,multirow}
+\usepackage{enumitem,xcolor}
+\usepackage[most]{tcolorbox}
+\usepackage{fancyhdr,titlesec,hyperref,cleveref,lastpage}
+\usepackage{tikz,float,caption,listings}
+\usetikzlibrary{arrows.meta,positioning,calc,fit,backgrounds,shapes.geometric}
+\definecolor{mainblue}{RGB}{39,82,138}
+\definecolor{deepblue}{RGB}{25,55,95}
+\definecolor{softblue}{RGB}{235,243,252}
+\definecolor{softgreen}{RGB}{238,248,241}
+\definecolor{softorange}{RGB}{255,246,232}
+\definecolor{softgray}{RGB}{245,246,248}
+\definecolor{warnred}{RGB}{160,48,48}
+\hypersetup{unicode=true,colorlinks=true,linkcolor=deepblue,urlcolor=mainblue,citecolor=deepblue}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.36em}
+\setlength{\tabcolsep}{5pt}
+\renewcommand{\arraystretch}{1.2}
+\allowdisplaybreaks[4]
+\emergencystretch=3em
+\sloppy
+\pagestyle{fancy}\fancyhf{}\fancyfoot[C]{\small 第 \thepage\ 页，共 \pageref{LastPage} 页}\renewcommand{\headrulewidth}{0.4pt}
+\titleformat{\section}{\Large\bfseries\color{deepblue}}{\thesection}{0.65em}{}
+\titleformat{\subsection}{\large\bfseries\color{mainblue}}{\thesubsection}{0.55em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries}{\thesubsubsection}{0.5em}{}
+\numberwithin{equation}{section}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Prob}{\mathbb{P}}
+\newcommand{\Loss}{\mathcal{L}}
+\newcommand{\norm}[1]{\left\lVert #1\right\rVert}
+\newcommand{\ip}[2]{\left\langle #1,#2\right\rangle}
+\newcommand{\tr}{\operatorname{Tr}}
+\newcommand{\diag}{\operatorname{diag}}
+\newcommand{\rank}{\operatorname{rank}}
+\newcommand{\softmax}{\operatorname{softmax}}
+\newcommand{\argmin}{\operatorname*{arg\,min}}
+\newcommand{\argmax}{\operatorname*{arg\,max}}
+\newcommand{\sg}{\operatorname{sg}}
+\newcommand{\KL}{D_{\mathrm{KL}}}
+\newcommand{\dd}{\mathrm{d}}
+\newtcolorbox{keybox}[1][]{enhanced,breakable,colback=softblue,colframe=mainblue,boxrule=0.8pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\newtcolorbox{examplebox}[1][]{enhanced,breakable,colback=softgreen,colframe=green!45!black,boxrule=0.7pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\newtcolorbox{notebox}[1][]{enhanced,breakable,colback=softorange,colframe=orange!70!black,boxrule=0.7pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\newtcolorbox{criticalbox}[1][]{enhanced,breakable,colback=red!3,colframe=warnred,boxrule=0.8pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\lstset{basicstyle=\ttfamily\small,breaklines=true,frame=single,backgroundcolor=\color{softgray},numbers=left,numberstyle=\tiny,showstringspaces=false,columns=fullflexible}
+\hypersetup{pdftitle={23 Scalable Diffusion Models with Transformers 数学过程详解},pdfauthor={OpenAI}}
+\fancyhead[L]{\small 23 Scalable Diffusion Models with Transformers}
+\fancyhead[R]{\small 数学过程详解}
+\setlength{\abovedisplayskip}{0.82em}
+\setlength{\belowdisplayskip}{0.82em}
+\setlength{\abovedisplayshortskip}{0.45em}
+\setlength{\belowdisplayshortskip}{0.45em}
+\begin{document}
+\begin{center}
+{\LARGE\bfseries 23\_Scalable Diffusion Models with Transformers 数学过程详解}\par
+\vspace{0.35em}
+{\large DDPM 后验、噪声目标、Patchify、AdaLN-Zero 与计算缩放}
+\end{center}
+\vspace{0.45em}
+\begin{keybox}[本文只处理真正需要推导的部分]
+本文从 Gaussian 前向链推导后验和噪声 MSE，核对 latent/patch 维度、Transformer FLOPs、AdaLN-Zero 恒等初始化与 CFG 的 Bayes 解释。全文按“公式从哪里来--每个符号是什么--中间步骤为何成立--维度和复杂度如何核对--论文结论依赖哪些假设”的顺序展开；不复述实验表格，也不使用与论文无关的通用背景凑页数。
+\end{keybox}
+\tableofcontents
+\newpage
+
+\section{前向扩散分布的闭式形式}
+令 $\beta_t\in(0,1)$、$\alpha_t=1-\beta_t$、$\bar\alpha_t=\prod_{s=1}^{t}\alpha_s$。逐步前向过程
+\begin{equation}
+ q(x_t\mid x_{t-1})=\mathcal N(\sqrt{\alpha_t}x_{t-1},\beta_t I)
+\end{equation}
+可递推为
+\begin{equation}
+ \boxed{q(x_t\mid x_0)=\mathcal N(\sqrt{\bar\alpha_t}x_0,(1-\bar\alpha_t)I)}.
+\end{equation}
+证明用归纳法。若
+\begin{equation}
+ x_{t-1}=\sqrt{\bar\alpha_{t-1}}x_0+\sqrt{1-\bar\alpha_{t-1}}\epsilon_{t-1},
+\end{equation}
+代入一步转移：
+\begin{align}
+ x_t&=\sqrt{\alpha_t}x_{t-1}+\sqrt{\beta_t}\epsilon_t\\
+ &=\sqrt{\bar\alpha_t}x_0+
+ \sqrt{\alpha_t(1-\bar\alpha_{t-1})}\epsilon_{t-1}+\sqrt{\beta_t}\epsilon_t.
+\end{align}
+后两项独立高斯，其方差和
+\begin{equation}
+ \alpha_t(1-\bar\alpha_{t-1})+\beta_t=1-\bar\alpha_t.
+\end{equation}
+因此可重参数化为
+\begin{equation}
+ x_t=\sqrt{\bar\alpha_t}x_0+\sqrt{1-\bar\alpha_t}\epsilon,
+ \qquad \epsilon\sim\mathcal N(0,I).
+\end{equation}
+
+\section{后验 $q(x_{t-1}\mid x_t,x_0)$ 与噪声预测}
+两个高斯因子相乘仍为高斯，完成平方得到
+\begin{equation}
+ q(x_{t-1}\mid x_t,x_0)=\mathcal N(\widetilde\mu_t,\widetilde\beta_tI),
+\end{equation}
+其中
+\begin{equation}
+ \widetilde\beta_t=\frac{1-\bar\alpha_{t-1}}{1-\bar\alpha_t}\beta_t,
+\end{equation}
+\begin{equation}
+ \widetilde\mu_t=
+ \frac{\sqrt{\bar\alpha_{t-1}}\beta_t}{1-\bar\alpha_t}x_0+
+ \frac{\sqrt{\alpha_t}(1-\bar\alpha_{t-1})}{1-\bar\alpha_t}x_t.
+\end{equation}
+由前向式解出
+\begin{equation}
+ x_0=\frac{x_t-\sqrt{1-\bar\alpha_t}\epsilon}{\sqrt{\bar\alpha_t}},
+\end{equation}
+用 $\epsilon_\theta(x_t,t,c)$ 替换真实噪声，即得到反向均值参数化
+\begin{equation}
+ \mu_\theta(x_t,t,c)=\frac1{\sqrt{\alpha_t}}
+ \left(x_t-\frac{\beta_t}{\sqrt{1-\bar\alpha_t}}\epsilon_\theta(x_t,t,c)\right).
+\end{equation}
+
+\section{ELBO 为什么化为加权噪声均方误差}
+反向模型
+\begin{equation}
+ p_\theta(x_{0:T})=p(x_T)\prod_{t=1}^{T}p_\theta(x_{t-1}\mid x_t)
+\end{equation}
+的负 ELBO 可分解为
+\begin{equation}
+ \Loss_{\rm VLB}=\Loss_0+\sum_{t=2}^{T}
+ \KL(q(x_{t-1}\mid x_t,x_0)\Vert p_\theta(x_{t-1}\mid x_t))+\Loss_T.
+\end{equation}
+若两者协方差固定相同，Gaussian KL 只剩均值差：
+\begin{equation}
+ \KL=\frac{1}{2\sigma_t^2}\norm{\widetilde\mu_t-\mu_\theta}_2^2+\text{const}.
+\end{equation}
+把均值都写成噪声参数化，得到
+\begin{equation}
+ \KL=w_t\norm{\epsilon-\epsilon_\theta(x_t,t,c)}_2^2+\text{const}.
+\end{equation}
+DiT 使用常见简化目标
+\begin{equation}
+ \boxed{\Loss_{\rm simple}=\E_{x_0,t,\epsilon}
+orm{\epsilon_\theta(x_t,t,c)-\epsilon}_2^2},
+\end{equation}
+并用完整变分项训练可学习协方差。
+
+\section{Latent Diffusion 的维度和压缩}
+VAE 编码器
+\begin{equation}
+ z=E(x),\qquad x\in\R^{H\times W\times3},\quad z\in\R^{I\times I\times C}
+\end{equation}
+把空间分辨率降到 $I=H/f$。像素空间注意力 token 数约 $HW/p^2$，latent 空间变为
+\begin{equation}
+ T=\left(\frac{I}{p}\right)^2=\left(\frac{H}{fp}\right)^2.
+\end{equation}
+因此注意力二次项的比值
+\begin{equation}
+ \frac{T_{\rm latent}^2}{T_{\rm pixel}^2}=\frac1{f^4}.
+\end{equation}
+若 $f=8$，仅二次注意力项理论上缩小 $4096$ 倍。
+
+\section{Patchify 的矩阵形式}
+每个 $p\times p\times C$ patch 展平为 $u_i\in\R^{p^2C}$，线性投影
+\begin{equation}
+ h_i=u_iW_e+b_e,\qquad W_e\in\R^{p^2C\times d}.
+\end{equation}
+序列长度
+\begin{equation}
+ \boxed{T=(I/p)^2}.
+\end{equation}
+将 $p$ 减半会让 $T$ 变为 $4T$。参数 $W_e$ 只线性随 $p^2$ 改变，但 Transformer 主体参数不依赖 $T$；这解释了“参数量基本不变而 Gflops 激增”。
+
+\section{Transformer Block 的 FLOPs 近似}
+对长度 $T$、宽度 $d$：QKV 和输出投影约
+\begin{equation}
+ C_{\rm proj}\approx4Td^2.
+\end{equation}
+注意力分数与加权求和约
+\begin{equation}
+ C_{\rm attn}\approx2T^2d.
+\end{equation}
+扩展率 $r_m$ 的 MLP 约
+\begin{equation}
+ C_{\rm mlp}\approx2r_mTd^2.
+\end{equation}
+单 Block
+\begin{equation}
+ \boxed{C_{\rm block}\approx(4+2r_m)Td^2+2T^2d}.
+\end{equation}
+当 $d\gg T$ 时线性投影/MLP 主导；当高分辨率使 $T$ 很大时，$T^2d$ 主导。
+
+\section{AdaLN-Zero 的完整公式}
+条件向量 $c=e_t+e_y$ 经过 MLP 产生六组参数
+\begin{equation}
+ (\gamma_1,\beta_1,\alpha_1,\gamma_2,\beta_2,\alpha_2)=g(c).
+\end{equation}
+Block 可写为
+\begin{align}
+ h'&=h+\alpha_1\odot \operatorname{MSA}((1+\gamma_1)\odot\operatorname{LN}(h)+\beta_1),\\
+ h''&=h'+\alpha_2\odot \operatorname{MLP}((1+\gamma_2)\odot\operatorname{LN}(h')+\beta_2).
+\end{align}
+若最后一层零初始化，则训练开始时
+\begin{equation}
+ \gamma_i=\beta_i=\alpha_i=0,
+\end{equation}
+从而 $h''=h$。整个深网络初始接近恒等映射，梯度先学习残差门 $\alpha_i$，再逐渐启用子层。
+
+\section{Classifier-Free Guidance 的 Bayes 推导}
+Bayes 公式
+\begin{equation}
+ \log p(c\mid x)=\log p(x\mid c)-\log p(x)+\text{const}
+\end{equation}
+给出
+\begin{equation}
+ \nabla_x\log p(c\mid x)=s_c(x)-s_u(x),
+\end{equation}
+其中 $s_c=\nabla_x\log p(x\mid c)$、$s_u=\nabla_x\log p(x)$。引导 score
+\begin{equation}
+ \widehat s=s_u+s(s_c-s_u).
+\end{equation}
+噪声预测与 score 满足
+\begin{equation}
+ s_\theta(x_t,t)=-\frac{\epsilon_\theta(x_t,t)}{\sqrt{1-\bar\alpha_t}},
+\end{equation}
+所以同样线性组合噪声：
+\begin{equation}
+ \boxed{\widehat\epsilon=\epsilon_u+s(\epsilon_c-\epsilon_u)}.
+\end{equation}
+
+\section{为什么论文用 Gflops 而不是只用参数量}
+参数量近似
+\begin{equation}
+ P\approx N_b(4+2r_m)d^2
+\end{equation}
+与 token 数 $T$ 无关；前向计算却含 $T$ 和 $T^2$。两个模型可能参数量相同，但 patch size 不同导致
+\begin{equation}
+ \frac{C(p/2)}{C(p)}\approx4\quad\text{到}\quad16
+\end{equation}
+之间，具体取决于 $Td^2$ 或 $T^2d$ 哪项主导。因此 DiT 的缩放结论是“增加实际前向计算量稳定改善 FID”，而不是单独的参数缩放律。
+% AUGMENTED_DETAILED_MATH
+
+\section{从逐步加噪到闭式边缘分布}
+前向过程
+\begin{equation}
+ q(x_t\mid x_{t-1})
+ =\mathcal N(\sqrt{\alpha_t}x_{t-1},(1-\alpha_t)I).
+\end{equation}
+重参数化
+\begin{equation}
+ x_t=\sqrt{\alpha_t}x_{t-1}+\sqrt{1-\alpha_t}\epsilon_t.
+\end{equation}
+递归代入两步
+\begin{align}
+ x_t
+ &=\sqrt{\alpha_t\alpha_{t-1}}x_{t-2}
+ +\sqrt{\alpha_t(1-\alpha_{t-1})}\epsilon_{t-1}
+ +\sqrt{1-\alpha_t}\epsilon_t.
+\end{align}
+独立高斯线性组合仍为高斯，方差为
+\begin{equation}
+ \alpha_t(1-\bar\alpha_{t-1})+(1-\alpha_t)
+ =1-\bar\alpha_t.
+\end{equation}
+故归纳得到
+\begin{equation}
+ \boxed{x_t=\sqrt{\bar\alpha_t}x_0+
+ \sqrt{1-\bar\alpha_t}\epsilon,
+ \quad \epsilon\sim\mathcal N(0,I).}
+\end{equation}
+
+\section{后验均值的配方推导}
+需要
+\begin{equation}
+ q(x_{t-1}\mid x_t,x_0)
+ \propto q(x_t\mid x_{t-1})q(x_{t-1}\mid x_0).
+\end{equation}
+两项都是高斯。负对数中关于 $x_{t-1}$ 的二次型为
+\begin{equation}
+ \frac{\norm{x_t-\sqrt{\alpha_t}x_{t-1}}^2}{2\beta_t}
+ +\frac{\norm{x_{t-1}-\sqrt{\bar\alpha_{t-1}}x_0}^2}
+ {2(1-\bar\alpha_{t-1})}.
+\end{equation}
+收集二次和一次项，得到方差
+\begin{equation}
+ \widetilde\beta_t
+ =\frac{1-\bar\alpha_{t-1}}{1-\bar\alpha_t}\beta_t
+\end{equation}
+以及均值
+\begin{equation}
+ \widetilde\mu_t
+ =\frac{\sqrt{\bar\alpha_{t-1}}\beta_t}{1-\bar\alpha_t}x_0
+ +\frac{\sqrt{\alpha_t}(1-\bar\alpha_{t-1})}{1-\bar\alpha_t}x_t.
+\end{equation}
+
+\section{用噪声预测重写后验均值}
+由闭式加噪
+\begin{equation}
+ x_0=\frac{x_t-\sqrt{1-\bar\alpha_t}\epsilon}{\sqrt{\bar\alpha_t}}.
+\end{equation}
+代入 $\widetilde\mu_t$ 并整理可得
+\begin{equation}
+ \widetilde\mu_t
+ =\frac1{\sqrt{\alpha_t}}
+ \left(x_t-\frac{\beta_t}{\sqrt{1-\bar\alpha_t}}\epsilon\right).
+\end{equation}
+因此模型只需预测 $\epsilon_\theta(x_t,t)$，反向均值取
+\begin{equation}
+ \mu_\theta
+ =\frac1{\sqrt{\alpha_t}}
+ \left(x_t-\frac{\beta_t}{\sqrt{1-\bar\alpha_t}}\epsilon_\theta\right).
+\end{equation}
+
+\section{ELBO 到加权噪声 MSE}
+变分下界含逐步 KL
+\begin{equation}
+ \Loss_t=\E\KL(q(x_{t-1}\mid x_t,x_0)
+ \Vert p_\theta(x_{t-1}\mid x_t)).
+\end{equation}
+若两者方差固定相同 $\sigma_t^2I$，KL 化为均值 MSE：
+\begin{equation}
+ \Loss_t=\frac1{2\sigma_t^2}\E\norm{\widetilde\mu_t-\mu_\theta}^2.
+\end{equation}
+两个均值之差
+\begin{equation}
+ \widetilde\mu_t-\mu_\theta
+ =\frac{\beta_t}{\sqrt{\alpha_t(1-\bar\alpha_t)}}
+ (\epsilon_\theta-\epsilon).
+\end{equation}
+故
+\begin{equation}
+ \Loss_t=w_t\E\norm{\epsilon-\epsilon_\theta}^2,
+\end{equation}
+其中
+\begin{equation}
+ w_t=\frac{\beta_t^2}{2\sigma_t^2\alpha_t(1-\bar\alpha_t)}.
+\end{equation}
+实践常去掉 $w_t$ 使用 simple loss，这是优化重加权，而非与 ELBO 完全相同。
+
+\section{$x$、$\epsilon$、$v$ 三种参数化}
+定义
+\begin{equation}
+ x_t=\alpha_tx_0+\sigma_t\epsilon,
+ \qquad
+ v_t=\alpha_t\epsilon-\sigma_tx_0,
+\end{equation}
+且常取 $\alpha_t^2+\sigma_t^2=1$。矩阵形式
+\begin{equation}
+ \begin{bmatrix}x_t\\v_t\end{bmatrix}
+ =\begin{bmatrix}\alpha_t&\sigma_t\\-\sigma_t&\alpha_t\end{bmatrix}
+ \begin{bmatrix}x_0\\\epsilon\end{bmatrix}.
+\end{equation}
+该矩阵正交，逆变换
+\begin{equation}
+ x_0=\alpha_tx_t-\sigma_tv_t,
+ \qquad
+ \epsilon=\sigma_tx_t+\alpha_tv_t.
+\end{equation}
+所以三种预测目标信息等价，但误差被时间相关系数缩放，训练条件数不同。
+
+\section{Patchify 与 token 数}
+潜变量大小 $H\times W\times C$，patch 边长 $p$。token 数
+\begin{equation}
+ N=\frac{HW}{p^2}.
+\end{equation}
+每个 patch 展平维度 $p^2C$，线性嵌入
+\begin{equation}
+ h_i=W_px_i+b_p,
+ \qquad W_p\in\R^{d\times p^2C}.
+\end{equation}
+增大 $p$ 使注意力 $O(N^2d)$ 按 $p^{-4}$ 降低，但 patch 投影参数和局部信息压缩增加。DiT 的尺度比较必须同时报告 token 数、宽度和深度。
+
+\section{Transformer Block FLOPs}
+对长度 $N$、宽度 $d$、MLP 比例 $r$：
+\begin{itemize}[leftmargin=2em]
+\item $Q,K,V,O$ 投影约 $8Nd^2$ FLOPs；
+\item 注意力矩阵和加权约 $4N^2d$；
+\item 两层 MLP 约 $4rNd^2$。
+\end{itemize}
+总计
+\begin{equation}
+ C_{\mathrm{block}}\approx(8+4r)Nd^2+4N^2d.
+\end{equation}
+当 $d\gg N$ 时线性层主导；当分辨率升高使 $N$ 很大时注意力二次项主导。仅用参数量无法区分这两种计算区间。
+
+\section{AdaLN-Zero 的恒等初始化}
+条件向量 $c$ 产生
+\begin{equation}
+ (\gamma_1,\beta_1,\alpha_1,
+ \gamma_2,\beta_2,\alpha_2)=M(c).
+\end{equation}
+Block
+\begin{align}
+ h'&=h+\alpha_1\odot
+ \operatorname{Attn}((1+\gamma_1)\odot\operatorname{LN}(h)+\beta_1),\\
+ h''&=h'+\alpha_2\odot
+ \operatorname{MLP}((1+\gamma_2)\odot\operatorname{LN}(h')+\beta_2).
+\end{align}
+若调制头末层零初始化，则所有调制量初始为 0，故
+\begin{equation}
+ h''=h.
+\end{equation}
+对残差分支参数的初始梯度会乘 $\alpha_i=0$，而调制门 $\alpha_i$ 本身仍有梯度
+\begin{equation}
+ \frac{\partial h'}{\partial\alpha_1}=\operatorname{Attn}(\operatorname{LN}(h)).
+\end{equation}
+训练先打开门，再逐渐学习残差函数，提升深模型稳定性。
+
+\section{CFG 的 Bayes 解释}
+由 Bayes
+\begin{equation}
+ \nabla_x\log p(c\mid x)
+ =\nabla_x\log p(x\mid c)-\nabla_x\log p(x).
+\end{equation}
+引导 score
+\begin{equation}
+ s_w=s_u+(1+w)(s_c-s_u)
+ =(1+w)s_c-ws_u.
+\end{equation}
+等价于增加 $\log p(c\mid x)$ 的权重。DiT 实现中通常在线性等价的噪声或速度输出上组合，但若方差也由网络预测，只应引导均值相关通道，不能盲目对所有输出一起外推。
+\clearpage
+\section{前向扩散闭式边缘分布的归纳证明}
+离散扩散定义为
+\begin{equation}
+ q(x_t\mid x_{t-1})=
+ \mathcal N\left(\sqrt{\alpha_t}x_{t-1},(1-\alpha_t)I\right),
+ \qquad \beta_t=1-\alpha_t.
+\end{equation}
+写成重参数化形式
+\begin{equation}
+ x_t=\sqrt{\alpha_t}x_{t-1}+\sqrt{1-\alpha_t}\epsilon_t.
+\end{equation}
+假设
+\begin{equation}
+ x_{t-1}=\sqrt{\bar\alpha_{t-1}}x_0+
+ \sqrt{1-\bar\alpha_{t-1}}\bar\epsilon_{t-1},
+\end{equation}
+其中 $\bar\alpha_t=\prod_{s=1}^{t}\alpha_s$。代入：
+\begin{align}
+ x_t
+ &=\sqrt{\alpha_t\bar\alpha_{t-1}}x_0
+ +\sqrt{\alpha_t(1-\bar\alpha_{t-1})}\bar\epsilon_{t-1}
+ +\sqrt{1-\alpha_t}\epsilon_t.
+\end{align}
+后两项是独立高斯，合并方差
+\begin{align}
+ \alpha_t(1-\bar\alpha_{t-1})+(1-\alpha_t)
+ &=1-\alpha_t\bar\alpha_{t-1}=1-\bar\alpha_t.
+\end{align}
+故
+\begin{equation}
+ \boxed{q(x_t\mid x_0)=
+ \mathcal N\left(\sqrt{\bar\alpha_t}x_0,
+ (1-\bar\alpha_t)I\right).}
+\end{equation}
+因此训练时无需真的循环加噪 $t$ 次，只需一次采样
+\begin{equation}
+ x_t=\sqrt{\bar\alpha_t}x_0+
+ \sqrt{1-\bar\alpha_t}\epsilon.
+\end{equation}
+
+\section{后验 $q(x_{t-1}\mid x_t,x_0)$ 的配方法}
+由 Bayes 公式
+\begin{equation}
+ q(x_{t-1}\mid x_t,x_0)
+ \propto q(x_t\mid x_{t-1})q(x_{t-1}\mid x_0).
+\end{equation}
+两项都是高斯。忽略常数，把指数中的二次项写为
+\begin{align}
+ -2\log q
+ &=\frac{\|x_t-\sqrt{\alpha_t}x_{t-1}\|^2}{\beta_t}
+ +\frac{\|x_{t-1}-\sqrt{\bar\alpha_{t-1}}x_0\|^2}
+ {1-\bar\alpha_{t-1}}+C.
+\end{align}
+收集 $x_{t-1}$ 的二次系数：
+\begin{equation}
+ A=\frac{\alpha_t}{\beta_t}+
+ \frac1{1-\bar\alpha_{t-1}}
+ =\frac{1-\bar\alpha_t}{\beta_t(1-\bar\alpha_{t-1})}.
+\end{equation}
+因此后验方差
+\begin{equation}
+ \widetilde\beta_t=A^{-1}
+ =\frac{1-\bar\alpha_{t-1}}{1-\bar\alpha_t}\beta_t.
+\end{equation}
+一次项给出后验均值
+\begin{equation}
+ \widetilde\mu_t(x_t,x_0)=
+ \frac{\sqrt{\bar\alpha_{t-1}}\beta_t}{1-\bar\alpha_t}x_0
+ +\frac{\sqrt{\alpha_t}(1-\bar\alpha_{t-1})}{1-\bar\alpha_t}x_t.
+\end{equation}
+
+\section{用噪声预测重写后验均值}
+由闭式加噪
+\begin{equation}
+ x_0=\frac{x_t-\sqrt{1-\bar\alpha_t}\epsilon}
+ {\sqrt{\bar\alpha_t}}.
+\end{equation}
+代入 $\widetilde\mu_t$ 并化简：
+\begin{equation}
+ \widetilde\mu_t
+ =\frac1{\sqrt{\alpha_t}}
+ \left(x_t-\frac{\beta_t}{\sqrt{1-\bar\alpha_t}}\epsilon\right).
+\end{equation}
+用网络 $\epsilon_\theta(x_t,t)$ 替代真实噪声，反向模型均值为
+\begin{equation}
+ \mu_\theta(x_t,t)=\frac1{\sqrt{\alpha_t}}
+ \left(x_t-\frac{\beta_t}{\sqrt{1-\bar\alpha_t}}
+ \epsilon_\theta(x_t,t)\right).
+\end{equation}
+这解释了噪声预测如何决定反向高斯的均值。
+
+\section{ELBO 到加权噪声均方误差}
+变分下界分解为
+\begin{align}
+ -\log p_\theta(x_0)
+ \le&\ \KL(q(x_T\mid x_0)\|p(x_T))\\
+ &+\sum_{t=2}^{T}
+ \E_q\KL(q(x_{t-1}\mid x_t,x_0)\|p_\theta(x_{t-1}\mid x_t))\\
+ &-\E_q\log p_\theta(x_0\mid x_1).
+\end{align}
+若 $p_\theta$ 与真实后验使用相同方差 $\sigma_t^2I$，中间 KL 只剩均值平方误差：
+\begin{equation}
+ \Loss_t=\frac1{2\sigma_t^2}
+ \|\widetilde\mu_t-\mu_\theta\|^2.
+\end{equation}
+把均值都写成噪声形式，得到
+\begin{equation}
+ \Loss_t=w_t\|\epsilon-\epsilon_\theta(x_t,t)\|^2,
+\end{equation}
+其中
+\begin{equation}
+ w_t=\frac{\beta_t^2}
+ {2\sigma_t^2\alpha_t(1-\bar\alpha_t)}.
+\end{equation}
+实践中的“simple loss”把 $w_t$ 设为常数 1，改变了 ELBO 的时间加权，但常常优化更稳定。
+
+\section{$x$、$\epsilon$、$v$ 三种参数化的线性变换}
+定义
+\begin{equation}
+ x_t=\alpha x+\sigma\epsilon,
+ \qquad \alpha^2+\sigma^2=1,
+\end{equation}
+速度参数
+\begin{equation}
+ v=\alpha\epsilon-\sigma x.
+\end{equation}
+写成矩阵
+\begin{equation}
+ \begin{pmatrix}x_t\\v\end{pmatrix}
+ =\begin{pmatrix}\alpha&\sigma\\-\sigma&\alpha\end{pmatrix}
+ \begin{pmatrix}x\\\epsilon\end{pmatrix}.
+\end{equation}
+该矩阵是正交旋转，逆为转置：
+\begin{equation}
+ x=\alpha x_t-\sigma v,
+ \qquad
+ \epsilon=\sigma x_t+\alpha v.
+\end{equation}
+因此三种目标在函数表达能力无限时等价，但有限网络下，目标的条件数与误差放大不同。
+
+\section{Latent Diffusion 的维度与信息压缩}
+原图 $x\in\R^{H\times W\times3}$ 经 VAE 编码为
+\begin{equation}
+ z\in\R^{H/f\times W/f\times c}.
+\end{equation}
+标量数量压缩比
+\begin{equation}
+ \rho=\frac{H W\cdot3}{(H/f)(W/f)c}
+ =\frac{3f^2}{c}.
+\end{equation}
+例如 $f=8,c=4$，
+\begin{equation}
+ \rho=\frac{3\times64}{4}=48.
+\end{equation}
+这并不表示信息无损压缩 48 倍，而是扩散主干处理的连续张量元素数量减少 48 倍；重建误差由 VAE 承担。
+
+\section{Patchify 后 token 数和注意力成本}
+潜变量空间大小 $H_z\times W_z$，patch 大小 $p$，token 数
+\begin{equation}
+ N=\frac{H_zW_z}{p^2}.
+\end{equation}
+每个 patch 展平维度 $p^2c$，线性映射到宽度 $d$：
+\begin{equation}
+ X_{\rm tok}=X_{\rm patch}W_E+b_E,
+ \qquad W_E\in\R^{p^2c\times d}.
+\end{equation}
+单层全注意力的二次项约
+\begin{equation}
+ C_{\rm attn}\approx4N^2d.
+\end{equation}
+patch 从 $p$ 增大到 $2p$ 时，$N$ 降为 $N/4$，二次注意力成本降为原来的 $1/16$；但每个 token 输入维度变为原来的 4 倍，局部细节更难建模。
+
+\section{Transformer Block FLOPs 的逐项推导}
+对宽度 $d$、token 数 $N$、MLP 扩张比 $m$：
+\begin{itemize}
+ \item QKV 投影：$3\times2Nd^2=6Nd^2$；
+ \item 输出投影：$2Nd^2$；
+ \item 注意力矩阵与加权求和：$4N^2d$；
+ \item MLP 两层：$2N(d\cdot md)+2N(md\cdot d)=4mNd^2$。
+\end{itemize}
+合计
+\begin{equation}
+ C_{\rm block}\approx(8+4m)Nd^2+4N^2d.
+\end{equation}
+当 $m=4$ 时
+\begin{equation}
+ C_{\rm block}\approx24Nd^2+4N^2d.
+\end{equation}
+这说明在中等 token 数下，MLP 和线性投影可能比二次注意力更占 FLOPs。
+
+\section{AdaLN-Zero 的恒等初始化与梯度}
+设条件向量 $c$ 生成六组参数
+\begin{equation}
+ (\gamma_1,\beta_1,\alpha_1,
+ \gamma_2,\beta_2,\alpha_2)=M(c).
+\end{equation}
+一个 block 可写为
+\begin{align}
+ h'&=h+\alpha_1\odot
+ \operatorname{Attn}\bigl((1+\gamma_1)\odot\operatorname{LN}(h)+\beta_1\bigr),\\
+ h''&=h'+\alpha_2\odot
+ \operatorname{MLP}\bigl((1+\gamma_2)\odot\operatorname{LN}(h')+\beta_2\bigr).
+\end{align}
+若初始化 $M$ 的最后一层为零，则
+\begin{equation}
+ \gamma=\beta=\alpha=0,
+\end{equation}
+初始网络严格满足
+\begin{equation}
+ h''=h.
+\end{equation}
+但门控参数的梯度不为零：
+\begin{equation}
+ \frac{\partial h'}{\partial\alpha_1}
+ =\operatorname{Attn}(\operatorname{LN}(h)),
+\end{equation}
+所以模型可从恒等映射平滑开始学习。
+
+\section{CFG 的 Bayes 推导}
+条件 score
+\begin{equation}
+ s_c(x_t)=\nabla_{x_t}\log p(x_t\mid c),
+\end{equation}
+无条件 score
+\begin{equation}
+ s_u(x_t)=\nabla_{x_t}\log p(x_t).
+\end{equation}
+Bayes 公式给出
+\begin{equation}
+ \nabla\log p(c\mid x_t)
+ =s_c(x_t)-s_u(x_t).
+\end{equation}
+引导 score
+\begin{equation}
+ s_w=s_u+(1+w)(s_c-s_u)
+ =(1+w)s_c-ws_u.
+\end{equation}
+它对应未归一化分布
+\begin{equation}
+ p_w(x_t\mid c)\propto
+ p(x_t\mid c)^{1+w}p(x_t)^{-w}.
+\end{equation}
+因此更大 $w$ 强调条件似然比，但可能导致样本多样性下降与 score 范数过大。
+
+\section{一个 DiT 尺度数值核对}
+假设 VAE 潜空间为 $32\times32\times4$，patch $p=2$，则
+\begin{equation}
+ N=(32/2)^2=256.
+\end{equation}
+取 $d=1152,m=4$，单 block 近似 FLOPs
+\begin{align}
+ C&\approx24\cdot256\cdot1152^2
+ +4\cdot256^2\cdot1152\\
+ &\approx8.15\times10^9+0.30\times10^9
+ \approx8.45\ \mathrm{GFLOPs}.
+\end{align}
+可见该设置下线性层与 MLP 是主要开销，注意力二次项只占较小部分。这也解释了论文为何用总 Gflops 比较模型，而不是只观察 token 数。
+\end{document}

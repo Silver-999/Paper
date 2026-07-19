@@ -1,0 +1,464 @@
+\documentclass[11pt]{article}
+\usepackage{fontspec}
+\setmainfont[
+  Path=fonts/,
+  Extension=.ttf,
+  UprightFont=*-400,
+  BoldFont=*-700
+]{NotoSerifSC}
+\setsansfont[
+  Path=fonts/,
+  Extension=.ttf,
+  UprightFont=*-400,
+  BoldFont=*-700
+]{NotoSerifSC}
+\XeTeXlinebreaklocale "zh"
+\XeTeXlinebreakskip=0pt plus 1pt
+\usepackage[a4paper,margin=1.70cm]{geometry}
+\usepackage{amsmath,amssymb,mathtools,bm}
+\usepackage{booktabs,longtable,array}
+\usepackage{enumitem}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\setlist{nosep,leftmargin=2em}
+\allowdisplaybreaks[3]
+\numberwithin{equation}{section}
+\pagestyle{plain}
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Pp}{\mathbb{P}}
+\newcommand{\1}{\mathbf{1}}
+\newcommand{\T}{\mathsf{T}}
+\newcommand{\F}{\mathrm{F}}
+\newcommand{\cN}{\mathcal{N}}
+\newcommand{\cL}{\mathcal{L}}
+\newcommand{\cS}{\mathcal{S}}
+\newcommand{\cH}{\mathcal{H}}
+\newcommand{\cA}{\mathcal{A}}
+\newcommand{\cM}{\mathcal{M}}
+\newcommand{\cT}{\mathcal{T}}
+\newcommand{\diag}{\operatorname{diag}}
+\newcommand{\tr}{\operatorname{tr}}
+\newcommand{\Var}{\operatorname{Var}}
+\newcommand{\Cov}{\operatorname{Cov}}
+\newcommand{\softmax}{\operatorname{softmax}}
+\newcommand{\KL}{D_{\mathrm{KL}}}
+\newcommand{\sg}{\operatorname{sg}}
+\begin{document}
+    \begin{center}
+      {\LARGE\bfseries 25\_DeepSeek-R1 incentivizes reasoning in LLMs through reinforcement learning}
+    \end{center}
+    \vspace{0.8em}
+
+    \section{符号与维度}
+    \begin{longtable}{>{$}l<{$} >{$}l<{$} p{10cm}}
+    \toprule
+    \text{符号} & \text{维度} & \text{含义}\\
+    \midrule
+    q,o & -- & 提示与完整回答。\\
+        \pi_\theta,\pi_{\rm old},\pi_{\rm ref} & -- & 当前、行为与参考策略。\\
+        r_j,A_j & \R & 第 $j$ 个回答的奖励与组相对优势。\\
+        \rho_{j,t} & \R_{>0} & token 概率比。\\
+        \epsilon,\beta & \R_{>0} & 裁剪半径与 KL 权重。\\
+    \bottomrule
+    \end{longtable}
+
+    所有向量默认是列向量；未特别说明时，期望同时对数据、噪声和采样时刻取值。下文只展开论文中承担方法逻辑的公式，并把所需假设写在推导发生的位置。
+
+\section{折扣占用分布与策略梯度定理}
+
+轨迹概率为
+\begin{equation}
+ p_\theta(\tau)=p(s_0)\prod_{t=0}^{T-1}
+ \pi_\theta(a_t\mid s_t)p(s_{t+1}\mid s_t,a_t).
+\end{equation}
+环境转移不依赖 $\theta$，故对数导数为
+\begin{equation}
+ \nabla_\theta\log p_\theta(\tau)
+ =\sum_{t=0}^{T-1}\nabla_\theta\log\pi_\theta(a_t\mid s_t).
+\end{equation}
+令回报 $R(\tau)=\sum_{t=0}^{T-1}\gamma^tr_t$，使用
+$\nabla p=p\nabla\log p$：
+\begin{align}
+ \nabla_\theta J(\theta)
+ &=\nabla_\theta\int p_\theta(\tau)R(\tau)d\tau\\
+ &=\E_{\tau\sim p_\theta}
+ \left[R(\tau)\sum_t\nabla_\theta\log\pi_\theta(a_t\mid s_t)\right].
+\end{align}
+时刻 $t$ 的 score 对此前已经发生的奖励没有因果影响。对 $k<t$，
+\begin{align}
+ \E[r_k\nabla\log\pi(a_t\mid s_t)]
+ &=\E\left[r_k\E[\nabla\log\pi(a_t\mid s_t)\mid s_t]\right]\\
+ &=\E\left[r_k\sum_a\pi(a\mid s_t)\nabla\log\pi(a\mid s_t)\right]\\
+ &=\E\left[r_k\sum_a\nabla\pi(a\mid s_t)\right]=0.
+\end{align}
+所以可用从 $t$ 开始的 return-to-go $G_t$：
+\begin{equation}
+ \boxed{\nabla J=\E\sum_t
+ \nabla\log\pi_\theta(a_t\mid s_t)G_t.}
+\end{equation}
+
+定义归一化折扣占用分布
+\begin{equation}
+ d_\gamma^\pi(s)=(1-\gamma)\sum_{t=0}^{\infty}\gamma^t
+ \Pp_\pi(s_t=s).
+\end{equation}
+则无限时域形式为
+\begin{equation}
+ \nabla J(\theta)=\frac1{1-\gamma}
+ \E_{s\sim d_\gamma^\pi,a\sim\pi}
+ [Q^\pi(s,a)\nabla\log\pi_\theta(a\mid s)].
+\end{equation}
+
+\section{基线不改变期望但降低方差}
+
+任意只依赖状态的 $b(s)$ 满足
+\begin{align}
+ \E_{a\sim\pi}[b(s)\nabla\log\pi(a\mid s)]
+ &=b(s)\sum_a\pi(a\mid s)\frac{\nabla\pi(a\mid s)}{\pi(a\mid s)}\\
+ &=b(s)\nabla\sum_a\pi(a\mid s)=0.
+\end{align}
+因此用优势 $A^\pi=Q^\pi-V^\pi$ 替代 $Q^\pi$ 不引入偏差。
+
+对固定状态，令 $z(a)=\nabla\log\pi(a\mid s)$。最小化
+\begin{equation}
+ \E\|z(a)(Q(s,a)-b)\|_2^2
+\end{equation}
+对 $b$ 求导，得到方差最优标量基线
+\begin{equation}
+ b^*(s)=\frac{\E[\|z(a)\|_2^2Q(s,a)\mid s]}
+ {\E[\|z(a)\|_2^2\mid s]}.
+\end{equation}
+它一般不恰好等于 $V(s)$；$V(s)$ 是易学习且通常有效的近似。
+
+\section{TD 误差与广义优势估计}
+
+定义
+\begin{equation}
+ \delta_t=r_t+\gamma V(s_{t+1})-V(s_t).
+\end{equation}
+$k$ 步优势估计为
+\begin{align}
+ \widehat A_t^{(k)}
+ &=\sum_{l=0}^{k-1}\gamma^lr_{t+l}
+ +\gamma^kV(s_{t+k})-V(s_t)\\
+ &=\sum_{l=0}^{k-1}\gamma^l\delta_{t+l},
+\end{align}
+第二行通过望远镜消去中间 $V$ 项。GAE 对不同 $k$ 做几何加权：
+\begin{align}
+ \widehat A_t^{\rm GAE}
+ &=(1-\lambda)\sum_{k=1}^{\infty}\lambda^{k-1}
+ \widehat A_t^{(k)}\\
+ &=\sum_{l=0}^{\infty}(\gamma\lambda)^l\delta_{t+l}.
+\end{align}
+推导第二行时，固定 $l$ 的 $\delta_{t+l}$ 出现在所有 $k\ge l+1$ 中，其系数为
+\begin{equation}
+ (1-\lambda)\sum_{k=l+1}^{\infty}\lambda^{k-1}=\lambda^l.
+\end{equation}
+$\lambda=0$ 接近一步 TD，方差低而依赖 critic 偏差；$\lambda=1$ 接近 Monte Carlo，偏差小而方差大。
+
+\section{重要性比率与裁剪目标的分段分析}
+
+旧策略采样、评估新策略时，token 或动作比率为
+\begin{equation}
+ r_t(\theta)=\frac{\pi_\theta(a_t\mid s_t)}
+ {\pi_{\rm old}(a_t\mid s_t)}.
+\end{equation}
+在旧策略分布下，
+\begin{equation}
+ \E_{a\sim\pi_{\rm old}}[r_t f(a)]
+ =\sum_a\pi_\theta(a\mid s_t)f(a)
+ =\E_{a\sim\pi_\theta}[f(a)].
+\end{equation}
+PPO 代理项为
+\begin{equation}
+ \ell(r,A)=\min\{rA,\operatorname{clip}(r,1-\epsilon,1+\epsilon)A\}.
+\end{equation}
+必须按 $A$ 符号分析。若 $A>0$，
+\begin{equation}
+ \ell(r,A)=A\min(r,1+\epsilon),
+\end{equation}
+超过上界后梯度为零；若 $A<0$，乘负数反转大小关系，
+\begin{equation}
+ \ell(r,A)=A\max(r,1-\epsilon),
+\end{equation}
+低于下界后梯度为零。它只截断会进一步改善代理目标的方向，不是把所有比率都投影进区间。
+
+比率梯度为
+\begin{equation}
+ \nabla r_t=r_t\nabla\log\pi_\theta(a_t\mid s_t),
+\end{equation}
+所以未裁剪区的梯度等于
+\begin{equation}
+ \nabla(r_tA_t)=r_tA_t\nabla\log\pi_\theta(a_t\mid s_t).
+\end{equation}
+裁剪制造分段常数区，只是限制单次更新的激励；它不严格保证全状态 KL 小于某阈值。
+
+\section{组相对优势的统计性质}
+
+对同一问题采样 $G$ 个奖励 $R_1,\ldots,R_G$，定义
+\begin{equation}
+ \bar R=\frac1G\sum_{j=1}^{G}R_j,\qquad
+ s_G^2=\frac1G\sum_{j=1}^{G}(R_j-\bar R)^2,\qquad
+ \widehat A_i=\frac{R_i-\bar R}{s_G+\varepsilon}.
+\end{equation}
+当 $\varepsilon=0$ 时，组内恒有
+\begin{equation}
+ \sum_i\widehat A_i=0,\qquad
+ \frac1G\sum_i\widehat A_i^2=1.
+\end{equation}
+若只中心化，
+\begin{equation}
+ R_i-\bar R=\left(1-\frac1G\right)R_i
+ -\frac1G\sum_{j\ne i}R_j.
+\end{equation}
+假设奖励独立同分布、方差 $\sigma_R^2$，则
+\begin{align}
+ \Var(R_i-\bar R)
+ &=\left(1-\frac1G\right)^2\sigma_R^2
+ +(G-1)\frac1{G^2}\sigma_R^2\\
+ &=\left(1-\frac1G\right)\sigma_R^2.
+\end{align}
+同时 $R_i$ 参与自身基线，因而优势与基线相关。若使用 leave-one-out 基线
+\begin{equation}
+ \bar R_{-i}=\frac1{G-1}\sum_{j\ne i}R_j,
+\end{equation}
+则 $R_i$ 与 $\bar R_{-i}$ 在条件独立假设下独立，但方差变为
+\begin{equation}
+ \Var(R_i-\bar R_{-i})=\sigma_R^2\left(1+\frac1{G-1}\right).
+\end{equation}
+前者方差较小，后者减少自耦合；二者并非完全等价。
+
+\section{序列概率与 token 级目标}
+
+语言模型序列 $y=(y_1,\ldots,y_T)$ 的概率分解为
+\begin{equation}
+ \pi_\theta(y\mid x)=\prod_{t=1}^{T}\pi_\theta(y_t\mid x,y_{<t}),
+\end{equation}
+故序列比率
+\begin{equation}
+ r_{\rm seq}=\frac{\pi_\theta(y\mid x)}{\pi_{\rm old}(y\mid x)}
+ =\prod_{t=1}^{T}r_t,\qquad
+ \log r_{\rm seq}=\sum_{t=1}^{T}\log r_t.
+\end{equation}
+长序列中乘积易产生高方差。token 级裁剪对每个 $r_t$ 分别限制，数值更稳定，
+但它不是对 $r_{\rm seq}$ 的同一个裁剪目标。若所有 token 共用序列奖励优势 $A$，常见目标为
+\begin{equation}
+ \frac1T\sum_{t=1}^{T}
+ \min\{r_tA,\operatorname{clip}(r_t,1-\epsilon,1+\epsilon)A\}.
+\end{equation}
+长度归一化改变不同长度样本的总梯度权重，应与任务奖励设计一起解释。
+
+\section{参考策略 KL 的两种估计}
+
+正向 KL 为
+\begin{equation}
+ D_{\rm KL}(\pi_\theta\|\pi_{\rm ref})
+ =\E_{a\sim\pi_\theta}
+ \left[\log\frac{\pi_\theta(a\mid s)}{\pi_{\rm ref}(a\mid s)}\right].
+\end{equation}
+单样本对数比可以为负，虽其期望非负。令
+$r=\pi_{\rm ref}/\pi_\theta$，函数
+\begin{equation}
+ k(r)=r-1-\log r
+\end{equation}
+满足 $k(r)\ge0$，因为 $\log r\le r-1$。而
+\begin{align}
+ \E_{a\sim\pi_\theta}[k(r)]
+ &=\sum_a\pi_\theta(a)
+ \left(\frac{\pi_{\rm ref}(a)}{\pi_\theta(a)}-1
+ -\log\frac{\pi_{\rm ref}(a)}{\pi_\theta(a)}\right)\\
+ &=0+D_{\rm KL}(\pi_\theta\|\pi_{\rm ref}).
+\end{align}
+因此 $r-1-\log r$ 是逐样本非负且期望正确的估计；前提是两策略的支撑相容。
+
+\section{Bellman 期望方程与优势恒等式}
+
+对策略 $\pi$，定义
+\begin{align}
+ V^\pi(s)&=\E_\pi\left[\sum_{t=0}^{\infty}\gamma^tr_t\mid s_0=s\right],\\
+ Q^\pi(s,a)&=\E_\pi\left[\sum_{t=0}^{\infty}\gamma^tr_t
+ \mid s_0=s,a_0=a\right].
+\end{align}
+分离首步奖励：
+\begin{align}
+ Q^\pi(s,a)&=r(s,a)+\gamma\E_{s'}V^\pi(s'),\\
+ V^\pi(s)&=\E_{a\sim\pi(\cdot\mid s)}Q^\pi(s,a).
+\end{align}
+优势
+\begin{equation}
+ A^\pi(s,a)=Q^\pi(s,a)-V^\pi(s)
+\end{equation}
+在策略动作分布下均值为零：
+\begin{equation}
+ \E_{a\sim\pi}A^\pi(s,a)=0.
+\end{equation}
+这不表示每个动作优势小，只表示正负改进机会按当前策略加权抵消。
+
+\section{性能差异引理}
+
+令新旧策略为 $\pi',\pi$。沿 $\pi'$ 轨迹，
+\begin{align}
+ \E_{\pi'}\sum_{t=0}^{\infty}\gamma^tA^\pi(s_t,a_t)
+ &=\E_{\pi'}\sum_t\gamma^t
+ [r_t+\gamma V^\pi(s_{t+1})-V^\pi(s_t)]\\
+ &=J(\pi')-\E V^\pi(s_0),
+\end{align}
+其中价值项望远镜消去，且有界价值使末项
+$\gamma^{T+1}V(s_{T+1})\to0$。若初始分布相同，
+$\E V^\pi(s_0)=J(\pi)$，故
+\begin{equation}
+ \boxed{J(\pi')-J(\pi)
+ =\frac1{1-\gamma}
+ \E_{s\sim d_{\pi'},a\sim\pi'}A^\pi(s,a).}
+\end{equation}
+策略优化代理常把难采样的 $d_{\pi'}$ 替换为旧占用分布 $d_\pi$；
+信赖域或比率裁剪的目标是限制这一步替换造成的误差。
+
+\section{KL 信赖域的二阶局部形式}
+
+对小参数变化 $\Delta\theta$，
+\begin{equation}
+ D_{\rm KL}(\pi_{\theta}\|\pi_{\theta+\Delta})
+ =\frac12\Delta^TF(\theta)\Delta+O(\|\Delta\|^3),
+\end{equation}
+其中 Fisher 信息
+\begin{equation}
+ F(\theta)=\E_{s,a}
+ [\nabla\log\pi_\theta(a\mid s)
+ \nabla\log\pi_\theta(a\mid s)^T].
+\end{equation}
+一阶目标改进 $g^T\Delta$，约束
+$\frac12\Delta^TF\Delta\le\delta$。拉格朗日法：
+\begin{equation}
+ \mathcal J=g^T\Delta-\lambda
+ \left(\frac12\Delta^TF\Delta-\delta\right).
+\end{equation}
+驻点
+\begin{equation}
+ g-\lambda F\Delta=0
+ \Rightarrow \Delta=\lambda^{-1}F^{-1}g.
+\end{equation}
+代回约束得到
+\begin{equation}
+ \boxed{\Delta=\sqrt{\frac{2\delta}{g^TF^{-1}g}}F^{-1}g.}
+\end{equation}
+自然梯度 $F^{-1}g$ 是概率分布几何下最陡方向；PPO 裁剪是更易实现但不严格等价的近似。
+
+\section{离策略序列比率的方差}
+
+轨迹前 $T$ 步重要性比率
+\begin{equation}
+ W_T=\prod_{t=0}^{T-1}
+ \frac{\pi(a_t\mid s_t)}{\mu(a_t\mid s_t)}.
+\end{equation}
+在行为策略 $\mu$ 下若支撑相容，$\E_\mu W_T=1$。
+对数比率是和
+\begin{equation}
+ \log W_T=\sum_t\ell_t,\qquad
+ \ell_t=\log\pi(a_t\mid s_t)-\log\mu(a_t\mid s_t).
+\end{equation}
+若粗略假设 $\ell_t$ 独立、均值 $m$、方差 $v$，则
+$W_T$ 近似 log-normal，
+\begin{equation}
+ \frac{\Var(W_T)}{(\E W_T)^2}\approx e^{Tv}-1.
+\end{equation}
+方差随长度指数增长，这解释了 token/step 级截断、V-trace 或短视野校正的必要性。
+
+截断 $\bar w_t=\min(c,w_t)$ 产生偏差，但单步权重有界，
+能控制乘积和梯度爆炸。偏差精确来自尾部
+\begin{equation}
+ \E_\mu[(w_t-c)_+f_t].
+\end{equation}
+
+\section{熵正则的策略梯度}
+
+状态熵
+\begin{equation}
+ \mathcal H(\pi_\theta)=-\sum_a\pi_\theta(a)\log\pi_\theta(a).
+\end{equation}
+求导
+\begin{align}
+ \nabla\mathcal H
+ &=-\sum_a\nabla\pi(a)[1+\log\pi(a)]\\
+ &=-\E_{a\sim\pi}
+ [(1+\log\pi(a))\nabla\log\pi(a)].
+\end{align}
+因 $\E\nabla\log\pi=0$，常数 $1$ 可去掉：
+\begin{equation}
+ \nabla\mathcal H
+ =-\E[\log\pi(a)\nabla\log\pi(a)].
+\end{equation}
+加入 $+\alpha\mathcal H$ 会提高低概率动作的相对激励，防止策略过早坍缩；
+但在可验证答案任务中，过强熵也会降低正确答案集中度。
+
+\section{奖励平移、缩放与归一化}
+
+若所有奖励加常数 $c$，无限折扣回报
+\begin{equation}
+ G_t'=G_t+\frac{c}{1-\gamma}.
+\end{equation}
+精确优势不变，因为 $Q,V$ 同时加 $c/(1-\gamma)$。用采样回报而无正确基线时，
+常数会增加梯度方差但期望 score 项仍抵消。
+
+奖励乘正数 $a$ 时，优势和策略梯度乘 $a$，等价于改变有效学习率；
+PPO 的裁剪边界不随 $a$ 变，所以裁剪区域不变但目标梯度尺度变。
+组内标准化
+\begin{equation}
+ \widehat A_i=\frac{R_i-\bar R}{s_R+\epsilon}
+\end{equation}
+同时消除平移并近似消除尺度，但 $s_R$ 很小时会放大噪声，故需要 $\epsilon$ 或跳过全同奖励组。
+
+\section{KL 正则与奖励塑形}
+
+目标
+\begin{equation}
+ J(\pi)=\E_\pi[R]-\beta D_{\rm KL}(\pi\|\pi_{\rm ref})
+\end{equation}
+可写为每步塑形奖励
+\begin{equation}
+ r_t'=r_t-\beta
+ \left[\log\pi(a_t\mid s_t)-\log\pi_{\rm ref}(a_t\mid s_t)\right].
+\end{equation}
+固定状态、给定动作价值 $Q(a)$ 时，最优非参数策略由拉格朗日法得到
+\begin{equation}
+ \pi^*(a)=\frac{\pi_{\rm ref}(a)e^{Q(a)/\beta}}
+ {\sum_b\pi_{\rm ref}(b)e^{Q(b)/\beta}}.
+\end{equation}
+$\beta\to0$ 时集中到高价值动作，$\beta\to\infty$ 时回到参考策略。
+参考策略为零概率的动作在正向 KL 约束下永远不可选，故支撑选择很重要。
+
+\section{拒答动作与错误成本}
+
+设回答正确收益 $u_c$、错误收益 $u_e$、拒答收益 $u_a$，模型置信度
+$p=\Pp(\text{correct}\mid s)$。回答期望效用
+\begin{equation}
+ U_{\rm ans}(p)=pu_c+(1-p)u_e,
+\end{equation}
+拒答效用 $U_{\rm abstain}=u_a$。当
+\begin{equation}
+ p\ge\frac{u_a-u_e}{u_c-u_e}
+\end{equation}
+时回答更优（假设 $u_c>u_e$）。因此最优置信阈值由错误和拒答的相对成本决定，
+不是固定的 $1/2$。RL 后训练若隐含奖励给拒答过低分，就会系统性鼓励猜测。
+
+\section{有限 horizon 的回报界}
+
+若 $|r_t|\le R_{\max}$，无限折扣回报有界
+\begin{equation}
+ |G_t|\le\sum_{k=0}^{\infty}\gamma^kR_{\max}
+ =\frac{R_{\max}}{1-\gamma}.
+\end{equation}
+截断到 $H$ 步的尾部误差
+\begin{equation}
+ \left|G_t-\sum_{k=0}^{H-1}\gamma^kr_{t+k}\right|
+ \le\frac{\gamma^HR_{\max}}{1-\gamma}.
+\end{equation}
+要使其不超过 $\epsilon$，充分条件
+\begin{equation}
+ H\ge\frac{\log[\epsilon(1-\gamma)/R_{\max}]}{\log\gamma},
+\end{equation}
+注意 $\log\gamma<0$，除法会反转不等号，右端为正。
+
+\end{document}

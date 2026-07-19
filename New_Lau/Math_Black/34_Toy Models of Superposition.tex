@@ -1,0 +1,632 @@
+\documentclass[11pt]{article}
+\usepackage{fontspec}
+\setmainfont[
+  Path=fonts/,
+  Extension=.ttf,
+  UprightFont=*-400,
+  BoldFont=*-700
+]{NotoSerifSC}
+\setsansfont[
+  Path=fonts/,
+  Extension=.ttf,
+  UprightFont=*-400,
+  BoldFont=*-700
+]{NotoSerifSC}
+\XeTeXlinebreaklocale "zh"
+\XeTeXlinebreakskip=0pt plus 1pt
+\usepackage[a4paper,margin=1.70cm]{geometry}
+\usepackage{amsmath,amssymb,mathtools,bm}
+\usepackage{booktabs,longtable,array}
+\usepackage{enumitem}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\setlist{nosep,leftmargin=2em}
+\allowdisplaybreaks[3]
+\numberwithin{equation}{section}
+\pagestyle{plain}
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Pp}{\mathbb{P}}
+\newcommand{\1}{\mathbf{1}}
+\newcommand{\T}{\mathsf{T}}
+\newcommand{\F}{\mathrm{F}}
+\newcommand{\cN}{\mathcal{N}}
+\newcommand{\cL}{\mathcal{L}}
+\newcommand{\cS}{\mathcal{S}}
+\newcommand{\cH}{\mathcal{H}}
+\newcommand{\cA}{\mathcal{A}}
+\newcommand{\cM}{\mathcal{M}}
+\newcommand{\cT}{\mathcal{T}}
+\newcommand{\diag}{\operatorname{diag}}
+\newcommand{\tr}{\operatorname{tr}}
+\newcommand{\Var}{\operatorname{Var}}
+\newcommand{\Cov}{\operatorname{Cov}}
+\newcommand{\softmax}{\operatorname{softmax}}
+\newcommand{\KL}{D_{\mathrm{KL}}}
+\newcommand{\sg}{\operatorname{sg}}
+\begin{document}
+    \begin{center}
+      {\LARGE\bfseries 34\_Toy Models of Superposition}
+    \end{center}
+    \vspace{0.8em}
+
+    \section{符号与维度}
+    \begin{longtable}{>{$}l<{$} >{$}l<{$} p{10cm}}
+    \toprule
+    \text{符号} & \text{维度} & \text{含义}\\
+    \midrule
+    x,\hat x & \R^n & 稀疏输入特征与重建。\\
+        W & \R^{m\times n} & $m<n$ 的线性瓶颈。\\
+        w_i & \R^m & 第 $i$ 个特征的表示方向。\\
+        I_i & \R_{>0} & 特征重要度。\\
+        G=W^{\T} W & \R^{n\times n} & 表示方向 Gram 矩阵。\\
+    \bottomrule
+    \end{longtable}
+
+    所有向量默认是列向量；未特别说明时，期望同时对数据、噪声和采样时刻取值。下文只展开论文中承担方法逻辑的公式，并把所需假设写在推导发生的位置。
+
+\section{线性自编码器中的干扰展开}
+
+设 $n$ 个理想特征 $x\in\R^n$ 被压入 $m<n$ 维，列向量
+$w_i\in\R^m$ 组成 $W=[w_1,ldots,w_n]$。绑权重线性重建
+\begin{equation}
+ \widehat x=W^TWx.
+\end{equation}
+第 $i$ 个坐标
+\begin{equation}
+ \widehat x_i=w_i^T\sum_jw_jx_j
+ =\|w_i\|_2^2x_i+\sum_{j\ne i}(w_i^Tw_j)x_j.
+\end{equation}
+第一项是自信号，第二项是其他特征通过 Gram 非对角元产生的干扰。
+
+令重要性权重 $I_i\ge0$，平方损失
+\begin{equation}
+ \cL=\E\sum_iI_i(x_i-\widehat x_i)^2.
+\end{equation}
+假设各特征独立、均值零、方差 $v_j$，交叉项期望消失，得到
+\begin{align}
+ \E(x_i-\widehat x_i)^2
+ &=(1-\|w_i\|^2)^2v_i
+ +\sum_{j\ne i}(w_i^Tw_j)^2v_j.
+\end{align}
+所以
+\begin{equation}
+ \boxed{\cL=\sum_iI_i(1-\|w_i\|^2)^2v_i
+ +\sum_i\sum_{j\ne i}I_i(w_i^Tw_j)^2v_j.}
+\end{equation}
+正交表示消除干扰但最多容纳 $m$ 个非零方向；超位置用小而非零的内积容纳更多特征。
+
+\section{稀疏性为何降低期望干扰}
+
+若
+\begin{equation}
+ x_j=\begin{cases}
+ 0,&\text{概率 }S_j,\\
+ \xi_j,&\text{概率 }1-S_j,
+ \end{cases}
+\end{equation}
+且 $\E\xi_j=0$、$\E\xi_j^2=\nu_j$，则
+\begin{equation}
+ v_j=\E x_j^2=(1-S_j)\nu_j.
+\end{equation}
+干扰项变为
+\begin{equation}
+ \sum_{j\ne i}(w_i^Tw_j)^2(1-S_j)\nu_j.
+\end{equation}
+当特征很少同时激活，方向非正交造成的平均代价按激活概率下降；
+这给“稀疏特征可以超位置”一个定量解释。
+
+若特征均值不为零，$\E[x_jx_k]$ 的交叉项不再消失，损失还包含
+\begin{equation}
+ \sum_{j\ne k}(w_i^Tw_j)(w_i^Tw_k)\E[x_jx_k].
+\end{equation}
+因此独立零均值假设是上述简化式的重要前提。
+
+\section{Gram 矩阵与 Welch 下界}
+
+假设 $n$ 个方向单位化，$\|w_i\|=1$。Gram 矩阵
+$G=W^TW\in\R^{n\times n}$，秩至多 $m$，迹
+\begin{equation}
+ \tr G=\sum_i\|w_i\|^2=n.
+\end{equation}
+设 $G$ 的非零特征值为 $\lambda_1,ldots,\lambda_m$。由 Cauchy--Schwarz，
+\begin{equation}
+ \|G\|_F^2=\sum_{k=1}^{m}\lambda_k^2
+ \ge\frac1m\left(\sum_k\lambda_k\right)^2
+ =\frac{n^2}{m}.
+\end{equation}
+另一方面
+\begin{equation}
+ \|G\|_F^2=\sum_iG_{ii}^2+\sum_{i\ne j}G_{ij}^2
+ =n+\sum_{i\ne j}(w_i^Tw_j)^2.
+\end{equation}
+故
+\begin{equation}
+ \boxed{\frac1{n(n-1)}\sum_{i\ne j}(w_i^Tw_j)^2
+ \ge\frac{n-m}{m(n-1)}.}
+\end{equation}
+于是最大相干性也满足
+\begin{equation}
+ \max_{i\ne j}|w_i^Tw_j|
+ \ge\sqrt{\frac{n-m}{m(n-1)}}.
+\end{equation}
+这说明 $n>m$ 时不可能让全部方向严格正交，最优只能均匀分配干扰。
+
+\section{ReLU 输出与负干扰的非对称性}
+
+带偏置的模型
+\begin{equation}
+ \widehat x=\operatorname{ReLU}(W^TWx+b)
+\end{equation}
+在第 $i$ 坐标预激活
+\begin{equation}
+ a_i=\|w_i\|^2x_i+\sum_{j\ne i}(w_i^Tw_j)x_j+b_i.
+\end{equation}
+梯度门为
+\begin{equation}
+ \frac{\partial\widehat x_i}{\partial a_i}
+ =\1\{a_i>0\}
+\end{equation}
+（零点取任一子梯度）。如果真实特征非负，适当负偏置可让小的纯干扰预激活被截为零，
+而强自信号仍越过阈值。这使正负内积的代价不再对称，几何最优可形成多边形、反向对等相位。
+
+\section{单特征表示、超位置与忽略的比较}
+
+考虑一个重要性 $I$、激活概率 $p=1-S$ 的特征。
+若完全忽略，输出恒为零，代价
+\begin{equation}
+ L_{\rm ignore}=I\E x^2=Ip\nu.
+\end{equation}
+若独占单位方向且解码无偏，理想代价接近零。若加入超位置，它获得自信号但产生/承受干扰，
+粗略代价可写
+\begin{equation}
+ L_{\rm super}\approx I(1-\|w_i\|^2)^2p\nu
+ +Ip\sum_{j\ne i}p_j\nu_j(w_i^Tw_j)^2.
+\end{equation}
+随着 $I$ 或 $p$ 增加，忽略代价线性上升，模型更愿分配专属维度；
+当 $p$ 很小，干扰又被联合激活概率削弱，超位置更划算。不同方案损失曲线交叉时，
+全局最优结构会突然切换，形成观察到的相变。
+
+\section{多义神经元与可解释性的区别}
+
+隐藏坐标 $h=Wx$ 的第 $k$ 个神经元
+\begin{equation}
+ h_k=\sum_iW_{ki}x_i
+\end{equation}
+通常同时响应多个特征；但表示方向是列 $w_i$，不必与坐标轴对齐。
+若 $R\in\R^{m\times m}$ 正交，替换
+\begin{equation}
+ W\leftarrow RW
+\end{equation}
+不会改变 Gram 矩阵
+\begin{equation}
+ (RW)^T(RW)=W^TW,
+\end{equation}
+因而重建函数不变，却会完全旋转神经元坐标。可辨识的是特征方向间的几何关系，
+不是某个隐藏坐标的绝对语义。
+
+\section{压缩感知类比的边界}
+
+若 $x$ 是 $k$-稀疏，随机测量 $h=Wx$ 在满足受限等距性质时可由非线性优化恢复。
+RIP 要求所有 $k$-稀疏向量满足
+\begin{equation}
+ (1-\delta)\|x\|_2^2\le\|Wx\|_2^2\le(1+\delta)\|x\|_2^2.
+\end{equation}
+随机矩阵通常需 $m=O(k\log(n/k)/\delta^2)$。玩具模型解码器
+$\operatorname{ReLU}(W^T h+b)$ 并不是通用 $\ell_1$ 恢复算法，因此“超位置类似压缩感知”是几何动机，
+不能直接继承精确恢复定理。
+
+\section{低秩更新的完整矩阵微分}
+
+令冻结权重 $W_0\in\R^{m\times n}$，低秩更新
+\begin{equation}
+ W=W_0+cBA,\qquad
+ B\in\R^{m\times r},\quad A\in\R^{r\times n},\quad c=\alpha/r.
+\end{equation}
+对一个输入 $x\in\R^n$，
+\begin{equation}
+ h=W_0x+cB(Ax).
+\end{equation}
+令 $y=Ax\in\R^r$、输出梯度 $g=\partial\cL/\partial h\in\R^m$。
+微分为
+\begin{equation}
+ dh=c\,dB\,y+cB\,dA\,x+cBA\,dx+W_0dx.
+\end{equation}
+由 $d\cL=g^Tdh$ 以及
+$a^TdMb=\langle ab^T,dM\rangle_\F$，逐项得到
+\begin{align}
+ \boxed{\nabla_B\cL=c,g,y^T=c,g,x^TA^T,}\\
+ \boxed{\nabla_A\cL=c,B^Tg,x^T,}\\
+ \boxed{\nabla_x\cL=W_0^Tg+cA^TB^Tg.}
+\end{align}
+若批输入按行堆成 $X\in\R^{b\times n}$，上游梯度为
+$G\in\R^{b\times m}$，则
+\begin{align}
+ \nabla_B\cL&=cG^TXA^T,\\
+ \nabla_A\cL&=cB^TG^TX.
+\end{align}
+
+\subsection{rank-1 专家分解}
+
+写 $B=[b_1,\ldots,b_r]$、$A$ 的第 $i$ 行为 $a_i^T$，则
+\begin{equation}
+ BA=\sum_{i=1}^{r}b_i a_i^T,
+ \qquad BAx=\sum_{i=1}^{r}b_i(a_i^Tx).
+\end{equation}
+每一项均为秩至多 $1$ 的更新。对单样本，
+\begin{equation}
+ \nabla_{b_i}\cL=c(a_i^Tx)g,\qquad
+ \nabla_{a_i}\cL=c(b_i^Tg)x.
+\end{equation}
+于是列 $b_i$ 的更新强度由标量路由量 $a_i^Tx$ 控制；这也是把 rank 分量解释为隐式专家的数学依据。
+
+\section{初始化时两因子的非对称动力学}
+
+常见初始化为 $B_0=0$、$A_0$ 随机。此时
+\begin{equation}
+ \Delta W_0=cB_0A_0=0,
+\end{equation}
+所以前向不改变基座。梯度却满足
+\begin{equation}
+ \nabla_B\cL\big|_{0}=cG^TXA_0^T,\qquad
+ \nabla_A\cL\big|_{0}=cB_0^TG^TX=0.
+\end{equation}
+第一步梯度下降
+\begin{equation}
+ B_1=-\eta cG^TXA_0^T,\qquad A_1=A_0,
+\end{equation}
+因此第二步开始 $A$ 才获得非零梯度。若反过来令 $A_0=0$、$B_0$ 随机，
+则第一步只有 $A$ 更新。两种初始化前向等价，但早期优化动力学不同。
+
+还有尺度不识别性：任意 $s\ne0$ 满足
+\begin{equation}
+ BA=(sB)(s^{-1}A).
+\end{equation}
+然而带独立权重衰减时
+\begin{equation}
+ \|sB\|_F^2+\|s^{-1}A\|_F^2
+ =s^2\|B\|_F^2+s^{-2}\|A\|_F^2,
+\end{equation}
+最优平衡尺度由求导得到
+\begin{equation}
+ s^4=\frac{\|A\|_F^2}{\|B\|_F^2}.
+\end{equation}
+故因子正则化会隐式选择分解，即使乘积 $BA$ 相同。
+
+\section{最佳秩约束近似}
+
+设目标全量更新的奇异值分解为
+\begin{equation}
+ \Delta W^*=U\Sigma V^T
+ =\sum_{i=1}^{q}\sigma_i u_iv_i^T,
+ \qquad\sigma_1\ge\cdots\ge\sigma_q\ge0.
+\end{equation}
+截断矩阵
+\begin{equation}
+ \Delta W_r=\sum_{i=1}^{r}\sigma_i u_iv_i^T
+\end{equation}
+满足 Eckart--Young--Mirsky 结论
+\begin{equation}
+ \min_{\operatorname{rank}(M)\le r}
+ \|\Delta W^*-M\|_F^2
+ =\sum_{i>r}\sigma_i^2.
+\end{equation}
+一种直接证明如下。因 Frobenius 范数在正交变换下不变，令
+$C=U^TMV$，则 $\operatorname{rank}(C)\le r$ 且
+\begin{equation}
+ \|\Delta W^*-M\|_F^2=\|\Sigma-C\|_F^2.
+\end{equation}
+任意秩不超过 $r$ 的 $C$ 至多精确保留 $r$ 个相互正交奇异方向；
+由奇异值的变分刻画或 Pythagoras 分解，剩余平方能量至少为
+$\sum_{i>r}\sigma_i^2$。取
+$C=\diag(\sigma_1,\ldots,\sigma_r,0,\ldots)$ 达到该下界。
+
+谱范数版本为
+\begin{equation}
+ \min_{\operatorname{rank}(M)\le r}\|\Delta W^*-M\|_2=\sigma_{r+1}.
+\end{equation}
+这只是表达能力上界；训练能否找到截断 SVD 解还取决于非凸因子化、数据和优化器。
+
+\section{子空间限制与梯度投影}
+
+若 $A$ 冻结，只训练 $B$，可达更新集合为
+\begin{equation}
+ \cS_A=\{BA:B\in\R^{m\times r}\}.
+\end{equation}
+其中每一行都位于 $A$ 的行空间。若 $A$ 满行秩，其行空间正交投影为
+\begin{equation}
+ P_A=A^T(AA^T)^{-1}A.
+\end{equation}
+给定任意目标更新 $M$，最小二乘问题
+\begin{equation}
+ \min_B\|M-BA\|_F^2
+\end{equation}
+的正规方程为
+\begin{equation}
+ (BA-M)A^T=0,\qquad
+ B^*=MA^T(AA^T)^{-1}.
+\end{equation}
+故最佳可达更新
+\begin{equation}
+ B^*A=MP_A,\qquad
+ \min_B\|M-BA\|_F^2=\|M(I-P_A)\|_F^2.
+\end{equation}
+这把“冻结随机下投影”的表达损失精确写成目标在随机行空间外的能量。
+
+\section{随机投影的尺度与集中}
+
+设 $A_{ij}$ 独立、均值零、方差 $1/r$。对固定 $x\in\R^n$，
+\begin{align}
+ \E\|Ax\|_2^2
+ &=\sum_{i=1}^{r}\E\left(\sum_jA_{ij}x_j\right)^2\\
+ &=\sum_i\sum_j\E[A_{ij}^2]x_j^2
+ =\|x\|_2^2.
+\end{align}
+若 $A_{ij}\sim\cN(0,1/r)$，则
+\begin{equation}
+ \frac{\|Ax\|_2^2}{\|x\|_2^2}
+ \sim\frac1r\chi_r^2.
+\end{equation}
+利用卡方尾界，对 $0<\varepsilon<1$，
+\begin{equation}
+ \Pp\left(
+ \left|\|Ax\|_2^2-\|x\|_2^2\right|
+ \ge\varepsilon\|x\|_2^2\right)
+ \le2\exp\left(-\frac r8\varepsilon^2\right).
+\end{equation}
+对有限集合 $N$ 个向量做并合界，若
+\begin{equation}
+ r\ge\frac8{\varepsilon^2}\log\frac{2N}{\delta},
+\end{equation}
+则所有向量同时保持范数的概率至少为 $1-\delta$。对点对差向量应用同一结论即得到距离保持。
+
+稀疏随机投影若每个元素以概率 $\rho$ 非零，则为保持同样二阶矩，非零幅值应按
+$1/\sqrt{\rho r}$ 缩放：
+\begin{equation}
+ A_{ij}=\begin{cases}
+ +1/\sqrt{\rho r},&\rho/2,\\
+ -1/\sqrt{\rho r},&\rho/2,\\
+ 0,&1-\rho.
+ \end{cases}
+\end{equation}
+此时 $\E[A_{ij}^2]=1/r$，但四阶矩为
+$\E[A_{ij}^4]=1/(\rho r^2)$；$\rho$ 越小，尾部越重，获得同样集中精度通常需要更大 $r$。
+
+\section{任务更新的干扰量}
+
+两个任务的更新 $U_i=B_iA_i$、$U_j=B_jA_j$ 的 Frobenius 内积为
+\begin{align}
+ \langle U_i,U_j\rangle_F
+ &=\tr((B_iA_i)^TB_jA_j)\\
+ &=\tr(B_i^TB_jA_jA_i^T).
+\end{align}
+因此
+\begin{equation}
+ |\langle U_i,U_j\rangle_F|
+ \le\|B_i^TB_j\|_F\|A_jA_i^T\|_F.
+\end{equation}
+随机下投影近似正交只控制第二个因子；若 $B_i,B_j$ 范数无界，绝对干扰仍可任意大。
+对加权合并 $U=\sum_iw_iU_i$，
+\begin{equation}
+ \|U\|_F^2
+ =\sum_iw_i^2\|U_i\|_F^2
+ +2\sum_{i<j}w_iw_j\langle U_i,U_j\rangle_F.
+\end{equation}
+交叉项就是任务干扰对合并范数的精确贡献，而不是抽象的“方向冲突”。
+
+\section{参数量、训练内存与合并}
+
+全量矩阵参数量为 $mn$，低秩因子参数量为
+\begin{equation}
+ r(m+n),
+\end{equation}
+压缩要求 $r<mn/(m+n)$。训练时只有可训练因子需要梯度和优化器状态；
+冻结基座仍需存储权重并参与前向、反向的输入梯度计算。
+
+推理前可合并
+\begin{equation}
+ W_{\rm merged}=W_0+cBA.
+\end{equation}
+合并后对单个适配器不增加矩阵乘次数，但丢失了动态切换不同适配器的便利。
+若基座以低比特存储，通常必须先在计算精度中反量化再加 $BA$；直接在整数码空间相加并不等价。
+
+\section{条件期望作为 $L^2$ 正交投影}
+
+令随机向量 $Y\in L^2$，观测 $Z$ 生成子空间
+\begin{equation}
+ \mathcal H_Z=\{f(Z):\E\|f(Z)\|^2<\infty\}.
+\end{equation}
+条件期望 $m(Z)=\E[Y\mid Z]$ 满足任意 $h(Z)\in\mathcal H_Z$：
+\begin{equation}
+ \E[(Y-m(Z))^Th(Z)]=0.
+\end{equation}
+因为
+\begin{align}
+ \E[(Y-m)^Th]
+ &=\E\{\E[(Y-m)^Th\mid Z]\}\\
+ &=\E\{h^T\E[Y-m\mid Z]\}=0.
+\end{align}
+于是 Pythagoras 恒等式
+\begin{equation}
+ \E\|Y-f(Z)\|^2
+ =\E\|Y-m(Z)\|^2+\E\|m(Z)-f(Z)\|^2.
+\end{equation}
+多数回归、去噪、流匹配和局部目标的“最优预测器”都由这一投影结论得到。
+
+全方差公式也是同一正交分解：
+\begin{equation}
+ \Var(Y)=\E\Var(Y\mid Z)+\Var(\E[Y\mid Z]).
+\end{equation}
+第一项是观测 $Z$ 后仍不可约的不确定性，第二项是不同 $Z$ 条件均值的变化。
+
+\section{Jensen、对数和与变分界}
+
+对凹函数 $\log$，
+\begin{equation}
+ \log\E X\ge\E\log X,
+ \qquad X>0.
+\end{equation}
+差距可以写成 KL。令未归一权重 $w(z)>0$、提议分布 $q(z)$，
+配分函数 $Z=\E_qw(z)$，定义
+\begin{equation}
+ p^*(z)=\frac{q(z)w(z)}{Z}.
+\end{equation}
+则
+\begin{align}
+ \log Z-\E_q\log w
+ &=\E_q\log\frac{Z}{w(z)}\\
+ &=\E_q\log\frac{q(z)}{p^*(z)}\\
+ &=D_{\rm KL}(q\|p^*)\ge0.
+\end{align}
+因此 Jensen 下界何时紧不只取决于“方差小”，而是提议分布是否等于归一化后的目标分布。
+
+log-sum-exp
+\begin{equation}
+ \operatorname{LSE}(x)=\log\sum_{i=1}^{n}e^{x_i}
+\end{equation}
+满足
+\begin{equation}
+ \max_i x_i\le\operatorname{LSE}(x)
+ \le\max_i x_i+\log n.
+\end{equation}
+减去最大值 $m=\max_ix_i$ 后计算
+\begin{equation}
+ \operatorname{LSE}(x)=m+\log\sum_ie^{x_i-m}
+\end{equation}
+可避免指数上溢且数学等价。
+
+\section{Hoeffding 不等式的矩母函数推导}
+
+设独立 $X_i\in[a_i,b_i]$，$S=\sum_i(X_i-\E X_i)$。
+对任意 $\lambda>0$，Markov 不等式
+\begin{equation}
+ \Pp(S\ge t)=\Pp(e^{\lambda S}\ge e^{\lambda t})
+ \le e^{-\lambda t}\E e^{\lambda S}.
+\end{equation}
+独立性给出矩母函数乘积。Hoeffding 引理
+\begin{equation}
+ \E e^{\lambda(X_i-\E X_i)}
+ \le\exp\left(\frac{\lambda^2(b_i-a_i)^2}{8}\right).
+\end{equation}
+故
+\begin{equation}
+ \Pp(S\ge t)
+ \le\exp\left(-\lambda t+\frac{\lambda^2}{8}
+ \sum_i(b_i-a_i)^2\right).
+\end{equation}
+对 $\lambda$ 最小化，
+\begin{equation}
+ \lambda^*=\frac{4t}{\sum_i(b_i-a_i)^2},
+\end{equation}
+得到
+\begin{equation}
+ \Pp(S\ge t)
+ \le\exp\left(-\frac{2t^2}{\sum_i(b_i-a_i)^2}\right).
+\end{equation}
+对下尾应用于 $-S$，再 union bound 得双侧界。
+
+\section{Bernstein 界利用方差信息}
+
+若独立零均值 $X_i$ 满足 $|X_i|\le M$，总方差
+$v=\sum_i\E X_i^2$，Bernstein 界
+\begin{equation}
+ \Pp\left(\sum_iX_i\ge t\right)
+ \le\exp\left(-\frac{t^2}{2(v+Mt/3)}\right).
+\end{equation}
+当 $t\ll v/M$ 时近似高斯尾 $e^{-t^2/(2v)}$；
+当 $t$ 很大时转为 $e^{-3t/(2M)}$。相比只使用取值区间的 Hoeffding，
+方差远小于最坏范围时 Bernstein 更紧。
+
+对 Bernoulli 均值 $\widehat p=N^{-1}\sum_iX_i$，$v=Np(1-p)$，
+\begin{equation}
+ \Pp(|\widehat p-p|\ge\epsilon)
+ \le2\exp\left(-\frac{N\epsilon^2}
+ {2[p(1-p)+\epsilon/3]}\right).
+\end{equation}
+
+\section{并合界与同时保证}
+
+事件 $E_1,…,E_M$ 不要求独立也有
+\begin{equation}
+ \Pp\left(\bigcup_{j=1}^{M}E_j\right)
+ \le\sum_{j=1}^{M}\Pp(E_j).
+\end{equation}
+若每个失败概率至多 $\delta/M$，则全部结论同时成立的概率至少 $1-\delta$。
+将单点集中界扩展到有限候选集合通常产生 $\log M$ 项。例如
+\begin{equation}
+ 2M e^{-2N\epsilon^2}\le\delta
+\end{equation}
+等价于
+\begin{equation}
+ \epsilon\ge\sqrt{\frac{\log(2M/\delta)}{2N}}.
+\end{equation}
+若候选集合无限，需要覆盖数、VC 维或 Rademacher 复杂度，而不能直接把 $M=\infty$ 代入。
+
+\section{Delta 方法与非线性估计误差}
+
+设 $\sqrt N(\widehat\theta-\theta)\Rightarrow\cN(0,\Sigma)$，
+光滑函数 $g$ 的一阶展开
+\begin{equation}
+ g(\widehat\theta)=g(\theta)+
+ \nabla g(\theta)^T(\widehat\theta-\theta)+o_p(N^{-1/2}).
+\end{equation}
+于是
+\begin{equation}
+ \sqrt N[g(\widehat\theta)-g(\theta)]
+ \Rightarrow\cN(0,\nabla g^T\Sigma\nabla g).
+\end{equation}
+例如 $g(p)=\log p$，方差近似
+\begin{equation}
+ \Var(\log\widehat p)\approx\frac{\Var(\widehat p)}{p^2}.
+\end{equation}
+当 $p$ 很小时误差被 $1/p^2$ 放大，解释了稀有事件对数概率和概率比估计的不稳定。
+
+二阶展开还给非线性偏差
+\begin{equation}
+ \E g(\widehat\theta)-g(\theta)
+ \approx\frac12\tr(H_g(\theta)\Cov(\widehat\theta)).
+\end{equation}
+FID、比率、倒数和归一化优势等即使基础估计无偏，非线性组合也可有有限样本偏差。
+
+\section{重要性采样与有效样本量}
+
+目标期望 $\E_p f(X)$ 用提议 $q$ 采样，权重
+$w(x)=p(x)/q(x)$：
+\begin{equation}
+ \widehat\mu=\frac1N\sum_{i=1}^{N}w(X_i)f(X_i),
+ \qquad X_i\sim q.
+\end{equation}
+若 $p$ 的归一化常数未知，使用自归一估计
+\begin{equation}
+ \widetilde\mu=\frac{\sum_iw_if_i}{\sum_iw_i},
+\end{equation}
+它一般有 $O(1/N)$ 偏差，但常更实用。权重退化可用
+\begin{equation}
+ N_{\rm eff}=\frac{(\sum_iw_i)^2}{\sum_iw_i^2}
+\end{equation}
+衡量；权重相等时为 $N$，单个权重主导时接近 $1$。
+
+比率裁剪 $\widetilde w=\min(w,c)$ 降低方差，但引入偏差
+\begin{equation}
+ \E_q[(w-\widetilde w)f]
+ =\E_q[(w-c)_+f].
+\end{equation}
+若 $|f|\le F$，绝对偏差至多
+\begin{equation}
+ F\E_q[(w-c)_+].
+\end{equation}
+
+\section{校准与 Brier 分解}
+
+二元预测概率 $P\in[0,1]$、标签 $Y\in\{0,1\}$。条件真实频率
+$m(P)=\E[Y\mid P]$。Brier 分数
+\begin{align}
+ \E(P-Y)^2
+ &=\E(P-m(P))^2+\E(m(P)-Y)^2,
+\end{align}
+交叉项因条件期望为零而消失。第一项是校准误差，第二项是给定预测分组后的不可约噪声。
+若模型完美校准，$m(P)=P$，第一项为零，但单次预测仍可错误；
+校准不是零错误率，而是概率与长期频率一致。
+
+\end{document}

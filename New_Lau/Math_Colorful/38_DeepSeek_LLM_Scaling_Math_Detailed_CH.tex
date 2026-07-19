@@ -1,0 +1,611 @@
+\documentclass[UTF8,12pt,a4paper,fontset=none]{ctexart}
+\usepackage[a4paper,left=1.82cm,right=1.82cm,top=1.72cm,bottom=1.82cm,headheight=15pt]{geometry}
+\usepackage{fontspec,xeCJK}
+\setmainfont{Liberation Serif}
+\setsansfont{DejaVu Sans}
+\setmonofont{DejaVu Sans Mono}
+\setCJKmainfont[BoldFont=Noto Serif CJK SC Bold]{Noto Serif CJK SC}
+\setCJKsansfont[BoldFont=Noto Sans CJK SC Bold]{Noto Sans CJK SC}
+\setCJKmonofont{Noto Sans Mono CJK SC}
+\usepackage{amsmath,amssymb,mathtools,bm}
+\usepackage{booktabs,longtable,tabularx,array,multirow}
+\usepackage{enumitem,xcolor}
+\usepackage[most]{tcolorbox}
+\usepackage{fancyhdr,titlesec,hyperref,cleveref,lastpage}
+\usepackage{tikz,float,caption,listings}
+\usetikzlibrary{arrows.meta,positioning,calc,fit,backgrounds,shapes.geometric}
+\definecolor{mainblue}{RGB}{39,82,138}
+\definecolor{deepblue}{RGB}{25,55,95}
+\definecolor{softblue}{RGB}{235,243,252}
+\definecolor{softgreen}{RGB}{238,248,241}
+\definecolor{softorange}{RGB}{255,246,232}
+\definecolor{softgray}{RGB}{245,246,248}
+\definecolor{warnred}{RGB}{160,48,48}
+\hypersetup{unicode=true,colorlinks=true,linkcolor=deepblue,urlcolor=mainblue,citecolor=deepblue}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.36em}
+\setlength{\tabcolsep}{5pt}
+\renewcommand{\arraystretch}{1.2}
+\allowdisplaybreaks[4]
+\emergencystretch=3em
+\sloppy
+\pagestyle{fancy}\fancyhf{}\fancyfoot[C]{\small 第 \thepage\ 页，共 \pageref{LastPage} 页}\renewcommand{\headrulewidth}{0.4pt}
+\titleformat{\section}{\Large\bfseries\color{deepblue}}{\thesection}{0.65em}{}
+\titleformat{\subsection}{\large\bfseries\color{mainblue}}{\thesubsection}{0.55em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries}{\thesubsubsection}{0.5em}{}
+\numberwithin{equation}{section}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Prob}{\mathbb{P}}
+\newcommand{\Loss}{\mathcal{L}}
+\newcommand{\norm}[1]{\left\lVert #1\right\rVert}
+\newcommand{\ip}[2]{\left\langle #1,#2\right\rangle}
+\newcommand{\tr}{\operatorname{Tr}}
+\newcommand{\diag}{\operatorname{diag}}
+\newcommand{\rank}{\operatorname{rank}}
+\newcommand{\softmax}{\operatorname{softmax}}
+\newcommand{\argmin}{\operatorname*{arg\,min}}
+\newcommand{\argmax}{\operatorname*{arg\,max}}
+\newcommand{\sg}{\operatorname{sg}}
+\newcommand{\KL}{D_{\mathrm{KL}}}
+\newcommand{\dd}{\mathrm{d}}
+\newtcolorbox{keybox}[1][]{enhanced,breakable,colback=softblue,colframe=mainblue,boxrule=0.8pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\newtcolorbox{examplebox}[1][]{enhanced,breakable,colback=softgreen,colframe=green!45!black,boxrule=0.7pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\newtcolorbox{notebox}[1][]{enhanced,breakable,colback=softorange,colframe=orange!70!black,boxrule=0.7pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\newtcolorbox{criticalbox}[1][]{enhanced,breakable,colback=red!3,colframe=warnred,boxrule=0.8pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\lstset{basicstyle=\ttfamily\small,breaklines=true,frame=single,backgroundcolor=\color{softgray},numbers=left,numberstyle=\tiny,showstringspaces=false,columns=fullflexible}
+\hypersetup{pdftitle={38 DeepSeek LLM 数学过程详解},pdfauthor={OpenAI}}
+\fancyhead[L]{\small 38 DeepSeek LLM}
+\fancyhead[R]{\small 数学过程详解}
+\setlength{\abovedisplayskip}{0.82em}
+\setlength{\belowdisplayskip}{0.82em}
+\setlength{\abovedisplayshortskip}{0.45em}
+\setlength{\belowdisplayshortskip}{0.45em}
+\begin{document}
+\begin{center}
+{\LARGE\bfseries 38\_DeepSeek LLM 数学过程详解}\par
+\vspace{0.35em}
+{\large 计算预算、IsoFLOP 与模型/数据最优分配}
+\end{center}
+\vspace{0.45em}
+\begin{keybox}[本文只处理真正需要推导的部分]
+本文推导 FLOPs/token 表示、超参数幂律、IsoFLOP 约束优化、可分离损失的最优指数、BPB、数据质量修正与外推误差。全文按“公式从哪里来--每个符号是什么--中间步骤为何成立--维度和复杂度如何核对--论文结论依赖哪些假设”的顺序展开；不复述实验表格，也不使用与论文无关的通用背景凑页数。
+\end{keybox}
+\tableofcontents
+\newpage
+
+\section{训练计算预算的基本近似}
+稠密 Transformer 的训练 FLOPs 常近似
+\begin{equation}
+ C\approx6ND,
+\end{equation}
+$N$ 为非嵌入参数量、$D$ 为训练 token 数。系数 6 粗略来自每参数每 token 的前向乘加约 2 FLOPs，反向约为前向的 2 倍，总计约 6。论文指出该式忽略注意力和词表开销。
+
+\section{Non-embedding FLOPs/token 的推导}
+设层数 $n_l$、宽度 $d$、序列长度 $L$。论文给出
+\begin{equation}
+ 6N_1=72n_ld^2.
+\end{equation}
+这对应每层主要线性参数约 $12d^2$，训练乘以 6。
+
+含词表参数 $N_2$：
+\begin{equation}
+ 6N_2=72n_ld^2+6n_{\rm vocab}d.
+\end{equation}
+但词表投影未必与主体参数同等贡献容量。更准确的模型规模定义
+\begin{equation}
+ \boxed{M=72n_ld^2+12n_ldL}.
+\end{equation}
+第二项来自注意力 $QK^\top$ 和 $AV$ 的序列长度相关计算。总预算
+\begin{equation}
+ \boxed{C=MD}.
+\end{equation}
+
+\section{超参数的幂律拟合}
+论文经验式
+\begin{equation}
+ \eta_{\rm opt}=0.3118C^{-0.1250},
+ \qquad B_{\rm opt}=0.2920C^{0.3271}.
+\end{equation}
+取对数得到线性回归
+\begin{align}
+ \log\eta_{\rm opt}&=\log0.3118-0.1250\log C,\\
+ \log B_{\rm opt}&=\log0.2920+0.3271\log C.
+\end{align}
+因此指数就是 log--log 图中的斜率。若 $C$ 增大 $10^3$ 倍，
+\begin{equation}
+ \frac{\eta_2}{\eta_1}=10^{-0.375}\approx0.422,
+ \qquad \frac{B_2}{B_1}=10^{0.9813}\approx9.58.
+\end{equation}
+
+\section{IsoFLOP 优化问题}
+给定预算 $C$，选择模型计算规模 $M$ 和数据量 $D$：
+\begin{equation}
+ (M_{\rm opt}(C),D_{\rm opt}(C))
+ =\argmin_{M,D}\Loss(M,D)
+ \quad\text{s.t.}\quad MD=C.
+\end{equation}
+论文拟合
+\begin{equation}
+ \boxed{M_{\rm opt}=0.1715C^{0.5243}},
+ \qquad
+ \boxed{D_{\rm opt}=5.8316C^{0.4757}}.
+\end{equation}
+指数满足
+\begin{equation}
+ 0.5243+0.4757=1,
+\end{equation}
+常数满足
+\begin{equation}
+ 0.1715\times5.8316\approx1,
+\end{equation}
+所以两式相乘严格恢复 $MD\approx C$，这是重要一致性检查。
+
+\section{从可分离损失推导最优指数}
+假设
+\begin{equation}
+ \Loss(M,D)=\Loss_\infty+aM^{-\alpha}+bD^{-\beta}.
+\end{equation}
+代入 $D=C/M$：
+\begin{equation}
+ \Loss(M)=\Loss_\infty+aM^{-\alpha}+bC^{-\beta}M^\beta.
+\end{equation}
+求导为零：
+\begin{equation}
+ -a\alpha M^{-\alpha-1}+b\beta C^{-\beta}M^{\beta-1}=0.
+\end{equation}
+整理得
+\begin{equation}
+ M^{\alpha+\beta}=\frac{a\alpha}{b\beta}C^\beta,
+\end{equation}
+所以
+\begin{equation}
+ \boxed{M_{\rm opt}\propto C^{\beta/(\alpha+\beta)}},
+ \qquad
+ \boxed{D_{\rm opt}\propto C^{\alpha/(\alpha+\beta)}}.
+\end{equation}
+论文的 0.5243 与 0.4757 对应模型和数据误差指数非常接近。
+
+\section{最优损失随计算量的幂律}
+将 $M^*,D^*$ 代回，两项具有相同 $C$ 指数：
+\begin{equation}
+ \Loss^*(C)-\Loss_\infty\propto
+ C^{-\frac{\alpha\beta}{\alpha+\beta}}.
+\end{equation}
+因此 log--log 上最优 loss 曲线近似直线。外推大模型时，最危险的误差来自 $\Loss_\infty$、数据质量变化和小规模实验尚未进入渐近区，而不是普通最小二乘本身。
+
+\section{为何用 $M$ 比参数量更合理}
+对相同 $N$，长序列注意力多出
+\begin{equation}
+ C_{\rm attn/token}\propto n_ldL.
+\end{equation}
+若只用 $6N$，不同 $L$ 的模型被视为同规模，IsoFLOP 横轴发生系统性偏差。相对误差
+\begin{equation}
+ \varepsilon_N=\frac{6N-M}{M}
+\end{equation}
+会随 $d,L,n_{\rm vocab}$ 改变，导致拟合指数偏斜。
+
+\section{数据质量如何改变最优分配}
+可把有效数据量写成
+\begin{equation}
+ D_{\rm eff}=qD,
+\end{equation}
+$q>0$ 表示单位 token 信息质量。损失
+\begin{equation}
+ \Loss=\Loss_\infty+aM^{-\alpha}+b(qD)^{-\beta}.
+\end{equation}
+同预算下
+\begin{equation}
+ M^*\propto q^{\beta/(\alpha+\beta)}C^{\beta/(\alpha+\beta)}.
+\end{equation}
+$q$ 越高，最优方案越偏向更大模型、较少但高质量 token。这与论文的经验观察一致。
+
+\section{Bits-per-byte 与交叉熵}
+若验证文本共有 $B$ 个字节，负对数似然 $-\log p(x)$，bits-per-byte
+\begin{equation}
+ \operatorname{BPB}=\frac{-\log_2p(x)}{B}
+ =\frac{-\log p(x)}{B\log2}.
+\end{equation}
+它比 token-level perplexity 更适合跨 tokenizer 比较，因为分母固定为原始字节数。若平均每 token $b$ bytes，token 交叉熵 $H_{\rm tok}$，则
+\begin{equation}
+ \operatorname{BPB}\approx\frac{H_{\rm tok}}{b\log2}.
+\end{equation}
+
+\section{多步学习率调度的分段表达}
+设训练进度 $u\in[0,1]$，最大学习率 $\eta_{\max}$，论文策略可抽象为
+\begin{equation}
+ \eta(u)=\begin{cases}
+ \eta_{\max}\,u/u_w,&0\le u<u_w,\\
+ \eta_{\max},&u_w\le u<u_1,\\
+ 0.316\eta_{\max},&u_1\le u<u_2,\\
+ 0.1\eta_{\max},&u_2\le u\le1.
+ \end{cases}
+\end{equation}
+相比余弦衰减，它在中期保持更大步长，便于继续扩展训练 token；阶段边界造成的损失小跳变来自优化器有效步长突变。
+
+\section{预测误差的传播}
+若拟合
+\begin{equation}
+ \log M=a\log C+c
+\end{equation}
+的斜率误差为 $\Delta a$，外推倍率 $R=C_2/C_1$ 时模型规模相对倍数误差
+\begin{equation}
+ \frac{\widehat M_2/M_2}{\widehat M_1/M_1}=R^{\Delta a}.
+\end{equation}
+例如 $R=10^4$、$\Delta a=0.02$，误差倍数 $10^{0.08}\approx1.20$。大跨度外推对小指数误差非常敏感。
+% AUGMENTED_DETAILED_MATH_2
+
+\section{训练 FLOPs 的来源}
+对 dense Transformer，宽度 $d$、层数 $L$、词表忽略。每 token 每层前向主要 FLOPs
+\begin{equation}
+ C_{\mathrm{fwd,layer}}
+ \approx(8+4r)d^2+4nd,
+\end{equation}
+其中 $r$ 是 MLP expansion，$n$ 是上下文长度的注意力均摊项。训练包含前向、激活反传、权重梯度，经验上约为前向的 3 倍：
+\begin{equation}
+ C_{\mathrm{train}}\approx6ND,
+\end{equation}
+这里 $N$ 是 non-embedding 参数量，$D$ 是训练 token 数。常数 6 是近似，MoE、长上下文和重计算会改变它。
+
+\section{为什么使用 non-embedding 参数量}
+词嵌入参数
+\begin{equation}
+ P_{\mathrm{emb}}=Vd
+\end{equation}
+与词表大小 $V$ 强相关，但每 token 只查一行，计算不与 $Vd$ 成正比。主干 non-embedding 参数每次前向几乎都参与矩阵乘法。因此用
+\begin{equation}
+ M=P-P_{\mathrm{emb}}
+\end{equation}
+拟合计算 scaling law，能减少不同 tokenizer/词表引入的虚假参数差异。
+
+\section{可分离 scaling law 的约束优化}
+设验证损失
+\begin{equation}
+ L(M,D)=L_\infty+aM^{-\alpha}+bD^{-\beta},
+\end{equation}
+计算约束
+\begin{equation}
+ C=kMD.
+\end{equation}
+消去
+\begin{equation}
+ D=C/(kM),
+\end{equation}
+得到
+\begin{equation}
+ L-L_\infty=aM^{-\alpha}+b(kM/C)^\beta.
+\end{equation}
+对 $M$ 求导：
+\begin{equation}
+ -a\alpha M^{-\alpha-1}
+ +b\beta(k/C)^\beta M^{\beta-1}=0.
+\end{equation}
+整理
+\begin{equation}
+ M^{\alpha+\beta}
+ =\frac{a\alpha}{b\beta}(C/k)^\beta.
+\end{equation}
+故
+\begin{equation}
+ \boxed{M^*(C)=A C^{\beta/(\alpha+\beta)}},
+ \qquad
+ \boxed{D^*(C)=B C^{\alpha/(\alpha+\beta)}}.
+\end{equation}
+
+\section{最优损失指数}
+代回模型项
+\begin{equation}
+ (M^*)^{-\alpha}\propto C^{-\alpha\beta/(\alpha+\beta)}.
+\end{equation}
+数据项同样
+\begin{equation}
+ (D^*)^{-\beta}\propto C^{-\alpha\beta/(\alpha+\beta)}.
+\end{equation}
+所以
+\begin{equation}
+ \boxed{L^*(C)=L_\infty+K C^{-\gamma}},
+ \qquad
+ \gamma=\frac{\alpha\beta}{\alpha+\beta}.
+\end{equation}
+最优点处两类误差的边际收益平衡，而不一定数值相等；由一阶条件
+\begin{equation}
+ \alpha aM^{-\alpha}=\beta bD^{-\beta}.
+\end{equation}
+
+\section{log--log 回归与非线性偏差}
+单变量幂律
+\begin{equation}
+ y=Ax^{-\alpha}
+\end{equation}
+取对数
+\begin{equation}
+ \log y=\log A-\alpha\log x
+\end{equation}
+可线性回归。但损失有不可约项
+\begin{equation}
+ L=L_\infty+Ax^{-\alpha},
+\end{equation}
+必须拟合
+\begin{equation}
+ \log(L-L_\infty)=\log A-\alpha\log x.
+\end{equation}
+若 $L_\infty$ 估计错误，尤其当 $L$ 接近下限时，斜率会严重偏差，所以论文通常直接做非线性最小二乘并用 Huber loss 抑制异常点。
+
+\section{IsoFLOP 最优点}
+固定计算预算 $C_j$，训练多组模型大小 $M$，数据量自动满足 $D=C_j/(kM)$，得到 U 形曲线
+\begin{equation}
+ L_j(M)=L_\infty+aM^{-\alpha}+b(kM/C_j)^\beta.
+\end{equation}
+小模型左侧受容量项主导，大模型右侧因 token 不足受数据项主导。每条曲线最小点 $M_j^*$ 再拟合
+\begin{equation}
+ M_j^*=A C_j^a,
+ \qquad D_j^*=B C_j^b.
+\end{equation}
+理论可分离模型预测 $a+b=1$；实际偏离反映注意力、优化和数据质量等非理想因素。
+
+\section{数据质量因子}
+若只有比例 $q$ 的 token 等效有用，令有效数据
+\begin{equation}
+ D_{\mathrm{eff}}=qD.
+\end{equation}
+损失
+\begin{equation}
+ L=L_\infty+aM^{-\alpha}+b(qD)^{-\beta}.
+\end{equation}
+同计算约束推导
+\begin{equation}
+ M^*\propto q^{\beta/(\alpha+\beta)}C^{\beta/(\alpha+\beta)},
+\end{equation}
+\begin{equation}
+ D^*\propto q^{-\beta/(\alpha+\beta)}C^{\alpha/(\alpha+\beta)}.
+\end{equation}
+质量提高时，同等原始 token 更有效，最优配置可以把更多计算分给模型容量。
+
+\section{混合数据的有效质量}
+若语料由来源 $j$ 混合，token 比例 $w_j$，质量 $q_j$。最简单线性近似
+\begin{equation}
+ q_{\mathrm{mix}}=\sum_jw_jq_j.
+\end{equation}
+若不同来源有重复，边际信息递减，可用
+\begin{equation}
+ D_{\mathrm{eff}}=\sum_jq_jD_j^\rho,
+ \qquad 0<\rho\le1.
+\end{equation}
+$\rho<1$ 表示同源数据增多时新信息下降。数据配比优化变成
+\begin{equation}
+ \max_{D_j\ge0}\sum_jq_jD_j^\rho
+ \quad\text{s.t.}\quad\sum_jD_j=D,
+\end{equation}
+Lagrange 条件给出
+\begin{equation}
+ q_j\rho D_j^{\rho-1}=\lambda,
+\end{equation}
+即更高质量来源获得更多 token，但不会无限集中。
+
+\section{参数拟合不确定性的传播}
+最优模型指数
+\begin{equation}
+ a=\frac\beta{\alpha+\beta}.
+\end{equation}
+一阶误差传播
+\begin{equation}
+ \operatorname{Var}(a)\approx
+ \nabla a^\top\Sigma_{\alpha,\beta}\nabla a,
+\end{equation}
+其中
+\begin{equation}
+ \frac{\partial a}{\partial\alpha}
+ =-\frac\beta{(\alpha+\beta)^2},
+ \qquad
+ \frac{\partial a}{\partial\beta}
+ =\frac\alpha{(\alpha+\beta)^2}.
+\end{equation}
+外推到大计算量
+\begin{equation}
+ \log M^*=\log A+a\log C
+\end{equation}
+时，指数误差乘 $\log C$ 放大，所以跨多个数量级的预测区间必须报告置信带。
+
+\section{BPB 与 perplexity 换算}
+每 token 平均负对数似然 $H_{\mathrm{tok}}$（nat），perplexity
+\begin{equation}
+ \operatorname{PPL}=e^{H_{\mathrm{tok}}}.
+\end{equation}
+若平均每 token 含 $b$ byte，则
+\begin{equation}
+ \operatorname{BPB}=\frac{H_{\mathrm{tok}}}{b\log2},
+\end{equation}
+所以
+\begin{equation}
+ \operatorname{PPL}=2^{b\cdot\operatorname{BPB}}.
+\end{equation}
+不同 tokenizer 的 $b$ 不同，PPL 不可直接横比；BPB 以原始字节归一化，更接近跨 tokenizer 的统一信息率。
+\clearpage
+\section{训练 FLOPs 近似 $6ND$ 的来源}
+设非 embedding 参数量为 $N$，训练 token 数为 $D$。一次前向中，每个权重通常参与一次乘法和一次加法，约 $2N$ FLOPs/token。反向传播需要对激活和权重求梯度，成本约为前向的 2 倍，即 $4N$。总计
+\begin{equation}
+ C\approx(2N+4N)D=6ND.
+\end{equation}
+这是数量级近似，忽略 attention softmax、归一化、稀疏 MoE 激活比例和通信开销。对 MoE 应使用激活参数量而不是总存储参数量计算每 token FLOPs。
+
+\section{可分离 Scaling Law 的约束优化}
+设损失
+\begin{equation}
+ L(N,D)=L_\infty+aN^{-\alpha}+bD^{-\beta}.
+\end{equation}
+计算预算约束
+\begin{equation}
+ C=kND.
+\end{equation}
+消去 $D=C/(kN)$：
+\begin{equation}
+ L(N)=L_\infty+aN^{-\alpha}
+ +b\left(\frac{kN}{C}\right)^\beta.
+\end{equation}
+对 $N$ 求导：
+\begin{equation}
+ -a\alpha N^{-\alpha-1}
+ +b\beta\left(\frac{k}{C}\right)^\beta
+ N^{\beta-1}=0.
+\end{equation}
+整理
+\begin{equation}
+ N^{\alpha+\beta}
+ =\frac{a\alpha}{b\beta}
+ \left(\frac{C}{k}\right)^\beta.
+\end{equation}
+所以最优模型规模
+\begin{equation}
+ \boxed{N^*(C)=
+ \left(\frac{a\alpha}{b\beta}\right)^{1/(\alpha+\beta)}
+ \left(\frac{C}{k}\right)^{\beta/(\alpha+\beta)}.}
+\end{equation}
+最优数据量
+\begin{equation}
+ \boxed{D^*(C)=
+ \left(\frac{b\beta}{a\alpha}\right)^{1/(\alpha+\beta)}
+ \left(\frac{C}{k}\right)^{\alpha/(\alpha+\beta)}.}
+\end{equation}
+
+\section{最优损失随计算量的幂律}
+代入 $N^*$，模型项和数据项具有相同计算指数
+\begin{equation}
+ N^{*-\alpha}\propto
+ C^{-\alpha\beta/(\alpha+\beta)},
+\end{equation}
+\begin{equation}
+ D^{*-\beta}\propto
+ C^{-\alpha\beta/(\alpha+\beta)}.
+\end{equation}
+因此
+\begin{equation}
+ L^*(C)-L_\infty
+ \propto C^{-\gamma},
+ \qquad
+ \gamma=\frac{\alpha\beta}{\alpha+\beta}.
+\end{equation}
+计算扩展收益由模型和数据两个瓶颈的调和式组合决定。
+
+\section{最优点的边际收益平衡}
+一阶条件可改写为
+\begin{equation}
+ \alpha aN^{-\alpha}
+ =\beta bD^{-\beta}.
+\end{equation}
+左边是模型项对对数模型规模的边际下降，右边是数据项对对数数据量的边际下降。最优分配要求单位比例扩展模型与数据带来的损失收益按预算约束平衡，而不是要求两项数值相等。
+
+\section{Log--log 回归的拟合形式}
+若单独拟合
+\begin{equation}
+ y=a x^{-\alpha},
+\end{equation}
+取对数
+\begin{equation}
+ \log y=\log a-\alpha\log x.
+\end{equation}
+可以线性回归。但真实损失含不可约项 $L_\infty$：
+\begin{equation}
+ L-L_\infty=ax^{-\alpha}.
+\end{equation}
+若错误地对 $\log L$ 回归，$L_\infty$ 会使大规模区间曲线变平，估计的 $\alpha$ 偏小。应联合非线性拟合 $L_\infty,a,\alpha$ 或对候选 $L_\infty$ 做剖面搜索。
+
+\section{参数不确定性如何传播到最优规模}
+对
+\begin{equation}
+ \log N^*=\frac1{\alpha+\beta}
+ \left[
+ \log\frac{a\alpha}{b\beta}
+ +\beta\log\frac Ck
+ \right],
+\end{equation}
+小扰动满足
+\begin{equation}
+ \delta\log N^*\approx
+ \nabla_\vartheta\log N^*\cdot\delta\vartheta,
+\end{equation}
+其中 $\vartheta=(\log a,\log b,\alpha,\beta)$。若参数协方差为 $\Sigma_\vartheta$，Delta method 给出
+\begin{equation}
+ \operatorname{Var}(\log N^*)
+ \approx g^\top\Sigma_\vartheta g.
+\end{equation}
+计算预算跨越多个数量级时，指数估计的微小误差会被 $\log C$ 放大，因此外推不确定性应显式报告。
+
+\section{IsoFLOP 曲线上的最优点}
+固定 $C$，不同 $N$ 对应
+\begin{equation}
+ D=\frac C{kN}.
+\end{equation}
+实验在同一计算量下训练多个模型，得到损失曲线 $L_C(N)$。在 $\log N$ 附近可局部二次拟合
+\begin{equation}
+ L_C(N)\approx a_C(\log N-\log N_C^*)^2+b_C.
+\end{equation}
+最小点 $N_C^*$ 给出该计算预算的经验最优模型规模。再对 $(C,N_C^*)$ 拟合幂律
+\begin{equation}
+ N_C^*=A C^p.
+\end{equation}
+这种两阶段方法减少直接拟合全部损失面的难度，但会把第一阶段最小点误差传给第二阶段。
+
+\section{数据质量因子的数学表示}
+若不同数据源每 token 信息价值不同，可定义有效 token 数
+\begin{equation}
+ D_{\rm eff}=\sum_{s}q_sD_s,
+ \qquad 0<q_s\le1.
+\end{equation}
+损失数据项改为
+\begin{equation}
+ bD_{\rm eff}^{-\beta}.
+\end{equation}
+若重复或低质量数据 $q_s$ 小，原始 token 数增长不等于有效数据增长。数据去重可以减少 $D$，却提高平均 $q$，最终 $D_{\rm eff}$ 反而增加。
+
+\section{混合数据的非线性互补}
+简单线性 $D_{\rm eff}$ 忽略领域互补。可加入交互项
+\begin{equation}
+ D_{\rm eff}=\sum_sq_sD_s+
+ \sum_{s<t}\gamma_{st}\sqrt{D_sD_t}.
+\end{equation}
+$\gamma_{st}>0$ 表示两个领域互补，$<0$ 表示冲突或重复。此时最优数据配比不再只选最高质量源，而需考虑边际互补收益。
+
+\section{Bits-per-byte 与 perplexity}
+若语料总字节数为 $B$，总负对数似然以自然对数计
+\begin{equation}
+ \mathrm{NLL}=-\sum_t\log p(x_t\mid x_{<t}),
+\end{equation}
+则
+\begin{equation}
+ \mathrm{BPB}=\frac{\mathrm{NLL}}{B\log2}.
+\end{equation}
+若平均每 token 字节数为 $r=B/T$，token 交叉熵
+\begin{equation}
+ H_{\rm tok}=r\,\mathrm{BPB}\log2.
+\end{equation}
+perplexity
+\begin{equation}
+ \mathrm{PPL}=e^{H_{\rm tok}}
+ =2^{r\,\mathrm{BPB}}.
+\end{equation}
+不同 tokenizer 的 $r$ 不同，所以 PPL 不宜跨 tokenizer 直接比较，而 BPB 更接近字符级统一尺度。
+
+\section{一个计算最优分配例子}
+假设 $\alpha=0.34,\beta=0.28$，忽略常数，则
+\begin{equation}
+ N^*\propto C^{0.28/(0.62)}=C^{0.4516},
+\end{equation}
+\begin{equation}
+ D^*\propto C^{0.34/(0.62)}=C^{0.5484}.
+\end{equation}
+计算量扩大 100 倍时
+\begin{equation}
+ \frac{N_2}{N_1}=100^{0.4516}\approx8.0,
+\end{equation}
+\begin{equation}
+ \frac{D_2}{D_1}=100^{0.5484}\approx12.5.
+\end{equation}
+说明最优策略是同时扩展模型和数据，且该假设下数据增长略快。
+
+\section{外推边界}
+幂律拟合通常只在实验覆盖区间内可靠。若达到数据重复极限、优化不稳定、架构变化或推理目标变化，参数 $\alpha,\beta,L_\infty$ 都可能改变。数学上，局部拟合
+\begin{equation}
+ \log(L-L_\infty)\approx c-\alpha\log N
+\end{equation}
+并不能证明对任意更大 $N$ 仍保持同一斜率。报告 extrapolation 时应同时给训练规模范围和置信区间。
+\end{document}

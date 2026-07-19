@@ -1,0 +1,474 @@
+\documentclass[11pt]{article}
+\usepackage{fontspec}
+\setmainfont[
+  Path=fonts/,
+  Extension=.ttf,
+  UprightFont=*-400,
+  BoldFont=*-700
+]{NotoSerifSC}
+\setsansfont[
+  Path=fonts/,
+  Extension=.ttf,
+  UprightFont=*-400,
+  BoldFont=*-700
+]{NotoSerifSC}
+\XeTeXlinebreaklocale "zh"
+\XeTeXlinebreakskip=0pt plus 1pt
+\usepackage[a4paper,margin=1.70cm]{geometry}
+\usepackage{amsmath,amssymb,mathtools,bm}
+\usepackage{booktabs,longtable,array}
+\usepackage{enumitem}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\setlist{nosep,leftmargin=2em}
+\allowdisplaybreaks[3]
+\numberwithin{equation}{section}
+\pagestyle{plain}
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Pp}{\mathbb{P}}
+\newcommand{\1}{\mathbf{1}}
+\newcommand{\T}{\mathsf{T}}
+\newcommand{\F}{\mathrm{F}}
+\newcommand{\cN}{\mathcal{N}}
+\newcommand{\cL}{\mathcal{L}}
+\newcommand{\cS}{\mathcal{S}}
+\newcommand{\cH}{\mathcal{H}}
+\newcommand{\cA}{\mathcal{A}}
+\newcommand{\cM}{\mathcal{M}}
+\newcommand{\cT}{\mathcal{T}}
+\newcommand{\diag}{\operatorname{diag}}
+\newcommand{\tr}{\operatorname{tr}}
+\newcommand{\Var}{\operatorname{Var}}
+\newcommand{\Cov}{\operatorname{Cov}}
+\newcommand{\softmax}{\operatorname{softmax}}
+\newcommand{\KL}{D_{\mathrm{KL}}}
+\newcommand{\sg}{\operatorname{sg}}
+\begin{document}
+    \begin{center}
+      {\LARGE\bfseries 26\_Why Language Models Hallucinate}
+    \end{center}
+    \vspace{0.8em}
+
+    \section{符号与维度}
+    \begin{longtable}{>{$}l<{$} >{$}l<{$} p{10cm}}
+    \toprule
+    \text{符号} & \text{维度} & \text{含义}\\
+    \midrule
+    p,\hat p & -- & 真实事实分布与模型分布。\\
+        E,V & 2^X & 错误集合与有效回答集合。\\
+        \mathrm{err},h & [0,1] & 分类错误率与生成幻觉率。\\
+        K,k & \mathbb N & 阈值分母与每提示有效答案数上界。\\
+    \bottomrule
+    \end{longtable}
+
+    所有向量默认是列向量；未特别说明时，期望同时对数据、噪声和采样时刻取值。下文只展开论文中承担方法逻辑的公式，并把所需假设写在推导发生的位置。
+
+\section{主归约定理的完整集合证明}
+
+对提示 $c\sim\mu$，有效回答集合 $V_c$、错误集合 $E_c$。令
+\begin{equation}
+ K=\min_c|E_c|,\qquad k=\max_c|V_c|,
+\end{equation}
+并定义阈值集合
+\begin{align}
+ A&=\{(c,r):\widehat p(r\mid c)>1/K\},\\
+ B&=\{(c,r):\widehat p(r\mid c)\le1/K\}.
+\end{align}
+训练分布只支持有效回答，$p(V)=1$。联合分布写成
+$p(c,r)=\mu(c)p(r\mid c)$、
+$\widehat p(c,r)=\mu(c)\widehat p(r\mid c)$。
+
+IIV 分类分布以概率 $1/2$ 从 $p$ 采有效样本，以概率 $1/2$ 先采 $c\sim\mu$、
+再从 $E_c$ 均匀采错误回答。分类器在 $A$ 判正、在 $B$ 判负。因此
+\begin{equation}
+ \operatorname{err}_{\rm iiv}=D(A\setminus V)+D(B\cap V).
+\end{equation}
+生成错误率分解为
+\begin{equation}
+ \operatorname{err}=\widehat p(A\setminus V)+\widehat p(B\setminus V).
+\end{equation}
+
+先处理阈值以上的假阳性。对 $(c,r)\in A\setminus V$，
+\begin{equation}
+ D(c,r)=\frac{\mu(c)}{2|E_c|}\le\frac{\mu(c)}{2K},
+\end{equation}
+而
+\begin{equation}
+ \widehat p(c,r)=\mu(c)\widehat p(r\mid c)>\frac{\mu(c)}K.
+\end{equation}
+逐项相加得到
+\begin{equation}
+ \widehat p(A\setminus V)\ge2D(A\setminus V).
+\end{equation}
+
+再处理阈值以下的假阴性。因训练分布只在 $V$ 上，
+\begin{equation}
+ 2D(B\cap V)=p(B\cap V)=p(B).
+\end{equation}
+每个提示至多有 $k$ 个有效回答落入 $B$，每个条件概率至多 $1/K$，所以
+\begin{align}
+ \widehat p(B\cap V)
+ &=\sum_c\mu(c)\sum_{r\in B\cap V_c}\widehat p(r\mid c)\\
+ &\le\sum_c\mu(c)\frac{k}{K}=\frac{k}{K}.
+\end{align}
+令校准偏差
+\begin{equation}
+ \delta=|\widehat p(A)-p(A)|=|\widehat p(B)-p(B)|.
+\end{equation}
+于是
+\begin{align}
+ 2D(B\cap V)-\widehat p(B\setminus V)
+ &=p(B)-[\widehat p(B)-\widehat p(B\cap V)]\\
+ &\le\delta+\widehat p(B\cap V)\\
+ &\le\delta+\frac{k}{K}.
+\end{align}
+移项并与阈值以上部分相加，得到论文主定理
+\begin{equation}
+ \boxed{\operatorname{err}
+ \ge2\operatorname{err}_{\rm iiv}-\frac{k}{K}-\delta.}
+\end{equation}
+常数 $2$ 来自 IIV 分布把一半质量分配给错误样本，不是经验拟合常数。
+
+\section{校准项等于概率重标定方向导数}
+
+令 $a=\widehat p(A)$。对 $A$ 内概率乘 $s>0$ 并归一化：
+\begin{equation}
+ \widehat p_s(x)=
+ \begin{cases}
+ \displaystyle\frac{s\widehat p(x)}{Z(s)},&x\in A,\\[0.7em]
+ \displaystyle\frac{\widehat p(x)}{Z(s)},&x\notin A,
+ \end{cases}
+ \qquad Z(s)=sa+(1-a).
+\end{equation}
+交叉熵
+\begin{align}
+ L(s)&=-\E_{x\sim p}\log\widehat p_s(x)\\
+ &=-\E_p\log\widehat p(x)-p(A)\log s+\log Z(s).
+\end{align}
+求导
+\begin{equation}
+ L'(s)=-\frac{p(A)}s+\frac a{sa+1-a}.
+\end{equation}
+在 $s=1$，
+\begin{equation}
+ \boxed{L'(1)=\widehat p(A)-p(A).}
+\end{equation}
+故 $\delta=|L'(1)|$。若模型类能实现这一简单重标定且交叉熵达到局部最优，
+该方向导数应接近零；这解释了为什么预训练自然倾向小 $\delta$。
+
+二阶导数
+\begin{equation}
+ L''(1)=p(A)-a^2.
+\end{equation}
+当 $p(A)\approx a$ 时约为 $a(1-a)\ge0$，重标定方向局部凸。
+
+\section{正向 KL 对未观测错误区的约束}
+
+交叉熵恒等式
+\begin{equation}
+ \E_p[-\log\widehat p]=H(p)+D_{\rm KL}(p\|\widehat p)
+\end{equation}
+中，若 $p(x)=0$，该点不直接出现在求和
+\begin{equation}
+ D_{\rm KL}(p\|\widehat p)=
+ \sum_{x:p(x)>0}p(x)\log\frac{p(x)}{\widehat p(x)}.
+\end{equation}
+但概率总和仍把区域耦合：给错误区质量 $\varepsilon$ 后，有效区总质量仅 $1-\varepsilon$。
+若在有效区保持相对比例
+$\widehat p(x)=(1-\varepsilon)p(x)$，则
+\begin{equation}
+ D_{\rm KL}(p\|\widehat p)
+ =\sum_xp(x)\log\frac1{1-\varepsilon}
+ =-\log(1-\varepsilon).
+\end{equation}
+小 $\varepsilon$ 时
+\begin{equation}
+ -\log(1-\varepsilon)=\varepsilon+\frac{\varepsilon^2}{2}+O(\varepsilon^3).
+\end{equation}
+所以错误质量并非完全免费，但有限样本只观测有效区的一小部分，模型可在大量未见字符串之间重新分配质量而训练损失近似不变。
+
+\section{Good--Turing 缺失质量与 singleton rate}
+
+对离散分布 $\nu$ 抽 $N$ 个样本。令类别 $x$ 的样本计数 $N_x$，缺失质量
+\begin{equation}
+ M=\sum_x\nu_x\1\{N_x=0\},
+\end{equation}
+singleton 比率
+\begin{equation}
+ GT=\frac1N\sum_x\1\{N_x=1\}.
+\end{equation}
+其期望分别为
+\begin{align}
+ \E M&=\sum_x\nu_x(1-\nu_x)^N,\\
+ \E GT&=\frac1N\sum_x\Pp(N_x=1)\\
+ &=\sum_x\nu_x(1-\nu_x)^{N-1}.
+\end{align}
+所以
+\begin{align}
+ \E GT-\E M
+ &=\sum_x\nu_x^2(1-\nu_x)^{N-1}\ge0.
+\end{align}
+且对 $u\in[0,1]$，函数 $u(1-u)^{N-1}$ 的最大值不超过 $1/N$，因此
+\begin{align}
+ \E GT-\E M
+ &=\sum_x\nu_x[\nu_x(1-\nu_x)^{N-1}]\\
+ &\le\frac1N\sum_x\nu_x=\frac1N.
+\end{align}
+这证明 singleton 比率的期望只比缺失质量高至多 $1/N$。
+
+改变一个训练样本时，singleton 个数至多改变 $2$，所以 $GT$ 的 bounded difference 常数为 $2/N$。
+McDiarmid 给出
+\begin{equation}
+ \Pp(|GT-\E GT|\ge\epsilon)
+ \le2\exp\left(-\frac{N\epsilon^2}{2}\right).
+\end{equation}
+结合缺失质量自身的集中界与上述期望偏差，就得到
+$|M-GT|=O(\!\sqrt{\log(1/\gamma)/N})$ 的高概率结论。
+
+\section{带拒答样本的 singleton 修正}
+
+论文把所有 IDK 回答折叠成同一类别。设折叠后的标准 Good--Turing 量为 $GT$，
+忽略 IDK 后的 singleton rate 为 $sr$。折叠操作至多让 IDK 类额外成为一个 singleton，因此
+\begin{equation}
+ GT-sr\in\{0,1/N\}.
+\end{equation}
+令 $\varphi$ 是 IDK 总概率。IDK 未在 $N$ 个样本中出现的概率
+\begin{equation}
+ (1-\varphi)^N\le e^{-N\varphi}.
+\end{equation}
+若
+\begin{equation}
+ \varphi\ge N^{-1}\log(5/\gamma),
+\end{equation}
+该概率至多 $\gamma/5$。若不等式反向成立，则忽略 IDK 对缺失质量的改变量本身至多
+\begin{equation}
+ N^{-1}\log(5/\gamma).
+\end{equation}
+两种情况合并并用 union bound，得到带拒答版本仍为
+\begin{equation}
+ |MM-sr|=O\left(\sqrt{\frac{\log(1/\gamma)}N}\right).
+\end{equation}
+
+\section{Arbitrary Facts 下界的组合}
+
+对训练中未回答的提示集合 $U$，算法输出与随机指定的正确答案 $a_c$ 独立。
+在 IIV 的正负对称构造中，对每个未见提示，任一固定分类器平均至少产生 $1/2$ 的局部分类误差。
+若未见提示质量为 $MM$，加权 Hoeffding 给出高概率下界
+\begin{equation}
+ 2\operatorname{err}_{\rm iiv}
+ \ge MM-O\left(\sqrt{\frac{\log(N/\gamma)}N}\right).
+\end{equation}
+再用 $MM\approx sr$ 与主归约定理 $k=2$，得到
+\begin{equation}
+ \operatorname{err}
+ \ge sr-\frac{2}{\min_c|E_c|}
+ -O\left(\sqrt{\frac{\log(N/\gamma)}N}\right)-\delta.
+\end{equation}
+论文在 $99\%$ 概率下把常数显式化为
+\begin{equation}
+ \operatorname{err}\ge sr-\frac2{\min_c|E_c|}
+ -\frac{35+6\log N}{\sqrt N}-\delta.
+\end{equation}
+各减项分别对应有限错误选项数、统计集中误差和阈值校准误差；不能把它们都解释为同一种“模型能力不足”。
+
+\section{条件期望作为 $L^2$ 正交投影}
+
+令随机向量 $Y\in L^2$，观测 $Z$ 生成子空间
+\begin{equation}
+ \mathcal H_Z=\{f(Z):\E\|f(Z)\|^2<\infty\}.
+\end{equation}
+条件期望 $m(Z)=\E[Y\mid Z]$ 满足任意 $h(Z)\in\mathcal H_Z$：
+\begin{equation}
+ \E[(Y-m(Z))^Th(Z)]=0.
+\end{equation}
+因为
+\begin{align}
+ \E[(Y-m)^Th]
+ &=\E\{\E[(Y-m)^Th\mid Z]\}\\
+ &=\E\{h^T\E[Y-m\mid Z]\}=0.
+\end{align}
+于是 Pythagoras 恒等式
+\begin{equation}
+ \E\|Y-f(Z)\|^2
+ =\E\|Y-m(Z)\|^2+\E\|m(Z)-f(Z)\|^2.
+\end{equation}
+多数回归、去噪、流匹配和局部目标的“最优预测器”都由这一投影结论得到。
+
+全方差公式也是同一正交分解：
+\begin{equation}
+ \Var(Y)=\E\Var(Y\mid Z)+\Var(\E[Y\mid Z]).
+\end{equation}
+第一项是观测 $Z$ 后仍不可约的不确定性，第二项是不同 $Z$ 条件均值的变化。
+
+\section{Jensen、对数和与变分界}
+
+对凹函数 $\log$，
+\begin{equation}
+ \log\E X\ge\E\log X,
+ \qquad X>0.
+\end{equation}
+差距可以写成 KL。令未归一权重 $w(z)>0$、提议分布 $q(z)$，
+配分函数 $Z=\E_qw(z)$，定义
+\begin{equation}
+ p^*(z)=\frac{q(z)w(z)}{Z}.
+\end{equation}
+则
+\begin{align}
+ \log Z-\E_q\log w
+ &=\E_q\log\frac{Z}{w(z)}\\
+ &=\E_q\log\frac{q(z)}{p^*(z)}\\
+ &=D_{\rm KL}(q\|p^*)\ge0.
+\end{align}
+因此 Jensen 下界何时紧不只取决于“方差小”，而是提议分布是否等于归一化后的目标分布。
+
+log-sum-exp
+\begin{equation}
+ \operatorname{LSE}(x)=\log\sum_{i=1}^{n}e^{x_i}
+\end{equation}
+满足
+\begin{equation}
+ \max_i x_i\le\operatorname{LSE}(x)
+ \le\max_i x_i+\log n.
+\end{equation}
+减去最大值 $m=\max_ix_i$ 后计算
+\begin{equation}
+ \operatorname{LSE}(x)=m+\log\sum_ie^{x_i-m}
+\end{equation}
+可避免指数上溢且数学等价。
+
+\section{Hoeffding 不等式的矩母函数推导}
+
+设独立 $X_i\in[a_i,b_i]$，$S=\sum_i(X_i-\E X_i)$。
+对任意 $\lambda>0$，Markov 不等式
+\begin{equation}
+ \Pp(S\ge t)=\Pp(e^{\lambda S}\ge e^{\lambda t})
+ \le e^{-\lambda t}\E e^{\lambda S}.
+\end{equation}
+独立性给出矩母函数乘积。Hoeffding 引理
+\begin{equation}
+ \E e^{\lambda(X_i-\E X_i)}
+ \le\exp\left(\frac{\lambda^2(b_i-a_i)^2}{8}\right).
+\end{equation}
+故
+\begin{equation}
+ \Pp(S\ge t)
+ \le\exp\left(-\lambda t+\frac{\lambda^2}{8}
+ \sum_i(b_i-a_i)^2\right).
+\end{equation}
+对 $\lambda$ 最小化，
+\begin{equation}
+ \lambda^*=\frac{4t}{\sum_i(b_i-a_i)^2},
+\end{equation}
+得到
+\begin{equation}
+ \Pp(S\ge t)
+ \le\exp\left(-\frac{2t^2}{\sum_i(b_i-a_i)^2}\right).
+\end{equation}
+对下尾应用于 $-S$，再 union bound 得双侧界。
+
+\section{Bernstein 界利用方差信息}
+
+若独立零均值 $X_i$ 满足 $|X_i|\le M$，总方差
+$v=\sum_i\E X_i^2$，Bernstein 界
+\begin{equation}
+ \Pp\left(\sum_iX_i\ge t\right)
+ \le\exp\left(-\frac{t^2}{2(v+Mt/3)}\right).
+\end{equation}
+当 $t\ll v/M$ 时近似高斯尾 $e^{-t^2/(2v)}$；
+当 $t$ 很大时转为 $e^{-3t/(2M)}$。相比只使用取值区间的 Hoeffding，
+方差远小于最坏范围时 Bernstein 更紧。
+
+对 Bernoulli 均值 $\widehat p=N^{-1}\sum_iX_i$，$v=Np(1-p)$，
+\begin{equation}
+ \Pp(|\widehat p-p|\ge\epsilon)
+ \le2\exp\left(-\frac{N\epsilon^2}
+ {2[p(1-p)+\epsilon/3]}\right).
+\end{equation}
+
+\section{并合界与同时保证}
+
+事件 $E_1,…,E_M$ 不要求独立也有
+\begin{equation}
+ \Pp\left(\bigcup_{j=1}^{M}E_j\right)
+ \le\sum_{j=1}^{M}\Pp(E_j).
+\end{equation}
+若每个失败概率至多 $\delta/M$，则全部结论同时成立的概率至少 $1-\delta$。
+将单点集中界扩展到有限候选集合通常产生 $\log M$ 项。例如
+\begin{equation}
+ 2M e^{-2N\epsilon^2}\le\delta
+\end{equation}
+等价于
+\begin{equation}
+ \epsilon\ge\sqrt{\frac{\log(2M/\delta)}{2N}}.
+\end{equation}
+若候选集合无限，需要覆盖数、VC 维或 Rademacher 复杂度，而不能直接把 $M=\infty$ 代入。
+
+\section{Delta 方法与非线性估计误差}
+
+设 $\sqrt N(\widehat\theta-\theta)\Rightarrow\cN(0,\Sigma)$，
+光滑函数 $g$ 的一阶展开
+\begin{equation}
+ g(\widehat\theta)=g(\theta)+
+ \nabla g(\theta)^T(\widehat\theta-\theta)+o_p(N^{-1/2}).
+\end{equation}
+于是
+\begin{equation}
+ \sqrt N[g(\widehat\theta)-g(\theta)]
+ \Rightarrow\cN(0,\nabla g^T\Sigma\nabla g).
+\end{equation}
+例如 $g(p)=\log p$，方差近似
+\begin{equation}
+ \Var(\log\widehat p)\approx\frac{\Var(\widehat p)}{p^2}.
+\end{equation}
+当 $p$ 很小时误差被 $1/p^2$ 放大，解释了稀有事件对数概率和概率比估计的不稳定。
+
+二阶展开还给非线性偏差
+\begin{equation}
+ \E g(\widehat\theta)-g(\theta)
+ \approx\frac12\tr(H_g(\theta)\Cov(\widehat\theta)).
+\end{equation}
+FID、比率、倒数和归一化优势等即使基础估计无偏，非线性组合也可有有限样本偏差。
+
+\section{重要性采样与有效样本量}
+
+目标期望 $\E_p f(X)$ 用提议 $q$ 采样，权重
+$w(x)=p(x)/q(x)$：
+\begin{equation}
+ \widehat\mu=\frac1N\sum_{i=1}^{N}w(X_i)f(X_i),
+ \qquad X_i\sim q.
+\end{equation}
+若 $p$ 的归一化常数未知，使用自归一估计
+\begin{equation}
+ \widetilde\mu=\frac{\sum_iw_if_i}{\sum_iw_i},
+\end{equation}
+它一般有 $O(1/N)$ 偏差，但常更实用。权重退化可用
+\begin{equation}
+ N_{\rm eff}=\frac{(\sum_iw_i)^2}{\sum_iw_i^2}
+\end{equation}
+衡量；权重相等时为 $N$，单个权重主导时接近 $1$。
+
+比率裁剪 $\widetilde w=\min(w,c)$ 降低方差，但引入偏差
+\begin{equation}
+ \E_q[(w-\widetilde w)f]
+ =\E_q[(w-c)_+f].
+\end{equation}
+若 $|f|\le F$，绝对偏差至多
+\begin{equation}
+ F\E_q[(w-c)_+].
+\end{equation}
+
+\section{校准与 Brier 分解}
+
+二元预测概率 $P\in[0,1]$、标签 $Y\in\{0,1\}$。条件真实频率
+$m(P)=\E[Y\mid P]$。Brier 分数
+\begin{align}
+ \E(P-Y)^2
+ &=\E(P-m(P))^2+\E(m(P)-Y)^2,
+\end{align}
+交叉项因条件期望为零而消失。第一项是校准误差，第二项是给定预测分组后的不可约噪声。
+若模型完美校准，$m(P)=P$，第一项为零，但单次预测仍可错误；
+校准不是零错误率，而是概率与长期频率一致。
+
+\end{document}

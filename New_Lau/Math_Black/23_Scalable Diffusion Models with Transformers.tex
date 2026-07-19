@@ -1,0 +1,503 @@
+\documentclass[11pt]{article}
+\usepackage{fontspec}
+\setmainfont[
+  Path=fonts/,
+  Extension=.ttf,
+  UprightFont=*-400,
+  BoldFont=*-700
+]{NotoSerifSC}
+\setsansfont[
+  Path=fonts/,
+  Extension=.ttf,
+  UprightFont=*-400,
+  BoldFont=*-700
+]{NotoSerifSC}
+\XeTeXlinebreaklocale "zh"
+\XeTeXlinebreakskip=0pt plus 1pt
+\usepackage[a4paper,margin=1.70cm]{geometry}
+\usepackage{amsmath,amssymb,mathtools,bm}
+\usepackage{booktabs,longtable,array}
+\usepackage{enumitem}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\setlist{nosep,leftmargin=2em}
+\allowdisplaybreaks[3]
+\numberwithin{equation}{section}
+\pagestyle{plain}
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Pp}{\mathbb{P}}
+\newcommand{\1}{\mathbf{1}}
+\newcommand{\T}{\mathsf{T}}
+\newcommand{\F}{\mathrm{F}}
+\newcommand{\cN}{\mathcal{N}}
+\newcommand{\cL}{\mathcal{L}}
+\newcommand{\cS}{\mathcal{S}}
+\newcommand{\cH}{\mathcal{H}}
+\newcommand{\cA}{\mathcal{A}}
+\newcommand{\cM}{\mathcal{M}}
+\newcommand{\cT}{\mathcal{T}}
+\newcommand{\diag}{\operatorname{diag}}
+\newcommand{\tr}{\operatorname{tr}}
+\newcommand{\Var}{\operatorname{Var}}
+\newcommand{\Cov}{\operatorname{Cov}}
+\newcommand{\softmax}{\operatorname{softmax}}
+\newcommand{\KL}{D_{\mathrm{KL}}}
+\newcommand{\sg}{\operatorname{sg}}
+\begin{document}
+    \begin{center}
+      {\LARGE\bfseries 23\_Scalable Diffusion Models with Transformers}
+    \end{center}
+    \vspace{0.8em}
+
+    \section{符号与维度}
+    \begin{longtable}{>{$}l<{$} >{$}l<{$} p{10cm}}
+    \toprule
+    \text{符号} & \text{维度} & \text{含义}\\
+    \midrule
+    x_0,x_t & \R^d & 干净样本与第 $t$ 步含噪样本。\\
+\beta_t,\alpha_t & (0,1) & 噪声方差与信号保留率，$\alpha_t=1-\beta_t$。\\
+\bar\alpha_t & (0,1) & 累积信号率 $\prod_{s\le t}\alpha_s$。\\
+\epsilon,\epsilon_\theta & \R^d & 标准高斯噪声与网络预测。\\
+q,p_\theta & -- & 前向扩散分布与学习的反向分布。\\
+c & \R^{d_c} & 时间和类别条件嵌入。\\
+        \gamma,\beta,g & \R^d & AdaLN 的尺度、偏置与门。\\
+    \bottomrule
+    \end{longtable}
+
+    所有向量默认是列向量；未特别说明时，期望同时对数据、噪声和采样时刻取值。下文只展开论文中承担方法逻辑的公式，并把所需假设写在推导发生的位置。
+
+\section{高斯前向链的闭式分布}
+
+令 $0<\beta_t<1$、$\alpha_t=1-\beta_t$、
+$\bar\alpha_t=\prod_{s=1}^{t}\alpha_s$。前向马尔可夫链为
+\begin{equation}
+ q(x_t\mid x_{t-1})=\cN(\sqrt{\alpha_t}x_{t-1},\beta_tI).
+\end{equation}
+用独立 $\epsilon_t\sim\cN(0,I)$ 重参数化：
+\begin{equation}
+ x_t=\sqrt{\alpha_t}x_{t-1}+\sqrt{\beta_t}\epsilon_t.
+\end{equation}
+递归代入一次得
+\begin{equation}
+ x_t=\sqrt{\alpha_t\alpha_{t-1}}x_{t-2}
+ +\sqrt{\alpha_t\beta_{t-1}}\epsilon_{t-1}
+ +\sqrt{\beta_t}\epsilon_t.
+\end{equation}
+独立高斯线性组合仍为高斯，其噪声协方差为
+\begin{align}
+ \alpha_t\beta_{t-1}I+\beta_tI
+ &=\alpha_t(1-\alpha_{t-1})I+(1-\alpha_t)I\\
+ &=(1-\alpha_t\alpha_{t-1})I.
+\end{align}
+归纳得到
+\begin{equation}
+ \boxed{q(x_t\mid x_0)=\cN(\sqrt{\bar\alpha_t}x_0,
+ (1-\bar\alpha_t)I),}
+\end{equation}
+即可以一次采样写成
+\begin{equation}
+ x_t=\sqrt{\bar\alpha_t}x_0+\sqrt{1-\bar\alpha_t}\epsilon,
+ \qquad\epsilon\sim\cN(0,I).
+\end{equation}
+
+\section{真实反向后验的配方展开}
+
+由 Bayes 公式，舍去与 $x_{t-1}$ 无关的因子，
+\begin{equation}
+ q(x_{t-1}\mid x_t,x_0)
+ \propto q(x_t\mid x_{t-1})q(x_{t-1}\mid x_0).
+\end{equation}
+取负对数并只保留二次项：
+\begin{align}
+ -2\log q
+ &=\frac{\|x_t-\sqrt{\alpha_t}x_{t-1}\|_2^2}{\beta_t}
+ +\frac{\|x_{t-1}-\sqrt{\bar\alpha_{t-1}}x_0\|_2^2}
+ {1-\bar\alpha_{t-1}}+C\\
+ &=A_t\|x_{t-1}\|_2^2-2b_t^{\T}x_{t-1}+C',
+\end{align}
+其中
+\begin{align}
+ A_t&=\frac{\alpha_t}{\beta_t}
+ +\frac1{1-\bar\alpha_{t-1}}
+ =\frac{1-\bar\alpha_t}{\beta_t(1-\bar\alpha_{t-1})},\\
+ b_t&=\frac{\sqrt{\alpha_t}}{\beta_t}x_t
+ +\frac{\sqrt{\bar\alpha_{t-1}}}{1-\bar\alpha_{t-1}}x_0.
+\end{align}
+配方 $A\|z\|^2-2b^{\T}z=A\|z-A^{-1}b\|^2-A^{-1}\|b\|^2$ 给出
+\begin{equation}
+ q(x_{t-1}\mid x_t,x_0)=\cN(\widetilde\mu_t,\widetilde\beta_tI),
+\end{equation}
+其中
+\begin{align}
+ \widetilde\beta_t
+ &=\frac{\beta_t(1-\bar\alpha_{t-1})}{1-\bar\alpha_t},\\
+ \widetilde\mu_t
+ &=\frac{\sqrt{\bar\alpha_{t-1}}\beta_t}{1-\bar\alpha_t}x_0
+ +\frac{\sqrt{\alpha_t}(1-\bar\alpha_{t-1})}{1-\bar\alpha_t}x_t.
+\end{align}
+
+由前向闭式解出
+\begin{equation}
+ x_0=\frac{x_t-\sqrt{1-\bar\alpha_t}\epsilon}{\sqrt{\bar\alpha_t}},
+\end{equation}
+代入并合并 $x_t$ 系数，得到常用噪声形式
+\begin{equation}
+ \boxed{
+ \widetilde\mu_t(x_t,\epsilon)
+ =\frac1{\sqrt{\alpha_t}}
+ \left(x_t-\frac{\beta_t}{\sqrt{1-\bar\alpha_t}}\epsilon\right).}
+\end{equation}
+网络用 $\epsilon_\theta(x_t,t)$ 替换未知真实噪声。
+
+\section{ELBO 分解与噪声回归权重}
+
+生成模型写作
+\begin{equation}
+ p_\theta(x_{0:T})=p(x_T)\prod_{t=1}^{T}p_\theta(x_{t-1}\mid x_t).
+\end{equation}
+对 $q(x_{1:T}\mid x_0)$ 使用 Jensen 不等式：
+\begin{align}
+ -\log p_\theta(x_0)
+ &=-\log\E_q\left[\frac{p_\theta(x_{0:T})}{q(x_{1:T}\mid x_0)}\right]\\
+ &\le\E_q\left[\log\frac{q(x_{1:T}\mid x_0)}{p_\theta(x_{0:T})}\right].
+\end{align}
+利用马尔可夫分解并重排，右端等于
+\begin{align}
+ \cL_{\rm VLB}
+ &=D_{\rm KL}(q(x_T\mid x_0)\|p(x_T))\\
+ &\quad+\sum_{t=2}^{T}
+ \E_qD_{\rm KL}\bigl(q(x_{t-1}\mid x_t,x_0)
+ \|p_\theta(x_{t-1}\mid x_t)\bigr)\\
+ &\quad-\E_q\log p_\theta(x_0\mid x_1).
+\end{align}
+若模型方差固定为 $\sigma_t^2I$，两个高斯的第 $t$ 项中与均值有关的部分为
+\begin{equation}
+ \cL_t=\E_q\frac1{2\sigma_t^2}
+ \|\widetilde\mu_t-\mu_\theta(x_t,t)\|_2^2+C_t.
+\end{equation}
+采用噪声参数化后，两个均值之差为
+\begin{equation}
+ \widetilde\mu_t-\mu_\theta
+ =\frac{\beta_t}{\sqrt{\alpha_t(1-\bar\alpha_t)}}
+ (\epsilon_\theta-\epsilon),
+\end{equation}
+所以
+\begin{equation}
+ \cL_t=w_t\E\|\epsilon-\epsilon_\theta(x_t,t)\|_2^2+C_t,
+ \quad
+ w_t=\frac{\beta_t^2}{2\sigma_t^2\alpha_t(1-\bar\alpha_t)}.
+\end{equation}
+把 $w_t$ 去掉得到常用 simple loss；它与 ELBO 具有相同逐点最优解，但改变了不同时间步的优化权重。
+
+\subsection{平方损失的条件期望最优性}
+
+令 $Y=\epsilon$、$Z=(x_t,t)$。任意预测器 $f(Z)$ 满足正交分解
+\begin{align}
+ \E\|Y-f(Z)\|_2^2
+ &=\E\|Y-\E[Y\mid Z]\|_2^2\\
+ &\quad+\E\|f(Z)-\E[Y\mid Z]\|_2^2.
+\end{align}
+证明只需展开平方；交叉项为
+\begin{align}
+ &\E\left[(Y-\E[Y\mid Z])^\T
+ (\E[Y\mid Z]-f(Z))\right]\\
+ &\quad=\E\left[
+ \E[Y-\E[Y\mid Z]\mid Z]^T
+ (\E[Y\mid Z]-f(Z))\right]=0.
+\end{align}
+故最优噪声预测器为
+\begin{equation}
+ \epsilon^*(x_t,t)=\E[\epsilon\mid x_t,t].
+\end{equation}
+
+\section{噪声、数据、速度与 score 参数化}
+
+记 $a_t=\sqrt{\bar\alpha_t}$、$b_t=\sqrt{1-\bar\alpha_t}$，则
+$x_t=a_tx_0+b_t\epsilon$。定义正交旋转式速度
+\begin{equation}
+ v_t=a_t\epsilon-b_tx_0.
+\end{equation}
+联立
+\begin{equation}
+ \begin{bmatrix}x_t\\v_t\end{bmatrix}
+ =\begin{bmatrix}a_t&b_t\\-b_t&a_t\end{bmatrix}
+ \begin{bmatrix}x_0\\\epsilon\end{bmatrix},
+ \qquad a_t^2+b_t^2=1.
+\end{equation}
+该矩阵正交，其逆为转置，因此
+\begin{equation}
+ \boxed{x_0=a_tx_t-b_tv_t,\qquad
+ \epsilon=b_tx_t+a_tv_t.}
+\end{equation}
+若网络预测 $\widehat x_0$，则
+\begin{equation}
+ \widehat\epsilon=\frac{x_t-a_t\widehat x_0}{b_t};
+\end{equation}
+若网络预测 $\widehat\epsilon$，则
+\begin{equation}
+ \widehat x_0=\frac{x_t-b_t\widehat\epsilon}{a_t}.
+\end{equation}
+当 $a_t$ 或 $b_t$ 很小时，上述除法会放大误差；$v$ 参数化的动机之一就是改善端点尺度。
+
+对加性高斯扰动的边缘密度 $q_t$，Tweedie 恒等式给出
+\begin{equation}
+ \nabla_{x_t}\log q_t(x_t)
+ =-\frac1{b_t}\E[\epsilon\mid x_t].
+\end{equation}
+可直接由
+\begin{equation}
+ \nabla_{x_t}q_t(x_t)
+ =\int q_0(x_0)\nabla_{x_t}\cN(x_t;a_tx_0,b_t^2I)\,dx_0
+\end{equation}
+并除以 $q_t(x_t)$ 得到。故噪声回归与 denoising score matching 只差已知时间尺度。
+
+\section{确定性采样与误差传播}
+
+设理想反向更新为 $x_{t-1}=F_t(x_t,\epsilon^*_t)$，实际预测误差
+$e_t=\epsilon_\theta-\epsilon^*_t$。由反向均值公式，单步扰动为
+\begin{equation}
+ \Delta x_{t-1}
+ =-\frac{\beta_t}{\sqrt{\alpha_t(1-\bar\alpha_t)}}e_t.
+\end{equation}
+若后续映射的 Lipschitz 常数为 $L_s$，最终误差满足
+\begin{equation}
+ \|\Delta x_0\|_2
+ \le\sum_{t=1}^{T}
+ \left(\prod_{s=1}^{t-1}L_s\right)
+ \frac{\beta_t}{\sqrt{\alpha_t(1-\bar\alpha_t)}}\|e_t\|_2.
+\end{equation}
+因此训练 MSE 相同并不保证采样误差相同；时间步权重和求解器稳定性都会影响误差放大。
+
+对 ODE $\dot x=v(x,t)$，Euler 一步为
+$x(t-h)\approx x(t)-hv(x(t),t)$。Taylor 展开给出局部截断误差
+\begin{equation}
+ x(t-h)-x(t)+hv(x(t),t)
+ =\frac{h^2}{2}\frac{d}{dt}v(x(t),t)+O(h^3),
+\end{equation}
+且全导数
+\begin{equation}
+ \frac{d}{dt}v(x(t),t)=\partial_tv(x,t)+J_xv(x,t)v(x,t).
+\end{equation}
+这说明少步生成不仅要求速度值准确，还要求沿轨迹的时间变化和 Jacobian 可控。
+
+\section{分类器自由引导}
+
+条件与无条件 score 分别为 $s_c=\nabla_x\log p_t(x\mid c)$、
+$s_u=\nabla_x\log p_t(x)$。引导组合
+\begin{equation}
+ s_w=s_u+w(s_c-s_u)=(1-w)s_u+ws_c
+\end{equation}
+可写成
+\begin{align}
+ s_w
+ &=\nabla_x\left[(1-w)\log p_t(x)+w\log p_t(x\mid c)\right]\\
+ &=\nabla_x\log\left(p_t(x)^{1-w}p_t(x\mid c)^w\right).
+\end{align}
+所以它对应未归一化的幂乘目标。$w>1$ 会强化条件一致性，同时可能削弱多样性；这不是一个额外训练定理，而是采样分布发生了改变。
+
+\section{分布推送与可测生成器}
+
+潜变量 $z\sim p_Z$，生成器 $x=G_\theta(z)$ 诱导推送分布
+\begin{equation}
+ p_\theta=(G_\theta)_\#p_Z,
+\end{equation}
+其定义是任意可测集合 $A$ 满足
+\begin{equation}
+ p_\theta(A)=p_Z(G_\theta^{-1}(A)).
+\end{equation}
+等价地，对任意可积测试函数 $\varphi$，
+\begin{equation}
+ \E_{x\sim p_\theta}\varphi(x)
+ =\E_{z\sim p_Z}\varphi(G_\theta(z)).
+\end{equation}
+若 $G:\R^d\to\R^d$ 是可逆微分同胚，变量替换给出显式密度
+\begin{equation}
+ p_\theta(x)=p_Z(G^{-1}(x))
+ \left|\det J_{G^{-1}}(x)\right|.
+\end{equation}
+取对数并用 $J_{G^{-1}}(x)=J_G(z)^{-1}$：
+\begin{equation}
+ \log p_\theta(x)=\log p_Z(z)-\log|\det J_G(z)|.
+\end{equation}
+VAE、GAN、扩散和隐式光学生成器通常不同时满足同维可逆条件，
+因此分别使用变分界、判别散度、score/flow 或样本级目标绕开直接行列式。
+
+\section{KL、JS 与总变差的关系}
+
+KL 非负可由 $-\log$ 的凸性证明：
+\begin{align}
+ D_{\rm KL}(p\|q)
+ &=\E_p\left[-\log\frac{q(X)}{p(X)}\right]\\
+ &\ge-\log\E_p\frac{q(X)}{p(X)}=-\log1=0.
+\end{align}
+等号当且仅当 $p=q$ 几乎处处。KL 不对称且当 $q=0,p>0$ 时为无穷。
+
+Jensen--Shannon 散度
+\begin{equation}
+ D_{\rm JS}(p\|q)=\frac12D_{\rm KL}(p\|m)
+ +\frac12D_{\rm KL}(q\|m),\qquad m=(p+q)/2
+\end{equation}
+总是有限，$0\le D_{\rm JS}\le\log2$。当支撑不相交时取上界，
+却对支撑间几何距离不敏感。
+
+总变差
+\begin{equation}
+ \operatorname{TV}(p,q)=\frac12\int|p-q|
+ =\sup_A|p(A)-q(A)|.
+\end{equation}
+Pinsker 不等式
+\begin{equation}
+ \operatorname{TV}(p,q)
+ \le\sqrt{\frac12D_{\rm KL}(p\|q)}
+\end{equation}
+说明小正向 KL 保证事件概率接近；逆命题没有无条件形式，因为很小区域上的密度比可极大。
+
+\section{Wasserstein 距离与 Lipschitz 测试函数}
+
+一阶 Wasserstein 距离
+\begin{equation}
+ W_1(p,q)=\inf_{\gamma\in\Pi(p,q)}
+ \E_{(X,Y)\sim\gamma}\|X-Y\|
+\end{equation}
+显式考虑搬运距离。Kantorovich--Rubinstein 对偶
+\begin{equation}
+ W_1(p,q)=\sup_{\|f\|_{\rm Lip}\le1}
+ [\E_pf(X)-\E_qf(Y)].
+\end{equation}
+因此任意 $L$-Lipschitz 评价函数满足
+\begin{equation}
+ |\E_pf-\E_qf|\le L W_1(p,q).
+\end{equation}
+如果下游感知损失近似 Lipschitz，Wasserstein 小可以控制其期望差；
+但高维下从有限样本估计 Wasserstein 有较慢的维数依赖。
+
+\section{最大均值差异}
+
+在再生核 Hilbert 空间 $\mathcal H$ 中，均值嵌入
+\begin{equation}
+ \mu_p=\E_{X\sim p}k(X,\cdot).
+\end{equation}
+MMD 定义
+\begin{equation}
+ \operatorname{MMD}^2(p,q)=\|\mu_p-\mu_q\|_{\mathcal H}^2.
+\end{equation}
+利用再生性质展开
+\begin{align}
+ \operatorname{MMD}^2
+ &=\E_{X,X'\sim p}k(X,X')
+ +\E_{Y,Y'\sim q}k(Y,Y')\\
+ &\quad-2\E_{X\sim p,Y\sim q}k(X,Y).
+\end{align}
+样本 $x_{1:n},y_{1:m}$ 的无偏估计
+\begin{align}
+ \widehat{\operatorname{MMD}}_u^2
+ &=\frac1{n(n-1)}\sum_{i\ne j}k(x_i,x_j)\\
+ &\quad+\frac1{m(m-1)}\sum_{i\ne j}k(y_i,y_j)
+ -\frac2{nm}\sum_{i,j}k(x_i,y_j).
+\end{align}
+特征核选择决定它关注的尺度；特征空间中的 MMD 小不保证像素空间逐点接近。
+
+\section{高斯特征距离与 FID}
+
+将真实、生成图像经固定特征提取器映射并近似为高斯
+$\cN(\mu_r,\Sigma_r)$、$\cN(\mu_g,\Sigma_g)$。二阶 Wasserstein 距离闭式
+\begin{equation}
+ \operatorname{FID}=
+ \|\mu_r-\mu_g\|_2^2
+ +\tr\left(\Sigma_r+\Sigma_g
+ -2(\Sigma_r^{1/2}\Sigma_g\Sigma_r^{1/2})^{1/2}\right).
+\end{equation}
+若协方差可交换，可同时对角化，第二项简化为
+\begin{equation}
+ \sum_j(\sqrt{\lambda_{r,j}}-\sqrt{\lambda_{g,j}})^2.
+\end{equation}
+样本均值和协方差是有限样本估计，矩阵平方根的非线性导致 FID 有偏；
+比较模型时必须使用相同样本数、预处理和特征网络。
+
+\section{Monte Carlo 估计与控制变量}
+
+生成目标常写成 $J(\theta)=\E_Z f_\theta(Z)$。独立样本估计
+\begin{equation}
+ \widehat J_N=\frac1N\sum_{i=1}^{N}f_\theta(Z_i)
+\end{equation}
+无偏且
+\begin{equation}
+ \Var(\widehat J_N)=\frac1N\Var(f_\theta(Z)).
+\end{equation}
+若有已知期望 $\E C=\mu_C$ 的控制变量，
+\begin{equation}
+ \widehat J_\beta=\widehat J_N-\beta(\widehat C_N-\mu_C)
+\end{equation}
+仍无偏。方差是
+\begin{equation}
+ \Var(\widehat J_\beta)
+ =\Var(\widehat J_N)+\beta^2\Var(\widehat C_N)
+ -2\beta\Cov(\widehat J_N,\widehat C_N).
+\end{equation}
+最优
+\begin{equation}
+ \beta^*=\frac{\Cov(f,C)}{\Var(C)}.
+\end{equation}
+扩散中的已知噪声、RL 中的基线和光学中的参考传播都可视为利用相关结构降方差的不同形式。
+
+\section{score matching 的分部积分}
+
+数据 score 为 $s_p(x)=\nabla_x\log p(x)$。显式 score matching
+\begin{equation}
+ J(\theta)=\frac12\E_p\|s_\theta(x)-s_p(x)\|^2.
+\end{equation}
+展开并去掉与 $\theta$ 无关的 $\E\|s_p\|^2/2$：
+\begin{equation}
+ J(\theta)=\frac12\E_p\|s_\theta\|^2-E_p[s_\theta^Ts_p]+C.
+\end{equation}
+交叉项
+\begin{align}
+ \E_p[s_\theta^Ts_p]
+ &=\int s_\theta(x)^T\nabla p(x)dx\\
+ &=-\int p(x)\nabla\cdot s_\theta(x)dx
+\end{align}
+在边界项消失时成立。故
+\begin{equation}
+ J(\theta)=\E_p\left[
+ \frac12\|s_\theta(x)\|^2+\nabla\cdot s_\theta(x)
+ \right]+C.
+\end{equation}
+去噪 score matching通过已知高斯条件 score 避免计算模型散度，并在条件期望意义下恢复边缘 score。
+
+\section{模型误差到期望指标误差}
+
+若生成样本耦合为 $X=G(Z)$、$\widehat X=\widehat G(Z)$，且评价函数
+$f$ 为 $L_f$-Lipschitz，则
+\begin{align}
+ |\E f(X)-\E f(\widehat X)|
+ &\le\E|f(X)-f(\widehat X)|\\
+ &\le L_f\E\|G(Z)-\widehat G(Z)\|.
+\end{align}
+这给出点对点生成误差控制分布指标的充分条件。但无条件生成中通常不存在已知语义配对，
+逐样本 MSE 可能强迫平均化；分布距离允许不同耦合，因而更适合多模态目标。
+
+\section{AdaLN-Zero 条件化}
+对条件嵌入 $c$，线性层输出 $(\gamma,\beta,g)$，变换
+\begin{equation}
+  \operatorname{AdaLN}(h;c)=(1+\gamma(c))\odot\operatorname{LN}(h)+\beta(c),
+\end{equation}
+残差为
+\begin{equation}
+  h'=h+g(c)\odot F(\operatorname{AdaLN}(h;c)).
+\end{equation}
+将门 $g$ 零初始化使每个块初始为恒等映射。类别条件与时间条件通过同一调制入口作用于所有 token，避免额外交叉注意力的二次成本。
+
+\section{分类器自由引导}
+条件与无条件噪声预测组合为
+\begin{equation}
+  \hat\epsilon=(1+w)\epsilon_\theta(x_t,t,c)-w\epsilon_\theta(x_t,t,\varnothing).
+\end{equation}
+在 score 参数化下，这近似把对数密度梯度改为
+\begin{equation}
+  \nabla\log p(x_t)+ (1+w)\nabla\log p(c\mid x_t),
+\end{equation}
+增大条件一致性，但 $w$ 过大把采样推向低熵高密度区域，可能损害多样性。
+
+\end{document}

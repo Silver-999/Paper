@@ -1,0 +1,174 @@
+\documentclass[UTF8,11pt,a4paper]{ctexart}
+\usepackage[a4paper,left=1.45cm,right=1.45cm,top=1.55cm,bottom=1.65cm]{geometry}
+\usepackage{amsmath,amssymb,bm}
+\usepackage{graphicx}
+\usepackage{booktabs,tabularx,array,longtable}
+\usepackage{enumitem}
+\usepackage[dvipsnames,svgnames]{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,calc,fit,shapes.geometric}
+\usepackage[most]{tcolorbox}
+\usepackage{hyperref}
+\usepackage{caption}
+\usepackage{float}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{microtype}
+\IfFontExistsTF{Times New Roman}{\setmainfont{Times New Roman}}{\setmainfont{Liberation Serif}}
+\IfFontExistsTF{Noto Sans CJK SC}{\setCJKmainfont{Noto Sans CJK SC}}{}
+\IfFontExistsTF{Noto Sans CJK SC}{\setCJKsansfont{Noto Sans CJK SC}}{}
+\IfFontExistsTF{DejaVu Sans Mono}{\setmonofont{DejaVu Sans Mono}}{\setmonofont{Latin Modern Mono}}
+\definecolor{mainblue}{HTML}{0B5CAD}
+\definecolor{softblue}{HTML}{EAF4FF}
+\definecolor{darktext}{HTML}{1F2937}
+\definecolor{softgray}{HTML}{F5F7FA}
+\definecolor{accent}{HTML}{F59E0B}
+\definecolor{goodgreen}{HTML}{2E7D32}
+\definecolor{badred}{HTML}{B91C1C}
+\definecolor{purple}{HTML}{6D5BD0}
+\hypersetup{colorlinks=true,linkcolor=mainblue,urlcolor=DarkOrange,citecolor=mainblue}
+\setlength{\parindent}{2em}
+\setlength{\headheight}{14pt}
+\setlength{\parskip}{0.22em}
+\setlist[itemize]{leftmargin=2em,itemsep=0.23em,topsep=0.25em}
+\setlist[enumerate]{leftmargin=2.2em,itemsep=0.23em,topsep=0.25em}
+\renewcommand{\arraystretch}{1.2}
+\captionsetup{font=small,labelfont=bf}
+\titleformat{\section}{\Large\bfseries\sffamily\color{mainblue}}{\thesection}{0.7em}{}
+\titleformat{\subsection}{\large\bfseries\sffamily\color{darktext}}{\thesubsection}{0.6em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries\sffamily\color{darktext}}{\thesubsubsection}{0.55em}{}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\sffamily ChordEdit}
+\fancyhead[R]{\small\sffamily \leftmark}
+\fancyfoot[C]{\small\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\newtcolorbox{infobox}[1]{enhanced,breakable,colback=softblue,colframe=mainblue!70!black,boxrule=0.8pt,arc=2mm,left=1.5mm,right=1.5mm,top=1mm,bottom=1mm,title=\bfseries #1}
+\newtcolorbox{keybox}[1]{enhanced,breakable,colback=softgray,colframe=darktext!45,boxrule=0.6pt,arc=2mm,left=1.5mm,right=1.5mm,top=1mm,bottom=1mm,title=\bfseries #1}
+\newtcolorbox{notebox}[1]{enhanced,breakable,colback=accent!8,colframe=accent!80!black,boxrule=0.7pt,arc=2mm,left=1.5mm,right=1.5mm,top=1mm,bottom=1mm,title=\bfseries #1}
+\newcommand{\term}[1]{\textbf{\textcolor{mainblue}{#1}}}
+\begin{document}
+
+\section{论文基本信息}
+\begin{center}
+\begin{tabularx}{0.94\linewidth}{>{\bfseries}p{0.18\linewidth}X}
+\toprule
+题目 & ChordEdit\\
+课件日期 & 2026-06-14\\
+研究方向 & 图像编辑 / 最优传输\\
+一句话概括 & 用最优传输和路径设计协调源图像、文本条件与目标分布,使编辑在保持原图结构的同时实现可靠语义变化。\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\begin{infobox}{摘要要点}
+用最优传输和路径设计协调源图像、文本条件与目标分布,使编辑在保持原图结构的同时实现可靠语义变化。 本说明按“研究问题—核心机制—基础公式—实验阅读—局限与优化”的顺序重新组织，不保留原始材料的封面、目录和页码对应。
+\end{infobox}
+
+\section{研究问题与动机}
+这项工作的出发点不是简单地替换某个网络层，而是识别现有范式中最影响\term{质量、效率、可靠性或可部署性}的瓶颈。结合论文所讨论的问题，可以将研究动机概括为以下几点：
+\begin{itemize}
+\item 而ChordEdit “ ” 是顺推,顺着最自然、最省力的路径,把马慢慢 变成独角兽,整个过程平滑流畅,背景也不受任何影响
+\item “ ” 弦路径:在坑洼的山地上修了一条高速公路,即使只用一步完 成编辑,不会出现剧烈的抖动。
+\item ChordEdit :用最优传输理论,重新定义图像编辑
+\item “ ” 前人的方法是硬掰,把马硬掰成独角兽,不符合逻辑
+\item 最优传输理论早已存在,但少有人想到用在一步式图像编辑上
+\item 当下论文的创新点用更多卡训了更大的模型达到更高的效果
+\end{itemize}
+
+\begin{notebox}{理解重点}
+阅读这类论文时，应把“问题是否真实存在”“方法是否直接解决该问题”“实验是否排除了其他解释”分开判断。仅凭更大的模型、更多数据或更长训练得到的提升，不能自动视为结构创新带来的收益。
+\end{notebox}
+
+\section{核心思想与整体流程}
+用最优传输和路径设计协调源图像、文本条件与目标分布,使编辑在保持原图结构的同时实现可靠语义变化。 从信息流角度看，其基本流程可以整理为下图。
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[>=Latex,node distance=0.78cm]
+\tikzstyle{procstep}=[draw,rounded corners,fill=softblue,align=center,minimum width=3.05cm,minimum height=0.95cm,text width=2.75cm]
+\node[procstep] (a) {源图像与文本};
+\node[procstep,right=of a] (b) {最优传输路径};
+\node[procstep,right=of b] (c) {条件生成/编辑};
+\node[procstep,right=of c] (d) {目标图像};
+\draw[->,thick,mainblue] (a)--(b);
+\draw[->,thick,mainblue] (b)--(c);
+\draw[->,thick,mainblue] (c)--(d);
+\end{tikzpicture}
+\caption{核心信息流与处理阶段。}
+\end{figure}
+
+\subsection{方法组成与信息流}
+\begin{itemize}
+\item 做图像反演:先把真实图像映射回隐空间,找到对应的向量再编辑,但反演本身就会 丢失大量信息,编辑效果自然好不了
+\item 额外训练编辑模型:专门训一个模型来修正变形,但成本极高,而且只能适配特定的 生成模型,失去了通用性
+\item FlowEdit 需要33 步,运行时间长达7.22 秒
+\item 最优传输理论早已存在,但少有人想到用在一步式图像编辑上
+\item 当下论文的创新点用更多卡训了更大的模型达到更高的效果
+\item 科研真正的魅力所在:用最简单的工具,解决最复杂的问题
+\item 真正的科研从来都不是比谁的显卡多,而是比谁的脑子好
+\end{itemize}
+
+\begin{keybox}{结构解析}
+\begin{itemize}
+\item 粒子偏离目标分布三种解决方法 ； 增加推理步数：一步变成十步、二十步，但速度慢
+\item ； FlowEdit 需要33 步，运行时间长达7.22 秒 ； 额外训练编辑模型：专门训一个模型来修正变形，但成本极高，而且只能适配特定的 生成模型，
+\end{itemize}
+\end{keybox}
+
+上述内容以文字方式保留方法结构，避免把整张幻灯片作为独立页面嵌入正文。
+
+\section{数学与机制理解}
+本节给出理解该工作的基础数学结构。公式用于解释方法所属范式，并不替代原论文中的完整推导。
+\begin{equation}
+x_t=\alpha_t x_0+\sigma_t\varepsilon,\qquad \varepsilon\sim\mathcal N(0,I)
+\end{equation}
+扩散类方法把真实样本与噪声按时间混合，模型再学习逆向去噪、速度场或条件流。不同论文的主要差异通常落在表示空间、网络骨干和训练目标上。
+
+\begin{keybox}{从公式回到方法}
+应重点观察论文究竟改变了公式中的哪一部分：是输入表示、连接矩阵、条件变量、参数化方式、训练目标，还是求解与调度过程。真正的创新通常可以在这一层被准确定位。
+\end{keybox}
+
+
+\section{实验结果应如何阅读}
+\begin{itemize}
+\item ChordEdit :用最优传输理论,重新定义图像编辑
+\item 实验结果:老泰坦跑出了吊打全场的性能
+\item CVPR 2026 颁奖活动展示的算力消耗统计数据
+\item 所有实验基于18 年Titan 显卡
+\end{itemize}
+
+\begin{notebox}{结果解读}
+\begin{itemize}
+\item 实验结果：老泰坦跑出了吊打全场的性能
+\end{itemize}
+\end{notebox}
+
+下图用于直观呈现主要对比、消融、定性样例或效率结果。
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.94\linewidth,height=0.43\textheight,keepaspectratio]{result_evidence.jpg}
+\caption{代表性实验对比、消融结果或定性样例。}
+\end{figure}
+实验部分不应只看单一最好数字。还需要核对模型规模、训练数据、训练步数、采样或解码预算、硬件条件以及是否使用额外蒸馏、检索或后处理。只有比较条件接近时，结果才能真正说明方法本身的优势。
+
+\section{优点、局限与可优化空间}
+\subsection{主要优点}
+\begin{itemize}
+\item \term{问题与方法对应明确}：论文围绕一个可识别的核心瓶颈展开，方法结构能够直接映射到该瓶颈。
+\item \term{可复用的设计思想}：即使不完整复现模型，其中的分解、稀疏化、递归、条件控制或系统优化思想也可迁移到相邻任务。
+\item \term{实验提供了多角度证据}：实验通常同时展示主结果、效率比较、案例或消融，使结论不完全依赖单一指标。
+\end{itemize}
+
+\subsection{局限与进一步优化}
+\begin{itemize}
+\item 需要进一步区分\term{结构收益}与更大算力、更多数据、不同训练技巧带来的收益，并在等参数、等计算预算下进行严格比较。
+\item 对超参数、输入分布和模型规模的敏感性仍应系统分析；在一个数据集上的最优配置不一定能直接迁移。
+\item 实际部署还要考虑显存峰值、并发、延迟抖动、失败案例和鲁棒性，而不仅是离线平均指标。
+\item 可尝试将该方法与蒸馏、量化、缓存复用、动态路由或更强的表示学习结合，验证不同优化是否互补。
+\end{itemize}
+
+\section{结论}
+总体而言，用最优传输和路径设计协调源图像、文本条件与目标分布，使编辑在保持原图结构的同时实现可靠语义变化。。 进一步需要注意：最优传输理论早已存在,但少有人想到用在一步式图像编辑上;当下论文的创新点用更多卡训了更大的模型达到更高的效果。
+
+\end{document}

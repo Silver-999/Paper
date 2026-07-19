@@ -1,0 +1,570 @@
+\documentclass[UTF8,12pt,a4paper,fontset=none]{ctexart}
+\usepackage[a4paper,left=1.82cm,right=1.82cm,top=1.72cm,bottom=1.82cm,headheight=15pt]{geometry}
+\usepackage{fontspec,xeCJK}
+\setmainfont{Liberation Serif}
+\setsansfont{DejaVu Sans}
+\setmonofont{DejaVu Sans Mono}
+\setCJKmainfont[BoldFont=Noto Serif CJK SC Bold]{Noto Serif CJK SC}
+\setCJKsansfont[BoldFont=Noto Sans CJK SC Bold]{Noto Sans CJK SC}
+\setCJKmonofont{Noto Sans Mono CJK SC}
+\usepackage{amsmath,amssymb,mathtools,bm}
+\usepackage{booktabs,longtable,tabularx,array,multirow}
+\usepackage{enumitem,xcolor}
+\usepackage[most]{tcolorbox}
+\usepackage{fancyhdr,titlesec,hyperref,cleveref,lastpage}
+\usepackage{tikz,float,caption,listings}
+\usetikzlibrary{arrows.meta,positioning,calc,fit,backgrounds,shapes.geometric}
+\definecolor{mainblue}{RGB}{39,82,138}
+\definecolor{deepblue}{RGB}{25,55,95}
+\definecolor{softblue}{RGB}{235,243,252}
+\definecolor{softgreen}{RGB}{238,248,241}
+\definecolor{softorange}{RGB}{255,246,232}
+\definecolor{softgray}{RGB}{245,246,248}
+\definecolor{warnred}{RGB}{160,48,48}
+\hypersetup{unicode=true,colorlinks=true,linkcolor=deepblue,urlcolor=mainblue,citecolor=deepblue}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.36em}
+\setlength{\tabcolsep}{5pt}
+\renewcommand{\arraystretch}{1.2}
+\allowdisplaybreaks[4]
+\emergencystretch=3em
+\sloppy
+\pagestyle{fancy}\fancyhf{}\fancyfoot[C]{\small 第 \thepage\ 页，共 \pageref{LastPage} 页}\renewcommand{\headrulewidth}{0.4pt}
+\titleformat{\section}{\Large\bfseries\color{deepblue}}{\thesection}{0.65em}{}
+\titleformat{\subsection}{\large\bfseries\color{mainblue}}{\thesubsection}{0.55em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries}{\thesubsubsection}{0.5em}{}
+\numberwithin{equation}{section}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Prob}{\mathbb{P}}
+\newcommand{\Loss}{\mathcal{L}}
+\newcommand{\norm}[1]{\left\lVert #1\right\rVert}
+\newcommand{\ip}[2]{\left\langle #1,#2\right\rangle}
+\newcommand{\tr}{\operatorname{Tr}}
+\newcommand{\diag}{\operatorname{diag}}
+\newcommand{\rank}{\operatorname{rank}}
+\newcommand{\softmax}{\operatorname{softmax}}
+\newcommand{\argmin}{\operatorname*{arg\,min}}
+\newcommand{\argmax}{\operatorname*{arg\,max}}
+\newcommand{\sg}{\operatorname{sg}}
+\newcommand{\KL}{D_{\mathrm{KL}}}
+\newcommand{\dd}{\mathrm{d}}
+\newtcolorbox{keybox}[1][]{enhanced,breakable,colback=softblue,colframe=mainblue,boxrule=0.8pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\newtcolorbox{examplebox}[1][]{enhanced,breakable,colback=softgreen,colframe=green!45!black,boxrule=0.7pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\newtcolorbox{notebox}[1][]{enhanced,breakable,colback=softorange,colframe=orange!70!black,boxrule=0.7pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\newtcolorbox{criticalbox}[1][]{enhanced,breakable,colback=red!3,colframe=warnred,boxrule=0.8pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\lstset{basicstyle=\ttfamily\small,breaklines=true,frame=single,backgroundcolor=\color{softgray},numbers=left,numberstyle=\tiny,showstringspaces=false,columns=fullflexible}
+\hypersetup{pdftitle={40 Improved Baselines with Representation Autoencoders 数学过程详解},pdfauthor={OpenAI}}
+\fancyhead[L]{\small 40 Improved Baselines with Representation Autoencoders}
+\fancyhead[R]{\small 数学过程详解}
+\setlength{\abovedisplayskip}{0.82em}
+\setlength{\belowdisplayskip}{0.82em}
+\setlength{\abovedisplayshortskip}{0.45em}
+\setlength{\belowdisplayshortskip}{0.45em}
+\begin{document}
+\begin{center}
+{\LARGE\bfseries 40\_Improved Baselines with Representation Autoencoders 数学过程详解}\par
+\vspace{0.35em}
+{\large 多层表示、随机投影、REPA 对齐与免费引导}
+\end{center}
+\vspace{0.45em}
+\begin{keybox}[本文只处理真正需要推导的部分]
+本文只展开论文的核心数学：广义多层编码、固定随机投影的保距性质、表示重建、潜空间扩散、REPA 对齐、弱/强预测外推与速度重参数化。。全文按“公式从哪里来--每个符号是什么--中间步骤为何成立--维度和复杂度如何核对--论文结论依赖哪些假设”的顺序展开；不复述实验表格，也不使用与论文无关的通用背景凑页数。
+\end{keybox}
+\tableofcontents
+\newpage
+
+\section{RAE 的表示空间与广义多层编码}
+设预训练视觉编码器共有 $L$ 层，第 $\ell$ 层输出
+\begin{equation}
+ z_\ell=E_\ell(I)\in\R^{N\times d},
+\end{equation}
+其中 $N$ 是空间 token 数，$d$ 是通道维度。传统 RAE 只取末层 $z_L$；论文把表示推广为最后 $K$ 层之和
+\begin{equation}
+ \boxed{x_K=\sum_{\ell=L-K+1}^{L}z_\ell\in\R^{N\times d}.}
+\end{equation}
+这不是简单“多取几层”。若把 $z_\ell$ 分解为共享语义与层特有误差
+\begin{equation}
+ z_\ell=s+\varepsilon_\ell,
+\end{equation}
+则
+\begin{equation}
+ x_K=Ks+\sum_{\ell}\varepsilon_\ell.
+\end{equation}
+若 $\varepsilon_\ell$ 近似零均值且弱相关，平均表示
+\begin{equation}
+ \bar x_K=\frac1Kx_K
+\end{equation}
+满足
+\begin{equation}
+ \operatorname{Var}(\bar x_K)
+ =\frac1{K^2}\sum_{i,j}\operatorname{Cov}(\varepsilon_i,\varepsilon_j)
+ \approx\frac1K\operatorname{Var}(\varepsilon),
+\end{equation}
+说明多层聚合能够降低单层噪声；但若层间高度相关，方差下降会明显弱于 $1/K$，所以 $K$ 并非越大越好。
+
+\section{拼接加固定随机投影}
+论文另一种多层表示先拼接
+\begin{equation}
+ z_{\mathrm{cat}}=[z_{L-K+1};\cdots;z_L]\in\R^{N\times Kd},
+\end{equation}
+再乘固定随机矩阵
+\begin{equation}
+ \boxed{x_K=z_{\mathrm{cat}}R,\qquad R\in\R^{Kd\times d}.}
+\end{equation}
+若 $R_{ij}\sim\mathcal N(0,1/d)$，对任意行向量 $u\in\R^{Kd}$，有
+\begin{align}
+ \E\norm{uR}_2^2
+ &=\E\sum_{j=1}^{d}\left(\sum_{i=1}^{Kd}u_iR_{ij}\right)^2\\
+ &=\sum_{j=1}^{d}\sum_{i=1}^{Kd}u_i^2\E R_{ij}^2
+ =\norm{u}_2^2.
+\end{align}
+因此随机投影在期望上保持长度。Johnson--Lindenstrauss 型结论进一步说明，对有限样本集合，只要
+\begin{equation}
+ d=O\!\left(\frac{\log M}{\epsilon^2}\right),
+\end{equation}
+就能以高概率同时保持 $M$ 个样本两两距离到 $1\pm\epsilon$。固定 $R$ 的意义是：不增加训练参数，同时把不同层的通道混合到共同空间。
+
+\section{重建目标与瓶颈的数学作用}
+解码器 $D_\psi$ 从表示重建图像
+\begin{equation}
+ \widehat I=D_\psi(x_K),
+\end{equation}
+最基本重建目标为
+\begin{equation}
+ \Loss_{\mathrm{rec}}=\E_I\norm{D_\psi(E_K(I))-I}_2^2.
+\end{equation}
+若编码器冻结，优化变量只有 $\psi$，梯度为
+\begin{equation}
+ \nabla_\psi\Loss_{\mathrm{rec}}
+ =2\E\left[J_{D_\psi}(x_K)^\top(D_\psi(x_K)-I)\right].
+\end{equation}
+表示维度远小于像素维度时，解码器只能从低维流形坐标恢复图像，无法逐像素“抄写”噪声；这解释了 RAE 中瓶颈为何兼具压缩与正则化作用。
+
+\section{RAE 潜空间扩散}
+在表示空间中，常用线性加噪写成
+\begin{equation}
+ x_t=\alpha_t x+\sigma_t\epsilon,
+ \qquad \epsilon\sim\mathcal N(0,I).
+\end{equation}
+网络 $F_\theta(x_t,t)$ 可以预测噪声、速度或干净表示。若直接预测干净表示
+\begin{equation}
+ \widehat x=F_\theta(x_t,t),
+\end{equation}
+则 $x$-prediction 损失为
+\begin{equation}
+ \Loss_x=\E\left[w(t)\norm{F_\theta(x_t,t)-x}_2^2\right].
+\end{equation}
+将 $x_t=\alpha_t x+\sigma_t\epsilon$ 对时间求导，真实速度为
+\begin{equation}
+ v_t=\dot\alpha_t x+\dot\sigma_t\epsilon.
+\end{equation}
+由
+\begin{equation}
+ \epsilon=\frac{x_t-\alpha_t x}{\sigma_t}
+\end{equation}
+可把 $x$ 预测换成速度预测
+\begin{equation}
+ \widehat v_t
+ =\dot\alpha_t\widehat x
+ +\frac{\dot\sigma_t}{\sigma_t}
+ (x_t-\alpha_t\widehat x).
+\end{equation}
+因此不同预测目标之间是线性重参数化；真正改变优化难度的是网络直接输出的对象是否位于低维表示流形上。
+
+\section{REPA 对齐损失}
+设扩散 Transformer 第 $m$ 层特征为 $h_m\in\R^{N\times d_h}$，投影头为 $P_\phi$，冻结编码器目标为 $x\in\R^{N\times d}$。归一化后
+\begin{equation}
+ \widetilde h=\frac{P_\phi(h_m)}{\norm{P_\phi(h_m)}_2},
+ \qquad
+ \widetilde x=\frac{x}{\norm{x}_2},
+\end{equation}
+REPA 可写成
+\begin{equation}
+ \Loss_{\mathrm{REPA}}
+ =\frac1N\sum_{i=1}^{N}\norm{\widetilde h_i-\widetilde x_i}_2^2.
+\end{equation}
+因为单位向量满足
+\begin{equation}
+ \norm{a-b}_2^2=2-2a^\top b,
+\end{equation}
+所以最小化归一化 MSE 等价于最大化余弦相似度。总目标为
+\begin{equation}
+ \Loss=\Loss_x+\lambda_{\mathrm{REPA}}\Loss_{\mathrm{REPA}}.
+\end{equation}
+RAE 约束输入/输出空间，REPA 约束中间层；两者作用位置不同，所以并不互斥。
+
+\section{REPA 为什么可被视为弱 $x$ 预测器}
+REPA 头从较早层预测目标表示，记
+\begin{equation}
+ \widehat x_{\mathrm{repa}}=P_\phi(h_m).
+\end{equation}
+完整扩散头给出
+\begin{equation}
+ \widehat x_{\mathrm{full}}=F_\theta(x_t,t).
+\end{equation}
+由于早层信息与容量较弱，$\widehat x_{\mathrm{repa}}$ 可作为“弱模型”预测。论文的免费引导为
+\begin{equation}
+ \boxed{
+ \widehat x_{\mathrm{guided}}
+ =\widehat x_{\mathrm{full}}
+ +w(\widehat x_{\mathrm{full}}-\widehat x_{\mathrm{repa}}).
+ }
+\end{equation}
+展开得
+\begin{equation}
+ \widehat x_{\mathrm{guided}}
+ =(1+w)\widehat x_{\mathrm{full}}-w\widehat x_{\mathrm{repa}}.
+\end{equation}
+它沿“弱预测到强预测”的方向外推。若
+\begin{equation}
+ \widehat x_{\mathrm{full}}=x+e_f,
+ \qquad
+ \widehat x_{\mathrm{repa}}=x+e_r,
+\end{equation}
+则引导误差为
+\begin{equation}
+ e_g=(1+w)e_f-we_r.
+\end{equation}
+当 $e_r$ 主要包含欠拟合偏差，而 $e_f$ 已显著减小该偏差时，外推可强化语义；但若两误差方向无规律，过大的 $w$ 会放大方差。
+
+\section{从引导后的 $x$ 转回论文的速度参数化}
+论文采用时间约定
+\begin{equation}
+ x_t=(1-t)x+t\epsilon,
+\end{equation}
+对应速度
+\begin{equation}
+ v=\epsilon-x=\frac{x_t-x}{t}.
+\end{equation}
+因此用引导后的干净表示替换 $x$ 得
+\begin{equation}
+ \boxed{
+ \widehat v
+ =\frac{x_t-\widehat x_{\mathrm{guided}}}{t}.
+ }
+\end{equation}
+这一步仅是代数变换。REPA 头已经在同一次前向中计算，因此不需要像 classifier-free guidance 那样再运行一个无条件模型；额外开销主要是一个投影头和线性组合。
+
+\section{EPFID 指标}
+论文用
+\begin{equation}
+ \operatorname{EPFID}@k
+ =\min\{e:\operatorname{gFID}_{\mathrm{unguided}}(e)\le k\}
+\end{equation}
+衡量收敛速度。它是首次达到阈值的 stopping time，而非最终 FID。若训练曲线有波动，更稳健的版本可要求连续 $q$ 个 epoch 满足阈值：
+\begin{equation}
+ \operatorname{EPFID}^{(q)}@k
+ =\min\{e:\max_{j=0,\ldots,q-1}\operatorname{gFID}(e+j)\le k\}.
+\end{equation}
+% AUGMENTED_DETAILED_MATH_2
+
+\section{层求和的协方差结构}
+令最后 $K$ 层表示为 $z_1,\ldots,z_K$，求和 $x=\sum_kz_k$。协方差
+\begin{equation}
+ \operatorname{Cov}(x)=\sum_k\Sigma_{kk}+\sum_{i\ne j}\Sigma_{ij}.
+\end{equation}
+若层间高度正相关，求和主要放大共同方向；若互补，交叉协方差较小，能增加表示秩。归一化平均 $x/K$ 的总方差
+\begin{equation}
+ \operatorname{Cov}(x/K)=\frac1{K^2}\sum_{i,j}\Sigma_{ij}.
+\end{equation}
+因此最优 $K$ 取决于“新层提供互补信息”与“重复相关噪声”的平衡，而不是单纯层越多越好。
+
+\section{随机投影的浓缩界}
+对固定向量 $u$ 和高斯投影 $R_{ij}\sim\mathcal N(0,1/d)$，
+\begin{equation}
+ \frac{\norm{uR}^2}{\norm u^2}
+ \sim\frac1d\chi_d^2.
+\end{equation}
+卡方集中给出 $0<\epsilon<1$ 时
+\begin{equation}
+ \Pr\left(
+ |\norm{uR}^2-\norm u^2|>\epsilon\norm u^2
+ \right)\le2\exp(-d\epsilon^2/8).
+\end{equation}
+对 $M$ 个向量用 union bound，只需
+\begin{equation}
+ d\ge O(\epsilon^{-2}\log(M/\delta))
+\end{equation}
+即可同时以概率 $1-\delta$ 保距。固定随机矩阵的作用不是学习最优压缩，而是提供可复现、无训练参数的近似等距混合。
+
+\section{重建误差的局部线性化}
+解码器 $D$ 在表示 $x$ 附近
+\begin{equation}
+ D(x+\Delta x)\approx D(x)+J_D(x)\Delta x.
+\end{equation}
+表示扰动导致像素误差
+\begin{equation}
+ \norm{\Delta I}^2\approx
+ \Delta x^\top J_D^\top J_D\Delta x.
+\end{equation}
+$J_D^\top J_D$ 定义表示空间的感知度量：某些方向对重建高度敏感，另一些方向几乎被解码器忽略。多层表示若增加的是低敏感方向，对 rFID 改善有限。
+
+\section{RAE 与 REPA 的 Gram 互补性}
+RAE 编码表示的 token Gram
+\begin{equation}
+ G_x=xx^\top
+\end{equation}
+决定空间自相似。REPA 让中间特征 $h$ 投影后接近 $x$，于是
+\begin{equation}
+ \norm{P(h)-x}_F\to0
+ \Rightarrow
+ \norm{P(h)P(h)^\top-xx^\top}_F\to0
+\end{equation}
+在范数有界时成立。RAE 约束最终生成空间可重建，REPA 约束扩散中间层提前形成相似几何，因此可以同时提升重建与优化速度。
+
+\section{REPA 归一化损失的梯度}
+单 token $y=P(h)$，目标单位向量 $x$，归一化 $\widetilde y=y/\norm y$。损失
+\begin{equation}
+ L=\norm{\widetilde y-x}^2.
+\end{equation}
+归一化 Jacobian
+\begin{equation}
+ \frac{\partial\widetilde y}{\partial y}
+ =\frac1{\norm y}(I-\widetilde y\widetilde y^\top).
+\end{equation}
+因此
+\begin{equation}
+ \nabla_yL=\frac2{\norm y}
+ (I-\widetilde y\widetilde y^\top)(\widetilde y-x).
+\end{equation}
+梯度位于与 $\widetilde y$ 正交的切空间，主要旋转方向而不直接增大范数。
+
+\section{免费引导的误差协方差}
+设强、弱预测误差 $e_f,e_r$，引导误差
+\begin{equation}
+ e_g=(1+w)e_f-we_r.
+\end{equation}
+均方误差
+\begin{align}
+ \E\norm{e_g}^2
+ &=(1+w)^2\E\norm{e_f}^2+w^2\E\norm{e_r}^2\\
+ &\quad-2w(1+w)\E[e_f^\top e_r].
+\end{align}
+引导有效需要误差高度相关且弱模型偏差幅度更大，使交叉项抵消。若 $e_f,e_r$ 独立，MSE 必然随 $w$ 增大；引导改善的是感知/条件质量，不保证像素 MSE。
+
+\section{最优线性引导权重}
+把误差看成标量方向，方差
+\begin{equation}
+ V(w)=(1+w)^2V_f+w^2V_r-2w(1+w)C.
+\end{equation}
+求导得
+\begin{equation}
+ w^*=\frac{C-V_f}{V_f+V_r-2C},
+\end{equation}
+分母为 $\operatorname{Var}(e_f-e_r)\ge0$。只有 $C>V_f$ 时正引导权重可降低该方向 MSE；这要求弱预测与强预测误差相关且弱误差包含强误差的共同部分。
+
+\section{$x$ 到速度的误差放大}
+论文约定
+\begin{equation}
+ \widehat v=\frac{x_t-\widehat x}{t}.
+\end{equation}
+若 $\widehat x=x+e_x$，
+\begin{equation}
+ e_v=-e_x/t.
+\end{equation}
+所以靠近 $t=0$ 时速度误差放大。采样或训练若直接由 $x$ 预测转换到速度，需避免除以极小 $t$，或设置最小时间 $t_{\min}$。
+
+\section{多层表示与 decoder 条件数}
+设 decoder 局部线性矩阵 $J_D$，重建对表示噪声的放大由谱范数
+\begin{equation}
+ \norm{J_D}_2
+\end{equation}
+控制，最小奇异值决定可逆性。条件数
+\begin{equation}
+ \kappa(J_D)=\frac{\sigma_{\max}}{\sigma_{\min}}
+\end{equation}
+越大，某些表示方向的小误差会大幅放大。广义多层编码改善重建的一种解释是让表示协方差更好覆盖 decoder 的敏感奇异方向，降低有效逆问题的病态性。
+\clearpage
+\section{多层表示求和的协方差结构}
+预训练编码器各层表示 $h_1,\ldots,h_K\in\R^d$，广义表示
+\begin{equation}
+ z=\sum_{k=1}^{K}w_kh_k.
+\end{equation}
+均值
+\begin{equation}
+ \mu_z=\sum_kw_k\mu_k.
+\end{equation}
+协方差
+\begin{equation}
+ \Sigma_z=\sum_{k,\ell}w_kw_\ell
+ \operatorname{Cov}(h_k,h_\ell).
+\end{equation}
+不仅包含各层方差，还包含跨层协方差。若不同层信息互补，交叉协方差提供有用结构；若高度冗余，简单求和只放大共同方向。
+
+\section{拼接与随机投影的 Johnson--Lindenstrauss 性质}
+把 $K$ 层拼接
+\begin{equation}
+ h=[h_1;\ldots;h_K]\in\R^{Kd},
+\end{equation}
+固定随机投影
+\begin{equation}
+ z=Rh,
+ \qquad R\in\R^{m\times Kd}.
+\end{equation}
+若 $R_{ij}\sim\mathcal N(0,1/m)$，对固定 $h$
+\begin{equation}
+ \E\|Rh\|^2=\|h\|^2.
+\end{equation}
+高概率下
+\begin{equation}
+ (1-\epsilon)\|h_a-h_b\|^2
+ \le\|R(h_a-h_b)\|^2
+ \le(1+\epsilon)\|h_a-h_b\|^2
+\end{equation}
+当 $m=O(\epsilon^{-2}\log N)$ 时可同时保持 $N$ 个样本距离。固定投影减少可训练参数，但不是无信息损失；$m$ 仍需足够大。
+
+\section{Decoder 重建误差的局部线性化}
+解码器 $D(z)$，真实表示 $z^*$，扰动 $\delta z$。Taylor 展开
+\begin{equation}
+ D(z^*+\delta z)
+ \approx D(z^*)+J_D(z^*)\delta z.
+\end{equation}
+像素重建误差
+\begin{equation}
+ \|D(z^*+\delta z)-x\|^2
+ \approx\|e_0+J_D\delta z\|^2.
+\end{equation}
+若 $D(z^*)=x$，
+\begin{equation}
+ \Loss_{\rm rec}\approx
+ \delta z^\top J_D^\top J_D\delta z.
+\end{equation}
+$J_D^\top J_D$ 定义了表示空间中“哪些方向对像素重建敏感”的局部度量。多层表示改善重建，意味着它降低了高敏感方向上的信息缺失。
+
+\section{潜空间扩散与白化}
+若表示协方差 $\Sigma_z$ 各向异性，直接加标准高斯噪声会使不同方向 SNR 不同。白化
+\begin{equation}
+ \widetilde z=\Sigma_z^{-1/2}(z-\mu)
+\end{equation}
+使
+\begin{equation}
+ \operatorname{Cov}(\widetilde z)=I.
+\end{equation}
+在白化空间扩散
+\begin{equation}
+ \widetilde z_t=\alpha_t\widetilde z+
+ \sigma_t\epsilon
+\end{equation}
+对所有主成分使用相同 SNR。若不白化，高方差方向更易主导 MSE，低方差但语义重要方向可能被忽视。
+
+\section{REPA 归一化对齐损失的梯度}
+设 DiT 中间表示 $y$、目标表示 $z$，归一化
+\begin{equation}
+ \widehat y=\frac y{\|y\|},
+ \qquad \widehat z=\frac z{\|z\|}.
+\end{equation}
+余弦损失
+\begin{equation}
+ \Loss_{\rm rep}=1-\widehat y^\top\widehat z.
+\end{equation}
+对 $y$ 的梯度
+\begin{equation}
+ \nabla_y\Loss_{\rm rep}
+ =-\frac1{\|y\|}
+ (I-\widehat y\widehat y^\top)\widehat z.
+\end{equation}
+梯度位于 $y$ 的切平面，不直接改变其径向尺度，只旋转方向靠近目标。
+
+\section{REPA 作为弱 $x$ 预测器的代数解释}
+设 RAE latent 的干净目标为 $z_0$，DiT 中间表示经投影 $P(y_t)$ 对齐 $z_0$：
+\begin{equation}
+ \Loss_{\rm REPA}=\|P(y_t)-z_0\|^2.
+\end{equation}
+如果把
+\begin{equation}
+ \widehat z_0^{\rm rep}=P(y_t)
+\end{equation}
+看成一个附加干净 latent 预测器，它与主输出共享主干但使用较浅的读出头。该预测器通常更弱、误差更大，正好可作为 guidance 中的“弱模型”。
+
+\section{线性 guidance 的最优权重}
+设强预测器
+\begin{equation}
+ \widehat z_s=z+e_s,
+\end{equation}
+弱预测器
+\begin{equation}
+ \widehat z_w=z+e_w.
+\end{equation}
+线性引导
+\begin{equation}
+ \widehat z_g=(1+\gamma)\widehat z_s-
+ \gamma\widehat z_w
+ =z+(1+\gamma)e_s-\gamma e_w.
+\end{equation}
+误差方差（标量化）
+\begin{equation}
+ V(\gamma)=(1+\gamma)^2V_s+
+ \gamma^2V_w-2\gamma(1+\gamma)C,
+\end{equation}
+其中 $C=\operatorname{Cov}(e_s,e_w)$。求导置零：
+\begin{equation}
+ \gamma^*=\frac{C-V_s}{V_s+V_w-2C}.
+\end{equation}
+要使 $\gamma^*>0$，需要强弱误差高度相关且 $C>V_s$。guidance 的作用来自消除共享误差方向，而不是简单平均。
+
+\section{从 $x$ 预测转回速度参数化}
+latent 路径
+\begin{equation}
+ z_t=\alpha_tz_0+\sigma_t\epsilon,
+\end{equation}
+速度
+\begin{equation}
+ v=\alpha_t\epsilon-\sigma_tz_0.
+\end{equation}
+由
+\begin{equation}
+ \epsilon=\frac{z_t-\alpha_tz_0}{\sigma_t}
+\end{equation}
+得
+\begin{align}
+ v
+ &=\frac{\alpha_t}{\sigma_t}z_t
+ -\left(\frac{\alpha_t^2}{\sigma_t}+\sigma_t\right)z_0\\
+ &=\frac{\alpha_t}{\sigma_t}z_t-
+ \frac1{\sigma_t}z_0,
+\end{align}
+使用 $\alpha_t^2+\sigma_t^2=1$。因此由 $x$ 预测 $\widehat z_0$ 构造
+\begin{equation}
+ \widehat v=\frac{\alpha_tz_t-\widehat z_0}{\sigma_t}.
+\end{equation}
+当 $\sigma_t$ 很小时，$z_0$ 预测误差被 $1/\sigma_t$ 放大。
+
+\section{RAE 与 REPA 的互补 Gram 视角}
+RAE 编码器固定输入表示几何
+\begin{equation}
+ G_{\rm enc}=ZZ^\top.
+\end{equation}
+REPA 约束中间表示 $Y$ 的几何接近
+\begin{equation}
+ G_Y=YY^\top\approx G_Z.
+\end{equation}
+RAE 决定模型工作的 latent 空间，REPA 则在网络内部重复施加该几何监督。两者并非替代关系：前者改变输入/输出坐标，后者改变中间优化路径。
+
+\section{EPFID 指标的插值误差}
+定义
+\begin{equation}
+ \mathrm{EPFID}@k=
+ \min\{e:\mathrm{gFID}(e)\le k\}.
+\end{equation}
+实验只在离散 epoch 测量。若 $e_1,e_2$ 间跨过阈值，可线性插值
+\begin{equation}
+ \widehat e=e_1+
+ \frac{\mathrm{FID}(e_1)-k}
+ {\mathrm{FID}(e_1)-\mathrm{FID}(e_2)}(e_2-e_1).
+\end{equation}
+FID 曲线有评估噪声且未必单调，严格报告应说明平滑、重复次数和首次跨阈值规则。
+
+\section{一个多层求和的数值例子}
+两层一维表示 $h_1,h_2$，方差
+\begin{equation}
+ \operatorname{Var}(h_1)=4,
+ \quad \operatorname{Var}(h_2)=1,
+ \quad \operatorname{Cov}(h_1,h_2)=-1.
+\end{equation}
+等权求和 $z=h_1+h_2$ 的方差
+\begin{equation}
+ \operatorname{Var}(z)=4+1+2(-1)=3.
+\end{equation}
+若两层误差负相关，求和可抵消噪声；若协方差为 $+1$，方差变为 7。多层聚合效果取决于跨层相关性，不是层数越多必然越好。
+\end{document}

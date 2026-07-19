@@ -1,0 +1,172 @@
+\documentclass[UTF8,11pt,a4paper]{ctexart}
+\usepackage[a4paper,left=1.45cm,right=1.45cm,top=1.55cm,bottom=1.65cm]{geometry}
+\usepackage{amsmath,amssymb,bm}
+\usepackage{graphicx}
+\usepackage{booktabs,tabularx,array,longtable}
+\usepackage{enumitem}
+\usepackage[dvipsnames,svgnames]{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,calc,fit,shapes.geometric}
+\usepackage[most]{tcolorbox}
+\usepackage{hyperref}
+\usepackage{caption}
+\usepackage{float}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{microtype}
+\IfFontExistsTF{Times New Roman}{\setmainfont{Times New Roman}}{\setmainfont{Liberation Serif}}
+\IfFontExistsTF{Noto Sans CJK SC}{\setCJKmainfont{Noto Sans CJK SC}}{}
+\IfFontExistsTF{Noto Sans CJK SC}{\setCJKsansfont{Noto Sans CJK SC}}{}
+\IfFontExistsTF{DejaVu Sans Mono}{\setmonofont{DejaVu Sans Mono}}{\setmonofont{Latin Modern Mono}}
+\definecolor{mainblue}{HTML}{0B5CAD}
+\definecolor{softblue}{HTML}{EAF4FF}
+\definecolor{darktext}{HTML}{1F2937}
+\definecolor{softgray}{HTML}{F5F7FA}
+\definecolor{accent}{HTML}{F59E0B}
+\definecolor{goodgreen}{HTML}{2E7D32}
+\definecolor{badred}{HTML}{B91C1C}
+\definecolor{purple}{HTML}{6D5BD0}
+\hypersetup{colorlinks=true,linkcolor=mainblue,urlcolor=DarkOrange,citecolor=mainblue}
+\setlength{\parindent}{2em}
+\setlength{\headheight}{14pt}
+\setlength{\parskip}{0.22em}
+\setlist[itemize]{leftmargin=2em,itemsep=0.23em,topsep=0.25em}
+\setlist[enumerate]{leftmargin=2.2em,itemsep=0.23em,topsep=0.25em}
+\renewcommand{\arraystretch}{1.2}
+\captionsetup{font=small,labelfont=bf}
+\titleformat{\section}{\Large\bfseries\sffamily\color{mainblue}}{\thesection}{0.7em}{}
+\titleformat{\subsection}{\large\bfseries\sffamily\color{darktext}}{\thesubsection}{0.6em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries\sffamily\color{darktext}}{\thesubsubsection}{0.55em}{}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\sffamily VLMs Are Biased}
+\fancyhead[R]{\small\sffamily \leftmark}
+\fancyfoot[C]{\small\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\newtcolorbox{infobox}[1]{enhanced,breakable,colback=softblue,colframe=mainblue!70!black,boxrule=0.8pt,arc=2mm,left=1.5mm,right=1.5mm,top=1mm,bottom=1mm,title=\bfseries #1}
+\newtcolorbox{keybox}[1]{enhanced,breakable,colback=softgray,colframe=darktext!45,boxrule=0.6pt,arc=2mm,left=1.5mm,right=1.5mm,top=1mm,bottom=1mm,title=\bfseries #1}
+\newtcolorbox{notebox}[1]{enhanced,breakable,colback=accent!8,colframe=accent!80!black,boxrule=0.7pt,arc=2mm,left=1.5mm,right=1.5mm,top=1mm,bottom=1mm,title=\bfseries #1}
+\newcommand{\term}[1]{\textbf{\textcolor{mainblue}{#1}}}
+\begin{document}
+
+\section{论文基本信息}
+\begin{center}
+\begin{tabularx}{0.94\linewidth}{>{\bfseries}p{0.18\linewidth}X}
+\toprule
+题目 & VLMs Are Biased\\
+课件日期 & 2025-08-15\\
+研究方向 & 视觉语言模型 / 视觉偏见\\
+一句话概括 & 揭示视觉语言模型在计数、标志和常识冲突图像中常被语言先验支配,并以 VLMBias 框架系统测试这种视觉失忆现象。\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\begin{infobox}{摘要要点}
+揭示视觉语言模型在计数、标志和常识冲突图像中常被语言先验支配,并以 VLMBias 框架系统测试这种视觉失忆现象。 本说明按“研究问题—核心机制—基础公式—实验阅读—局限与优化”的顺序重新组织，不保留原始材料的封面、目录和页码对应。
+\end{infobox}
+
+\section{研究问题与动机}
+这项工作的出发点不是简单地替换某个网络层，而是识别现有范式中最影响\term{质量、效率、可靠性或可部署性}的瓶颈。结合论文所讨论的问题，可以将研究动机概括为以下几点：
+\begin{itemize}
+\item VLMBias 框架与实验设计
+\item VLMS 两条 这图有几条腿?
+\item VLMs 行为:依赖记忆而非图像
+\item 典型案例:阿迪达斯logo 、动物腿数、旗帜条纹
+\item 核心矛盾:先验知识压制视觉输入
+\item 理论价值:揭示VLMs 的“视觉失忆症”本质
+\end{itemize}
+
+\begin{notebox}{理解重点}
+阅读这类论文时，应把“问题是否真实存在”“方法是否直接解决该问题”“实验是否排除了其他解释”分开判断。仅凭更大的模型、更多数据或更长训练得到的提升，不能自动视为结构创新带来的收益。
+\end{notebox}
+
+\section{核心思想与整体流程}
+揭示视觉语言模型在计数、标志和常识冲突图像中常被语言先验支配,并以 VLMBias 框架系统测试这种视觉失忆现象。 从信息流角度看，其基本流程可以整理为下图。
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[>=Latex,node distance=0.78cm]
+\tikzstyle{procstep}=[draw,rounded corners,fill=softblue,align=center,minimum width=3.05cm,minimum height=0.95cm,text width=2.75cm]
+\node[procstep] (a) {反常识图像};
+\node[procstep,right=of a] (b) {视觉编码};
+\node[procstep,right=of b] (c) {语言先验冲突};
+\node[procstep,right=of c] (d) {偏见测量};
+\draw[->,thick,mainblue] (a)--(b);
+\draw[->,thick,mainblue] (b)--(c);
+\draw[->,thick,mainblue] (c)--(d);
+\end{tikzpicture}
+\caption{核心信息流与处理阶段。}
+\end{figure}
+
+\subsection{方法组成与信息流}
+\begin{itemize}
+\item VLMBias 框架与实验设计
+\item 典型案例:阿迪达斯logo 、动物腿数、旗帜条纹
+\item VLMs 行为:依赖记忆而非图像
+\item 核心矛盾:先验知识压制视觉输入
+\end{itemize}
+
+\begin{keybox}{结构解析}
+\begin{itemize}
+\item 25 研究价值与科研启示 ； 理论价值：揭示VLMs 的“视觉失忆症”本质 ； 实用价值：VLMBias 框架可自动化测试偏见 ； 对科研新手：好选题+ 讲好故事= 顶会潜力
+\end{itemize}
+\end{keybox}
+
+下图补充展示模块连接、数据流或训练阶段之间的关系。
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.94\linewidth,height=0.43\textheight,keepaspectratio]{method_diagram.jpg}
+\caption{模型结构、数据流或主要训练阶段。}
+\end{figure}
+
+\section{数学与机制理解}
+本节给出理解该工作的基础数学结构。公式用于解释方法所属范式，并不替代原论文中的完整推导。
+\begin{equation}
+z=\Phi_{\mathrm v}(I)\oplus\Phi_{\mathrm t}(T),\qquad y=G(z)
+\end{equation}
+多模态模型先把图像 $I$ 与文本 $T$ 编码到可交互的表示，再由统一生成器输出文本、图像或结构化答案。关键难点是防止某一模态先验压制另一模态证据。
+
+\begin{keybox}{从公式回到方法}
+应重点观察论文究竟改变了公式中的哪一部分：是输入表示、连接矩阵、条件变量、参数化方式、训练目标，还是求解与调度过程。真正的创新通常可以在这一层被准确定位。
+\end{keybox}
+
+
+\section{实验结果应如何阅读}
+\begin{itemize}
+\item VLMBias 框架与实验设计
+\end{itemize}
+
+\begin{notebox}{结果解读}
+\begin{itemize}
+\item 5 案例理解核心idea ； VLMs 行为：依赖记忆而非图像 ； 典型案例：阿迪达斯logo 、动物腿数、旗帜条纹 ； 核心矛盾：先验知识压制视觉输入
+\end{itemize}
+\end{notebox}
+
+下图用于直观呈现主要对比、消融、定性样例或效率结果。
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.94\linewidth,height=0.43\textheight,keepaspectratio]{result_evidence.jpg}
+\caption{代表性实验对比、消融结果或定性样例。}
+\end{figure}
+实验部分不应只看单一最好数字。还需要核对模型规模、训练数据、训练步数、采样或解码预算、硬件条件以及是否使用额外蒸馏、检索或后处理。只有比较条件接近时，结果才能真正说明方法本身的优势。
+
+\section{优点、局限与可优化空间}
+\subsection{主要优点}
+\begin{itemize}
+\item \term{问题与方法对应明确}：论文围绕一个可识别的核心瓶颈展开，方法结构能够直接映射到该瓶颈。
+\item \term{可复用的设计思想}：即使不完整复现模型，其中的分解、稀疏化、递归、条件控制或系统优化思想也可迁移到相邻任务。
+\item \term{实验提供了多角度证据}：实验通常同时展示主结果、效率比较、案例或消融，使结论不完全依赖单一指标。
+\end{itemize}
+
+\subsection{局限与进一步优化}
+\begin{itemize}
+\item 需要进一步区分\term{结构收益}与更大算力、更多数据、不同训练技巧带来的收益，并在等参数、等计算预算下进行严格比较。
+\item 对超参数、输入分布和模型规模的敏感性仍应系统分析；在一个数据集上的最优配置不一定能直接迁移。
+\item 实际部署还要考虑显存峰值、并发、延迟抖动、失败案例和鲁棒性，而不仅是离线平均指标。
+\item 可尝试将该方法与蒸馏、量化、缓存复用、动态路由或更强的表示学习结合，验证不同优化是否互补。
+\end{itemize}
+
+\section{结论}
+总体而言，揭示视觉语言模型在计数、标志和常识冲突图像中常被语言先验支配，并以 VLMBias 框架系统测试这种视觉失忆现象。。 进一步需要注意：实用价值:VLMBias 框架可自动化测试偏见;理论价值:揭示VLMs 的“视觉失忆症”本质。
+
+\end{document}

@@ -1,0 +1,492 @@
+\documentclass[UTF8,12pt,a4paper,fontset=none]{ctexart}
+\usepackage[a4paper,left=1.82cm,right=1.82cm,top=1.72cm,bottom=1.82cm,headheight=15pt]{geometry}
+\usepackage{fontspec,xeCJK}
+\setmainfont{Liberation Serif}
+\setsansfont{DejaVu Sans}
+\setmonofont{DejaVu Sans Mono}
+\setCJKmainfont[BoldFont=Noto Serif CJK SC Bold]{Noto Serif CJK SC}
+\setCJKsansfont[BoldFont=Noto Sans CJK SC Bold]{Noto Sans CJK SC}
+\setCJKmonofont{Noto Sans Mono CJK SC}
+\usepackage{amsmath,amssymb,mathtools,bm}
+\usepackage{booktabs,longtable,tabularx,array,multirow}
+\usepackage{enumitem,xcolor}
+\usepackage[most]{tcolorbox}
+\usepackage{fancyhdr,titlesec,hyperref,cleveref,lastpage}
+\usepackage{tikz,float,caption,listings}
+\usetikzlibrary{arrows.meta,positioning,calc,fit,backgrounds,shapes.geometric}
+\definecolor{mainblue}{RGB}{39,82,138}
+\definecolor{deepblue}{RGB}{25,55,95}
+\definecolor{softblue}{RGB}{235,243,252}
+\definecolor{softgreen}{RGB}{238,248,241}
+\definecolor{softorange}{RGB}{255,246,232}
+\definecolor{softgray}{RGB}{245,246,248}
+\definecolor{warnred}{RGB}{160,48,48}
+\hypersetup{unicode=true,colorlinks=true,linkcolor=deepblue,urlcolor=mainblue,citecolor=deepblue}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.36em}
+\setlength{\tabcolsep}{5pt}
+\renewcommand{\arraystretch}{1.2}
+\allowdisplaybreaks[4]
+\emergencystretch=3em
+\sloppy
+\pagestyle{fancy}\fancyhf{}\fancyfoot[C]{\small 第 \thepage\ 页，共 \pageref{LastPage} 页}\renewcommand{\headrulewidth}{0.4pt}
+\titleformat{\section}{\Large\bfseries\color{deepblue}}{\thesection}{0.65em}{}
+\titleformat{\subsection}{\large\bfseries\color{mainblue}}{\thesubsection}{0.55em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries}{\thesubsubsection}{0.5em}{}
+\numberwithin{equation}{section}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Prob}{\mathbb{P}}
+\newcommand{\Loss}{\mathcal{L}}
+\newcommand{\norm}[1]{\left\lVert #1\right\rVert}
+\newcommand{\ip}[2]{\left\langle #1,#2\right\rangle}
+\newcommand{\tr}{\operatorname{Tr}}
+\newcommand{\diag}{\operatorname{diag}}
+\newcommand{\rank}{\operatorname{rank}}
+\newcommand{\softmax}{\operatorname{softmax}}
+\newcommand{\argmin}{\operatorname*{arg\,min}}
+\newcommand{\argmax}{\operatorname*{arg\,max}}
+\newcommand{\sg}{\operatorname{sg}}
+\newcommand{\KL}{D_{\mathrm{KL}}}
+\newcommand{\dd}{\mathrm{d}}
+\newtcolorbox{keybox}[1][]{enhanced,breakable,colback=softblue,colframe=mainblue,boxrule=0.8pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\newtcolorbox{examplebox}[1][]{enhanced,breakable,colback=softgreen,colframe=green!45!black,boxrule=0.7pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\newtcolorbox{notebox}[1][]{enhanced,breakable,colback=softorange,colframe=orange!70!black,boxrule=0.7pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\newtcolorbox{criticalbox}[1][]{enhanced,breakable,colback=red!3,colframe=warnred,boxrule=0.8pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\lstset{basicstyle=\ttfamily\small,breaklines=true,frame=single,backgroundcolor=\color{softgray},numbers=left,numberstyle=\tiny,showstringspaces=false,columns=fullflexible}
+\hypersetup{pdftitle={18 Native Sparse Attention 数学过程详解},pdfauthor={OpenAI}}
+\fancyhead[L]{\small 18 Native Sparse Attention}
+\fancyhead[R]{\small 数学过程详解}
+\setlength{\abovedisplayskip}{0.82em}
+\setlength{\belowdisplayskip}{0.82em}
+\setlength{\abovedisplayshortskip}{0.45em}
+\setlength{\belowdisplayshortskip}{0.45em}
+\begin{document}
+\begin{center}
+{\LARGE\bfseries 18\_Native Sparse Attention 数学过程详解}\par
+\vspace{0.35em}
+{\large 三分支稀疏映射、块级选择与硬件算术强度}
+\end{center}
+\vspace{0.45em}
+\begin{keybox}[本文只处理真正需要推导的部分]
+本文推导压缩块数量、重要性映射、GQA 组共享 top-n、滑窗复杂度、门控梯度和算术强度。全文按“公式从哪里来--每个符号是什么--中间步骤为何成立--维度和复杂度如何核对--论文结论依赖哪些假设”的顺序展开；不复述实验表格，也不使用与论文无关的通用背景凑页数。
+\end{keybox}
+\tableofcontents
+\newpage
+
+\section{全注意力的标准形式与复杂度}
+对当前查询 $q_t\in\R^{d_k}$ 和历史键值 $K_{:t},V_{:t}$，因果注意力为
+\begin{equation}
+ o_t=\sum_{i=1}^{t}\pi_{t,i}v_i,
+ \qquad
+ \pi_{t,i}=\frac{\exp(q_t^\top k_i/\sqrt{d_k})}
+ {\sum_{j=1}^{t}\exp(q_t^\top k_j/\sqrt{d_k})}.
+\end{equation}
+训练长度为 $T$ 时，分数矩阵大小 $T\times T$，计算量 $O(T^2d_k)$；自回归解码第 $t$ 步虽然只计算一个 query，却要读取 $t$ 个 KV，内存带宽成本 $O(td_k)$。
+
+\section{NSA 的三分支统一表达}
+NSA 为每个查询动态构造三类紧凑 KV：压缩分支 cmp、选择分支 slc、滑窗分支 win。记
+\begin{equation}
+ (\widetilde K_t^c,\widetilde V_t^c)=f_c(q_t,K_{:t},V_{:t}),
+ \qquad c\in\{\mathrm{cmp},\mathrm{slc},\mathrm{win}\}.
+\end{equation}
+每个分支单独计算注意力，最终由门控融合：
+\begin{equation}
+ \boxed{o_t^*=\sum_c g_t^c\operatorname{Attn}
+ (q_t,\widetilde K_t^c,\widetilde V_t^c),\qquad g_t^c\in[0,1].}
+\end{equation}
+若门由 sigmoid 独立生成，$\sum_cg_t^c$ 不一定等于 1；若用 Softmax 则是凸组合。论文采用分支独立 KV，避免局部模式梯度直接压制长程分支。
+
+\section{压缩分支的块数与重叠率}
+设压缩块长度为 $l$、步长为 $d$。第 $i$ 个块覆盖
+\begin{equation}
+ K_{id+1:id+l}.
+\end{equation}
+可用块数
+\begin{equation}
+ n_{\rm cmp}=\left\lfloor\frac{t-l}{d}\right\rfloor+1.
+\end{equation}
+学习映射 $\phi$ 将每块压成一个键：
+\begin{equation}
+ \widetilde k_i^{\rm cmp}=\phi(k_{id+1:id+l}).
+\end{equation}
+若 $d<l$，相邻块重叠 $l-d$ 个 token，重叠率
+\begin{equation}
+ r_{\rm overlap}=1-\frac{d}{l}.
+\end{equation}
+重叠减轻块边界信息割裂，但增加压缩 token 数和计算。
+
+\section{压缩注意力分数如何复用为选择分数}
+先计算压缩分支概率
+\begin{equation}
+ p_t^{\rm cmp}=\softmax\left(q_t^\top\widetilde K_t^{\rm cmp}/\sqrt{d_k}\right).
+\end{equation}
+若选择块与压缩块完全一致，选择重要性直接取
+\begin{equation}
+ p_t^{\rm slc}=p_t^{\rm cmp}.
+\end{equation}
+若选择块长 $l'>l$，一个选择块与多个压缩块重叠。论文按空间覆盖关系累加：
+\begin{equation}
+ p_t^{\rm slc}[j]
+ =\sum_{m=0}^{l'/d-1}\sum_{n=0}^{l/d-1}
+ p_t^{\rm cmp}\!\left[\frac{l'}d j-m-n\right].
+\end{equation}
+这相当于对压缩注意力做离散卷积，把细粒度块权重聚合到更大的选择块。
+
+\section{为什么式中出现双重求和}
+选择块 $j$ 含 $l'/d$ 个步长位置；每个 token 又可能落入 $l/d$ 个重叠压缩块。双重索引 $(m,n)$ 枚举“选择块内部位置”和“覆盖该位置的压缩块偏移”。若 $l'=l=d$，两个上限都为 0，公式退化为直接复制。
+
+\section{GQA 组内共享选择}
+GQA 中多个 query head 共享同一组 KV。若每个头独立 top-$n$，实际需加载各头选择集合的并集，内存访问可能接近全量。NSA 先聚合组内重要性：
+\begin{equation}
+ \bar p_t^{\rm slc}[j]=\sum_{h=1}^{H_g}p_{t,h}^{\rm slc}[j].
+\end{equation}
+再对 $\bar p$ 做统一 top-$n$。这牺牲每头个性化选择，但保证所有头复用同一批连续 KV 块，减少 HBM 读取。
+
+\section{Top-$n$ 块选择与稀疏键值大小}
+选择集合
+\begin{equation}
+ I_t=\{i:\operatorname{rank}(p_t^{\rm slc}[i])\le n\}.
+\end{equation}
+若每块长度 $l'$，拼接后
+\begin{equation}
+ \widetilde K_t^{\rm slc}
+ =\operatorname{Cat}\{K_{il'+1:(i+1)l'}:i\in I_t\},
+\end{equation}
+其 token 数为
+\begin{equation}
+ N_{\rm slc}=nl'.
+\end{equation}
+选择是离散 top-$n$，路径本身不可导，但分数来自压缩注意力；被选块中的值通过主损失获得梯度，压缩分支也独立训练，因此系统不依赖对排序算子求导。
+
+\section{滑动窗口分支}
+局部分支保留最近 $w$ 个 token：
+\begin{equation}
+ \widetilde K_t^{\rm win}=K_{t-w:t},\qquad
+ \widetilde V_t^{\rm win}=V_{t-w:t}.
+\end{equation}
+窗口复杂度 $O(wd_k)$。它显式承担局部语言模式，使压缩/选择分支不必通过竞争学习短程依赖。若没有独立窗口，长程分支容易把容量浪费在邻近 token 上。
+
+\section{总稀疏规模与理论复杂度}
+总 remapped KV 数
+\begin{equation}
+ N_t=n_{\rm cmp}+nl'+w.
+\end{equation}
+只要 $N_t\ll t$，单 query 成本从 $O(td_k)$ 变为
+\begin{equation}
+ O(N_td_k).
+\end{equation}
+训练全序列时近似
+\begin{equation}
+ C_{\rm NSA}=O(TN d_k),
+\end{equation}
+若 $N$ 与 $T$ 无关则线性；若 $n_{\rm cmp}\approx T/d$，压缩分支仍随 $T$ 增长，但常数由压缩步长显著降低。
+
+\section{算术强度为什么决定真实速度}
+算术强度定义为
+\begin{equation}
+ \mathcal I=\frac{\text{FLOPs}}{\text{bytes transferred}}.
+\end{equation}
+若 GPU 峰值算力 $F_{\max}$、带宽 $B_{\max}$，临界强度
+\begin{equation}
+ \mathcal I^*=\frac{F_{\max}}{B_{\max}}.
+\end{equation}
+$\mathcal I<\mathcal I^*$ 时内存受限。随机 token 选择虽然减少 FLOPs，却会造成大量不连续读取，使 bytes transferred 不按比例下降。NSA 用连续块和 GQA 组共享选择，让稀疏计算可由 Tensor Core 和块加载高效执行。
+
+\section{分支门控的梯度}
+设分支输出 $o_c$、最终输出 $o=\sum_cg_co_c$，则
+\begin{equation}
+ \frac{\partial\Loss}{\partial g_c}
+ =\ip{\frac{\partial\Loss}{\partial o}}{o_c}.
+\end{equation}
+若 $g_c=\sigma(s_c)$，
+\begin{equation}
+ \frac{\partial\Loss}{\partial s_c}
+ =g_c(1-g_c)\ip{\frac{\partial\Loss}{\partial o}}{o_c}.
+\end{equation}
+门接近 0 或 1 时 sigmoid 梯度变小，因此初始化应避免某一分支一开始完全关闭。
+
+\section{注意力归一化为何在分支内完成}
+NSA 不是把三类 KV 全部拼接后统一 Softmax，而是分支独立归一化再门控。若统一拼接，某分支 token 数多会改变 Softmax 分母并抢占概率质量。分支独立时
+\begin{equation}
+ \sum_i\pi_i^c=1\quad\text{for each }c,
+\end{equation}
+门 $g_c$ 只比较分支输出，避免块数差异直接形成先验偏置。
+
+\section{容易误解的效率结论}
+\begin{criticalbox}[稀疏率不是速度]
+理论 $N_t/t$ 只描述参与注意力的 KV 比例。真实延迟还取决于块尺寸、GQA 共享、索引生成、SRAM/HBM 访问和反向算子。NSA 的核心并非单纯 top-$n$，而是让选择粒度与 GPU 连续块计算对齐，并从训练开始就让模型适应这种稀疏结构。
+\end{criticalbox}
+% AUGMENTED_DETAILED_MATH
+
+\section{全注意力的 FLOPs 与显存}
+输入长度 $N$，头维度 $d_h$。单头分数矩阵
+\begin{equation}
+ S=QK^\top/\sqrt{d_h}\in\R^{N\times N}.
+\end{equation}
+$QK^\top$ 需要约 $2N^2d_h$ FLOPs，$AV$ 再需 $2N^2d_h$，所以单头核心成本
+\begin{equation}
+ C_{\mathrm{attn}}\approx4N^2d_h.
+\end{equation}
+训练时若保存 $S$ 或 softmax 概率，显存为 $O(N^2)$。稀疏注意力的目标就是把每个 query 实际访问的键数从 $N$ 降到 $S\ll N$。
+
+\section{三分支的统一稀疏集合}
+对位置 $i$，NSA 的有效键集合可写为
+\begin{equation}
+ \mathcal K_i
+ =\mathcal K_i^{\mathrm{cmp}}
+ \cup\mathcal K_i^{\mathrm{sel}}
+ \cup\mathcal K_i^{\mathrm{win}}.
+\end{equation}
+若分支分别独立归一化，输出
+\begin{equation}
+ o_i=\sum_{b\in\{c,s,w\}}g_{i,b}
+ \sum_{j\in\mathcal K_i^b}
+ \frac{e^{s_{ij}}}{\sum_{\ell\in\mathcal K_i^b}e^{s_{i\ell}}}v_j.
+\end{equation}
+若改成在并集上一次 softmax，则重复键只出现一次且不同分支竞争同一归一化常数。两种形式并不等价；论文的门控分支结构允许“全局压缩、选择块、局部窗口”分别保留不同统计尺度。
+
+\section{压缩块的重叠数量}
+设压缩块大小为 $l$，步长为 $d$，因果序列长度为 $N$。块数
+\begin{equation}
+ M=\left\lfloor\frac{N-l}{d}\right\rfloor+1.
+\end{equation}
+相邻块重叠长度 $l-d$，重叠率
+\begin{equation}
+ \rho=1-\frac dl.
+\end{equation}
+若每块通过可学习池化映射为一个代表键值，压缩分支每个 query 访问 $M$ 个代表，成本
+\begin{equation}
+ O(NMd_h)\approx O\!\left(\frac{N^2}{d}d_h\right).
+\end{equation}
+增大步长降低成本，但可能丢失块边界信息。
+
+\section{从压缩分数到块选择}
+设压缩键为 $\bar k_m$，压缩分数
+\begin{equation}
+ \bar s_{im}=q_i^\top\bar k_m/\sqrt{d_h}.
+\end{equation}
+选择 top-$n$ 块索引
+\begin{equation}
+ \mathcal I_i=\operatorname{TopK}_n(\bar s_{i1:M}).
+\end{equation}
+若原块长度为 $l'$，选择分支最多访问
+\begin{equation}
+ S_{\mathrm{sel}}=nl'
+\end{equation}
+个原始 token。总核心注意力成本近似
+\begin{equation}
+ C\approx O\left[N(M+nl'+w)d_h\right],
+\end{equation}
+其中 $w$ 为滑动窗口宽度。
+
+\section{Top-$k$ 的梯度}
+硬选择索引在排序边界不可微。固定当前 top-$k$ 集合时，未选块梯度为零：
+\begin{equation}
+ \frac{\partial\Loss}{\partial\bar s_{im}}=0,
+ \qquad m\notin\mathcal I_i.
+\end{equation}
+选中集合内部仍通过后续注意力和门控获得梯度。排序边界处使用分段常数子梯度，可能造成“早期没选中就长期学不到”的冷启动。压缩分支持续访问所有压缩块，能为选择分数提供较密集的训练信号，这是 NSA 可原生训练的重要原因。
+
+\section{GQA 下选择索引共享}
+设查询头数 $H_q$，键值头数 $H_{kv}$，每组
+\begin{equation}
+ G=H_q/H_{kv}
+\end{equation}
+个查询头共享一组 $K,V$。若每个查询头独立 top-$k$，索引生成与不规则访存成本乘 $H_q$；若组内共享选择索引，则只需 $H_{kv}$ 份索引。共享相当于用组聚合分数
+\begin{equation}
+ \bar s_{gm}=\operatorname{Agg}_{h\in g}\bar s_{hm}
+\end{equation}
+选择块，牺牲头特异性换取硬件规则性。
+
+\section{滑动窗口的因果边界}
+对位置 $i$，窗口集合
+\begin{equation}
+ \mathcal K_i^{\mathrm{win}}
+ =\{j:\max(0,i-w+1)\le j\le i\}.
+\end{equation}
+其总边数
+\begin{align}
+ E_w
+ &=\sum_{i=0}^{N-1}\min(w,i+1)\\
+ &=\frac{w(w+1)}2+(N-w)w
+ =O(Nw).
+\end{align}
+局部窗口保证相邻 token 的高分辨率交互，即使全局块选择暂时不准确，模型仍保留稳定的局部语言建模路径。
+
+\section{门控混合的梯度}
+三分支输出 $o_b$，门控 logits $a_b$，
+\begin{equation}
+ g_b=\frac{e^{a_b}}{\sum_ce^{a_c}},
+ \qquad o=\sum_bg_bo_b.
+\end{equation}
+对门控 logit
+\begin{equation}
+ \frac{\partial o}{\partial a_b}
+ =g_b(o_b-o).
+\end{equation}
+因此某分支只有在其输出相对当前混合更能降低损失时才增加权重。若一个分支早期占据 $g_b\approx1$，其它分支梯度会变小，可用门控温度或均衡正则缓解。
+
+\section{算术强度与 Roofline 分析}
+稀疏注意力不只看 FLOPs。算术强度
+\begin{equation}
+ I=\frac{\text{FLOPs}}{\text{bytes moved}}
+\end{equation}
+决定是计算受限还是带宽受限。Roofline 上界
+\begin{equation}
+ P\le\min(P_{\mathrm{peak}},I\cdot BW).
+\end{equation}
+随机 top-$k$ 块若导致不连续读取，bytes moved 和索引开销可能很高，$I$ 下降；即使理论 FLOPs 少，实际延迟也未必降低。NSA 将选择单位对齐到固定块并与 GQA 共享，目的就是提高连续访存和 kernel 利用率。
+
+\section{端到端复杂度条件}
+令压缩块数 $M=N/d$，选择 token 数 $nl'$，窗口 $w$。要使复杂度次二次，需要
+\begin{equation}
+ M+nl'+w=o(N).
+\end{equation}
+若 $d,n,l',w$ 都为常数或缓慢增长，总成本为 $O(Nd_h(M+nl'+w))$。但压缩分支 $M=N/d$ 在固定步长 $d$ 时仍是 $O(N^2/d)$；只有让压缩率随上下文长度增加，或用更强层级压缩，才可能获得严格渐近线性。
+\clearpage
+\section{从全注意力到稀疏集合注意力}
+单头因果注意力第 $i$ 个查询为
+\begin{equation}
+ y_i=\sum_{j\le i}\alpha_{ij}v_j,
+ \qquad
+ \alpha_{ij}=\frac{\exp(q_i^\top k_j/\sqrt d)}
+ {\sum_{\ell\le i}\exp(q_i^\top k_\ell/\sqrt d)}.
+\end{equation}
+稀疏注意力选择集合 $\mathcal S_i\subseteq\{1,\ldots,i\}$：
+\begin{equation}
+ y_i^{\rm sparse}=\sum_{j\in\mathcal S_i}
+ \frac{\exp(s_{ij})}{\sum_{\ell\in\mathcal S_i}\exp(s_{i\ell})}v_j.
+\end{equation}
+注意分母也必须限制在 $\mathcal S_i$，不能先做全 softmax 再把未选项置零，否则权重和小于 1，且仍需计算全分母。
+
+\section{三分支的集合并集表达}
+NSA 可抽象为
+\begin{equation}
+ \mathcal S_i=\mathcal S_i^{\rm cmp}
+ \cup\mathcal S_i^{\rm sel}
+ \cup\mathcal S_i^{\rm win}.
+\end{equation}
+压缩分支用少量块摘要覆盖长程历史；选择分支从原始块中选 top-$k$；窗口分支保留最近 token。若三个分支分别归一化并用门控 $g_b$ 混合，
+\begin{equation}
+ y_i=\sum_{b\in\{c,s,w\}}g_{ib}y_i^{(b)},
+ \qquad g_i=\softmax(r_i).
+\end{equation}
+这与在并集上做一次统一 softmax 不等价，因为各分支有各自的归一化常数。
+
+\section{压缩块数量与重叠率}
+序列长度 $N$，块大小 $l$，步长 $s$。完整块数
+\begin{equation}
+ B=\left\lfloor\frac{N-l}{s}\right\rfloor+1.
+\end{equation}
+相邻块重叠 token 数
+\begin{equation}
+ o=l-s,
+\end{equation}
+重叠比例
+\begin{equation}
+ \rho=\frac{l-s}{l}=1-\frac{s}{l}.
+\end{equation}
+当 $s=l$ 时不重叠；$s<l$ 提高边界连续性，但块数约变为 $N/s$，压缩分支成本随 $1/s$ 增加。
+
+\section{压缩分数到原始块选择分数}
+设压缩块 $b$ 覆盖 token 集 $I_b$，压缩键
+\begin{equation}
+ \bar k_b=\sum_{j\in I_b}w_{bj}k_j.
+\end{equation}
+查询对压缩块分数
+\begin{equation}
+ \bar s_{ib}=q_i^\top\bar k_b
+ =\sum_{j\in I_b}w_{bj}q_i^\top k_j.
+\end{equation}
+它是该块原始 token 分数的加权平均，因此可作为块重要性代理。若一个原始块被多个压缩块覆盖，可聚合
+\begin{equation}
+ r_{ig}=\sum_{b:g\cap I_b\ne\varnothing}\omega_{gb}\bar s_{ib}.
+\end{equation}
+双重求和来自“查询--压缩块”到“原始选择块”的映射，而不是重复计算注意力。
+
+\section{Top-$k$ 选择的不可导性}
+选择索引
+\begin{equation}
+ \mathcal I_i=\operatorname{TopK}(r_i,k)
+\end{equation}
+在分数排序不变的小邻域内是常数，边界处不连续。真实导数几乎处处为零。训练时常见做法是：索引路径不传梯度，但被选块内部的注意力分数仍正常求导；或者用软 top-$k$ 近似
+\begin{equation}
+ m_g=\sigma\left(\frac{r_g-\tau}{T}\right)
+\end{equation}
+再逐渐降低温度 $T$。前者高效但选择器学习信号间接，后者可导但计算更密集。
+
+\section{精确复杂度公式}
+全注意力每层主要乘法为
+\begin{equation}
+ QK^\top: \quad 2N^2d,
+ \qquad
+ AV:\quad 2N^2d,
+\end{equation}
+合计约 $4N^2d$ FLOPs，注意力矩阵显存 $O(N^2)$。
+
+若窗口宽度 $w$，选择 $k$ 个原始块、每块 $l$ 个 token，压缩块数 $B\approx N/s$，则每个查询可见元素数近似
+\begin{equation}
+ M=B+kl+w.
+\end{equation}
+总注意力 FLOPs
+\begin{equation}
+ C_{\rm NSA}\approx4NdM.
+\end{equation}
+要获得线性复杂度，需要 $M=O(1)$ 或至少远小于 $N$。若压缩块数 $B=N/s$ 随 $N$ 线性增长且 $s$ 固定，压缩分支仍带来 $O(N^2/s)$；实践中需使用层次压缩、较大步长或分组查询降低常数。
+
+\section{一个 $N=16$ 的集合构造例子}
+设块大小 $l=4$、步长 $s=4$，共有 $B=4$ 个压缩块。对查询 $i=16$，窗口宽度 $w=4$，选取 top-$2$ 原始块。若 top 块为 $I_1=\{1,2,3,4\}$ 和 $I_3=\{9,10,11,12\}$，窗口为 $\{13,14,15,16\}$，则
+\begin{equation}
+ \mathcal S_{16}^{\rm sel}\cup\mathcal S_{16}^{\rm win}
+ =\{1,2,3,4,9,10,11,12,13,14,15,16\}.
+\end{equation}
+再加 4 个压缩摘要，总计 16 个键值对象，但其中摘要与原 token 是不同对象。更长序列时，窗口和选择块保持固定，压缩摘要承担全局覆盖。
+
+\section{GQA 下共享选择索引的计算收益}
+设 $H_q$ 个查询头、$H_{kv}$ 个 KV 头，每组包含
+\begin{equation}
+ G=H_q/H_{kv}
+\end{equation}
+个查询头。若组内共享 top-$k$ 选择，选择器只需对每个 KV 组计算一次，选择分数成本从
+\begin{equation}
+ O(H_qNBd)
+\end{equation}
+降为
+\begin{equation}
+ O(H_{kv}NBd).
+\end{equation}
+代价是组内不同查询头不能选择不同块。共享是否合理取决于组内头的语义相似性。
+
+\section{门控混合的梯度}
+门控 logits 为 $r_b$，$g_b=\exp(r_b)/\sum_c\exp(r_c)$，输出
+\begin{equation}
+ y=\sum_bg_by_b.
+\end{equation}
+对 $r_a$，
+\begin{align}
+ \frac{\partial y}{\partial r_a}
+ &=\sum_b\frac{\partial g_b}{\partial r_a}y_b
+ =\sum_bg_b(\mathbf 1[a=b]-g_a)y_b\\
+ &=g_a(y_a-y).
+\end{align}
+因此当分支 $a$ 的输出方向比当前混合输出更能降低损失时，其门控权重上升。若某分支早期 $g_a\approx0$，梯度也接近零，可能形成分支饿死。
+
+\section{Roofline 模型与算术强度}
+算术强度定义为
+\begin{equation}
+ I=\frac{\text{FLOPs}}{\text{从显存搬运的字节数}}.
+\end{equation}
+硬件峰值计算吞吐 $P_{\max}$、显存带宽 $B_{\max}$ 下，性能上界
+\begin{equation}
+ P\le\min(P_{\max},B_{\max}I).
+\end{equation}
+稀疏注意力若索引零散，会导致 KV 读取不连续、重复搬运和低缓存命中，虽然理论 FLOPs 下降，$I$ 也可能下降，最终仍受带宽限制。NSA 的“硬件对齐”核心就是让选择粒度为规则块，以便矩阵乘内核保持较高算术强度。
+
+\section{因果边界的正确实现}
+对第 $i$ 个查询，任何块若包含未来 token $j>i$，必须截断。选择块 $I_b=[a_b,a_b+l-1]$ 的有效集合为
+\begin{equation}
+ I_b^{(i)}=I_b\cap\{1,\ldots,i\}.
+\end{equation}
+若只按块起点判断 $a_b\le i$ 而不裁剪块尾，边界块会泄漏未来信息。训练和推理的稀疏掩码必须完全一致，否则训练可能利用推理时不可用的未来键值。
+\end{document}

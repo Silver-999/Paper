@@ -1,0 +1,416 @@
+\documentclass[11pt]{article}
+\usepackage{fontspec}
+\setmainfont[
+  Path=fonts/,
+  Extension=.ttf,
+  UprightFont=*-400,
+  BoldFont=*-700
+]{NotoSerifSC}
+\setsansfont[
+  Path=fonts/,
+  Extension=.ttf,
+  UprightFont=*-400,
+  BoldFont=*-700
+]{NotoSerifSC}
+\XeTeXlinebreaklocale "zh"
+\XeTeXlinebreakskip=0pt plus 1pt
+\usepackage[a4paper,margin=1.70cm]{geometry}
+\usepackage{amsmath,amssymb,mathtools,bm}
+\usepackage{booktabs,longtable,array}
+\usepackage{enumitem}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\setlist{nosep,leftmargin=2em}
+\allowdisplaybreaks[3]
+\numberwithin{equation}{section}
+\pagestyle{plain}
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Pp}{\mathbb{P}}
+\newcommand{\1}{\mathbf{1}}
+\newcommand{\T}{\mathsf{T}}
+\newcommand{\F}{\mathrm{F}}
+\newcommand{\cN}{\mathcal{N}}
+\newcommand{\cL}{\mathcal{L}}
+\newcommand{\cS}{\mathcal{S}}
+\newcommand{\cH}{\mathcal{H}}
+\newcommand{\cA}{\mathcal{A}}
+\newcommand{\cM}{\mathcal{M}}
+\newcommand{\cT}{\mathcal{T}}
+\newcommand{\diag}{\operatorname{diag}}
+\newcommand{\tr}{\operatorname{tr}}
+\newcommand{\Var}{\operatorname{Var}}
+\newcommand{\Cov}{\operatorname{Cov}}
+\newcommand{\softmax}{\operatorname{softmax}}
+\newcommand{\KL}{D_{\mathrm{KL}}}
+\newcommand{\sg}{\operatorname{sg}}
+\begin{document}
+    \begin{center}
+      {\LARGE\bfseries 17\_Mixture-of-Recursions Learning Dynamic Recursive Depths for Adaptive Token-Level Computation}
+    \end{center}
+    \vspace{0.8em}
+
+    \section{符号与维度}
+    \begin{longtable}{>{$}l<{$} >{$}l<{$} p{10cm}}
+    \toprule
+    \text{符号} & \text{维度} & \text{含义}\\
+    \midrule
+    h_i^{(k)} & \R^d & token $i$ 在第 $k$ 次递归后的状态。\\
+        K_i & \{1,\ldots,K_{\max}\} & token 的动态递归深度。\\
+        s_i^{(k)} & [0,1] & 继续执行下一次递归的概率。\\
+        F_\theta & -- & 多次共享参数的递归块。\\
+    \bottomrule
+    \end{longtable}
+
+    所有向量默认是列向量；未特别说明时，期望同时对数据、噪声和采样时刻取值。下文只展开论文中承担方法逻辑的公式，并把所需假设写在推导发生的位置。
+
+\section{共享递归块的状态与梯度}
+
+设同一参数化块被递归调用 $T$ 次：
+\begin{equation}
+ h_{t+1}=F_\theta(h_t,x),\qquad t=0,\ldots,T-1.
+\end{equation}
+令末端损失 $\cL(h_T)$。对状态的反向递推
+\begin{equation}
+ g_t=\frac{\partial\cL}{\partial h_t}
+ =J_{h_t}F_\theta(h_t,x)^Tg_{t+1}.
+\end{equation}
+因此
+\begin{equation}
+ g_t=\left(\prod_{j=t}^{T-1}J_{h_j}F_\theta^T\right)g_T,
+\end{equation}
+其中乘积按时间反序作用。共享参数在每次调用都贡献梯度：
+\begin{equation}
+ \boxed{\nabla_\theta\cL
+ =\sum_{t=0}^{T-1}
+ J_\theta F_\theta(h_t,x)^Tg_{t+1}.}
+\end{equation}
+参数量不随 $T$ 增长，但激活存储和计算量通常线性增长；共享不等于免费。
+
+若 $\|J_{h_t}F\|_2\le\rho$，则
+\begin{equation}
+ \|g_t\|_2\le\rho^{T-t}\|g_T\|_2.
+\end{equation}
+$\rho<1$ 导致长程梯度衰减，$\rho>1$ 可能爆炸。残差形式
+$F(h)=h+G(h)$ 的 Jacobian 为 $I+J_G$，给出直接通路但仍需控制谱范数。
+
+\section{动态深度的期望计算量}
+
+令 token $i$ 的递归深度为离散变量
+$D_i\in\{1,\ldots,T\}$，概率 $p_{it}=\Pp(D_i=t)$。期望深度
+\begin{equation}
+ \E[D_i]=\sum_{t=1}^{T}tp_{it}.
+\end{equation}
+也可用生存概率写成
+\begin{equation}
+ \E[D_i]=\sum_{t=1}^{T}\Pp(D_i\ge t).
+\end{equation}
+证明为
+\begin{align}
+ \sum_{t=1}^{T}\Pp(D_i\ge t)
+ &=\sum_{t=1}^{T}\sum_{d=t}^{T}p_{id}\\
+ &=\sum_{d=1}^{T}\sum_{t=1}^{d}p_{id}
+ =\sum_ddp_{id}.
+\end{align}
+若每次递归单 token 代价为 $c_i$，批次期望计算
+\begin{equation}
+ \E[C]=\sum_i c_i\E[D_i].
+\end{equation}
+预算正则可写
+\begin{equation}
+ \cL_{\rm budget}=\lambda
+ \left(\frac1n\sum_i\E[D_i]-D_{\rm target}\right)^2.
+\end{equation}
+其对路由 logit 的梯度会把所有 token 耦合，因为批平均出现在同一平方项中。
+
+\section{离散路由的梯度估计}
+
+若 $D\sim p_\phi(D\mid x)$，期望损失
+\begin{equation}
+ J(\phi)=\sum_Dp_\phi(D\mid x)\cL_D
+\end{equation}
+的 score-function 梯度
+\begin{align}
+ \nabla_\phi J
+ &=\sum_Dp_\phi(D)\cL_D\nabla_\phi\log p_\phi(D)\\
+ &=\E[(\cL_D-b(x))\nabla_\phi\log p_\phi(D)],
+\end{align}
+其中基线不改变期望，因为
+$\E\nabla\log p=\nabla\sum_Dp(D)=0$。该估计无偏但方差可能高。
+
+Gumbel--Softmax 松弛令
+\begin{equation}
+ y_t=\frac{\exp((\ell_t+g_t)/\tau)}
+ {\sum_j\exp((\ell_j+g_j)/\tau)},\qquad
+ g_t=-\log[-\log u_t],\quad u_t\sim U(0,1).
+\end{equation}
+$\tau\to0$ 时趋向 one-hot，但 Jacobian 含 $1/\tau$，梯度可能尖锐。
+直通版本前向取 $\operatorname{onehot}(\arg\max y)$、反向用软 $y$ 的梯度，因此是有偏估计。
+
+\section{同步统计量的矩阵表达}
+
+设神经元内部时间序列 $z_i(1),\ldots,z_i(T)$，去均值向量
+\begin{equation}
+ \widetilde z_i=z_i-\bar z_i\1,\qquad
+ \bar z_i=\frac1T\sum_tz_i(t).
+\end{equation}
+归一化相关
+\begin{equation}
+ S_{ij}=\frac{\widetilde z_i^T\widetilde z_j}
+ {\sqrt{\|\widetilde z_i\|_2^2+\epsilon}
+  \sqrt{\|\widetilde z_j\|_2^2+\epsilon}}
+\end{equation}
+形成同步矩阵 $S$。若把标准化后的行堆成 $Z\in\R^{m\times T}$，则
+\begin{equation}
+ S=ZZ^T.
+\end{equation}
+所以 $S$ 半正定、$\operatorname{rank}(S)\le T$。对任意 $a$，
+\begin{equation}
+ a^TSa=\|Z^Ta\|_2^2\ge0.
+\end{equation}
+这类二阶表征包含神经元两两时间关系，计算和存储却为 $O(m^2T)$ 与 $O(m^2)$。
+
+\section{指数衰减同步的在线递推}
+
+对乘积统计定义
+\begin{equation}
+ C_t=\lambda C_{t-1}+(1-\lambda)z_tz_t^T,
+ \qquad0\le\lambda<1.
+\end{equation}
+递归展开
+\begin{equation}
+ C_t=\lambda^tC_0+(1-\lambda)
+ \sum_{k=1}^{t}\lambda^{t-k}z_kz_k^T.
+\end{equation}
+历史样本相隔 $h$ 步的权重为 $(1-\lambda)\lambda^h$，半衰期
+\begin{equation}
+ h_{1/2}=\frac{\log(1/2)}{\log\lambda}.
+\end{equation}
+若 $\lambda$ 接近 $1$，$\log\lambda\approx-(1-\lambda)$，
+故 $h_{1/2}\approx\log2/(1-\lambda)$。
+
+若对每一步都保留递归图，梯度穿过
+\begin{equation}
+ \frac{\partial C_t}{\partial C_{t-k}}=\lambda^kI,
+\end{equation}
+长程梯度指数衰减。若在线统计使用停止梯度，则它作为状态提供历史信息，却不承担跨全部时间的反向传播。
+
+\section{固定点与隐式微分}
+
+当递归收敛到固定点 $h^*=F_\theta(h^*,x)$，对参数微分：
+\begin{equation}
+ dh^*=J_hF\,dh^*+J_\theta F\,d\theta.
+\end{equation}
+若 $I-J_hF$ 可逆，
+\begin{equation}
+ \frac{\partial h^*}{\partial\theta}
+ =(I-J_hF)^{-1}J_\theta F.
+\end{equation}
+当谱半径 $\rho(J_hF)<1$，逆矩阵有 Neumann 级数
+\begin{equation}
+ (I-J_hF)^{-1}=\sum_{k=0}^{\infty}(J_hF)^k,
+\end{equation}
+与无限展开的反向路径一致。动态有限深度模型通常不达到固定点，但此式说明稳定递归和可求导性的共同谱条件。
+
+\section{自回归似然与 token 梯度}
+
+对序列 $x_{1:T}$，因果语言模型按概率链式法则分解
+\begin{equation}
+ p_\theta(x_{1:T})=\prod_{t=1}^{T}p_\theta(x_t\mid x_{<t}).
+\end{equation}
+负对数似然
+\begin{equation}
+ \cL_{\rm NLL}=-\sum_{t=1}^{T}\log p_\theta(x_t\mid x_{<t}).
+\end{equation}
+若第 $t$ 步 logits 为 $z_t\in\R^{V}$，概率
+$p_{tj}=e^{z_{tj}}/\sum_ke^{z_{tk}}$，真实 token 索引 $y_t$，则
+\begin{equation}
+ \ell_t=-z_{t,y_t}+\log\sum_ke^{z_{tk}},
+\end{equation}
+逐 logit 梯度
+\begin{equation}
+ \frac{\partial\ell_t}{\partial z_{tj}}
+ =p_{tj}-\1\{j=y_t\}.
+\end{equation}
+Hessian 正是 softmax Jacobian
+\begin{equation}
+ \nabla_z^2\ell_t=\diag(p_t)-p_tp_t^T\succeq0.
+\end{equation}
+所以交叉熵关于 logits 凸，但关于深网参数并不凸。
+
+对非 padding token 集合 $\mathcal I$，平均损失和困惑度
+\begin{equation}
+ \bar L=\frac1{|\mathcal I|}\sum_{t\in\mathcal I}\ell_t,
+ \qquad \operatorname{PPL}=e^{\bar L}.
+\end{equation}
+因此 PPL 是真实 token 概率倒数的几何平均：
+\begin{equation}
+ \operatorname{PPL}=\left(
+ \prod_{t\in\mathcal I}\frac1{p_\theta(x_t\mid x_{<t})}
+ \right)^{1/|\mathcal I|}.
+\end{equation}
+不同 tokenizer 的 token 粒度不同，PPL 不能不经换算直接横向比较。
+
+\section{旋转位置编码的相对位置恒等式}
+
+对二维坐标对，定义旋转
+\begin{equation}
+ R(m\omega)=
+ \begin{bmatrix}
+ \cos(m\omega)&-\sin(m\omega)\\
+ \sin(m\omega)&\cos(m\omega)
+ \end{bmatrix}.
+\end{equation}
+位置 $m,n$ 的 query、key 分别为
+$q_m=R(m\omega)q$、$k_n=R(n\omega)k$。内积
+\begin{align}
+ q_m^Tk_n
+ &=q^TR(m\omega)^TR(n\omega)k\\
+ &=q^TR((n-m)\omega)k.
+\end{align}
+第二步用到 $R(a)^T=R(-a)$ 和 $R(a)R(b)=R(a+b)$。
+所以绝对位置旋转后的内积只依赖相对距离 $n-m$。
+
+在 $d_h$ 维中对相邻坐标对使用频率
+\begin{equation}
+ \omega_j=\theta^{-2j/d_h},\qquad j=0,\ldots,d_h/2-1.
+\end{equation}
+低 $j$ 频率高、分辨近距离，高 $j$ 频率低、覆盖远距离。若推理长度远超训练长度，
+相位 $m\omega_j$ 的外推和周期混叠会改变注意力几何；位置插值本质上是重新缩放这些相位。
+
+\section{RMSNorm 的 Jacobian}
+
+忽略可学习增益，RMSNorm
+\begin{equation}
+ y=\frac{x}{s},\qquad
+ s=\sqrt{\frac1d x^Tx+\epsilon}.
+\end{equation}
+微分
+\begin{equation}
+ ds=\frac{x^Tdx}{d s},
+\end{equation}
+因此
+\begin{align}
+ dy&=\frac1s dx-\frac{x}{s^2}ds\\
+ &=\left(\frac1sI-\frac{xx^T}{d s^3}\right)dx.
+\end{align}
+故
+\begin{equation}
+ J_{\rm RMS}=\frac1sI-\frac{xx^T}{d s^3}.
+\end{equation}
+与 LayerNorm 相比，它没有去均值投影
+$I-d^{-1}\1\1^T$，因此不消除常数方向。加上逐坐标增益 $g$ 后，
+Jacobain 左乘 $\diag(g)$。
+
+谱上，对任意 $v\perp x$，$Jv=v/s$；沿 $x$ 方向
+\begin{equation}
+ Jx=\left(\frac1s-\frac{\|x\|^2}{d s^3}\right)x
+ =\frac{\epsilon}{s^3}x.
+\end{equation}
+当 $\epsilon$ 很小，径向尺度方向被强烈压制，而切向方向按 $1/s$ 缩放。
+
+\section{SwiGLU 前馈层的逐项梯度}
+
+SwiGLU 可写
+\begin{equation}
+ a=xW_a,\qquad b=xW_b,\qquad
+ h=\operatorname{swish}(a)\odot b,\qquad
+ y=hW_o,
+\end{equation}
+其中
+\begin{equation}
+ \operatorname{swish}(a)=a\sigma(a).
+\end{equation}
+其导数
+\begin{align}
+ \frac d{da}[a\sigma(a)]
+ &=\sigma(a)+a\sigma(a)(1-\sigma(a)).
+\end{align}
+令 $g_h=\partial\cL/\partial h$，则
+\begin{align}
+ g_a&=g_h\odot b\odot
+ [\sigma(a)+a\sigma(a)(1-\sigma(a))],\\
+ g_b&=g_h\odot\operatorname{swish}(a),\\
+ \nabla_{W_a}\cL&=x^Tg_a,\qquad
+ \nabla_{W_b}\cL=x^Tg_b,\\
+ \nabla_x\cL&=g_aW_a^T+g_bW_b^T.
+\end{align}
+门分支 $b$ 同时调制激活和 $a$ 分支梯度，故两个投影不是可独立解释的普通 MLP。
+
+\section{MoE 路由与负载}
+
+对 token $x_i$，router logits $r_i=W_rx_i$，概率
+\begin{equation}
+ p_{ie}=\frac{e^{r_{ie}}}{\sum_{j=1}^{E}e^{r_{ij}}}.
+\end{equation}
+若 top-$k$ 专家集合 $S_i$，归一化门
+\begin{equation}
+ \widetilde p_{ie}=\frac{p_{ie}\1\{e\in S_i\}}
+ {\sum_{j\in S_i}p_{ij}},
+ \qquad
+ y_i=\sum_{e\in S_i}\widetilde p_{ie}F_e(x_i).
+\end{equation}
+固定集合 $S_i$ 内可正常求导；集合边界的 arg-top-$k$ 不连续，几乎处处把未选专家梯度置零。
+
+令软重要性
+\begin{equation}
+ P_e=\frac1N\sum_ip_{ie},
+\end{equation}
+硬负载
+\begin{equation}
+ F_e=\frac1N\sum_i\1\{e\in S_i\}/k.
+\end{equation}
+常见平衡项
+\begin{equation}
+ L_{\rm bal}=E\sum_eP_eF_e
+\end{equation}
+在均匀 $P_e=F_e=1/E$ 时等于 $1$。把硬 $F_e$ 停止梯度后，
+router 梯度只通过 $P_e$，会降低当前过载专家的概率；它是训练启发式，不等同于严格容量约束。
+
+若每专家容量为
+\begin{equation}
+ C_e=\left\lceil\frac{Nk}{E}\,c_{\rm cap}\right\rceil,
+\end{equation}
+超过容量的 token 必须丢弃或转送。即使平均负载均匀，局部批次方差仍可能溢出。
+
+\section{低秩 KV 潜变量的吸收}
+
+设 key/value 由共享潜变量
+\begin{equation}
+ c_t=W_cx_t\in\R^{d_c},\qquad
+ k_t=W_kc_t,\qquad v_t=W_vc_t.
+\end{equation}
+注意力 logit
+\begin{equation}
+ q_s^Tk_t=q_s^TW_kc_t=(W_k^Tq_s)^Tc_t.
+\end{equation}
+因此解码时可把 $W_k$ 吸收到 query 投影，缓存 $c_t$ 而非完整 $k_t$。
+若 value 聚合
+\begin{equation}
+ o_s=\sum_tp_{st}W_vc_t=W_v\left(\sum_tp_{st}c_t\right),
+\end{equation}
+$W_v$ 可放到加权和之后。缓存从每 token 的 $d_k+d_v$ 降为 $d_c$，
+前提是位置编码等操作不破坏这些线性交换关系；对只作用在部分 key 维度的 RoPE，需把旋转部分另行缓存或重构。
+
+\section{多 token 预测的联合似然}
+
+若同一隐藏状态 $h_t$ 用 $K$ 个头预测 $x_{t+1},\ldots,x_{t+K}$，
+\begin{equation}
+ \cL_t=\sum_{k=1}^{K}\lambda_k
+ [-\log p_{\theta,k}(x_{t+k}\mid h_t)].
+\end{equation}
+共享骨干梯度
+\begin{equation}
+ \nabla_{h_t}\cL_t=\sum_{k=1}^{K}\lambda_k g_{t,k}.
+\end{equation}
+其平方范数精确展开
+\begin{equation}
+ \left\|\sum_k\lambda_kg_{t,k}\right\|^2
+ =\sum_k\lambda_k^2\|g_{t,k}\|^2
+ +2\sum_{j<k}\lambda_j\lambda_k g_{t,j}^Tg_{t,k}.
+\end{equation}
+交叉内积为负时存在任务冲突；辅助头退火相当于训练后期逐渐去掉这些交叉项，
+使最终目标回到下一 token 似然。
+
+\end{document}

@@ -1,0 +1,428 @@
+\documentclass[11pt]{article}
+\usepackage{fontspec}
+\setmainfont[
+  Path=fonts/,
+  Extension=.ttf,
+  UprightFont=*-400,
+  BoldFont=*-700
+]{NotoSerifSC}
+\setsansfont[
+  Path=fonts/,
+  Extension=.ttf,
+  UprightFont=*-400,
+  BoldFont=*-700
+]{NotoSerifSC}
+\XeTeXlinebreaklocale "zh"
+\XeTeXlinebreakskip=0pt plus 1pt
+\usepackage[a4paper,margin=1.70cm]{geometry}
+\usepackage{amsmath,amssymb,mathtools,bm}
+\usepackage{booktabs,longtable,array}
+\usepackage{enumitem}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\setlist{nosep,leftmargin=2em}
+\allowdisplaybreaks[3]
+\numberwithin{equation}{section}
+\pagestyle{plain}
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Pp}{\mathbb{P}}
+\newcommand{\1}{\mathbf{1}}
+\newcommand{\T}{\mathsf{T}}
+\newcommand{\F}{\mathrm{F}}
+\newcommand{\cN}{\mathcal{N}}
+\newcommand{\cL}{\mathcal{L}}
+\newcommand{\cS}{\mathcal{S}}
+\newcommand{\cH}{\mathcal{H}}
+\newcommand{\cA}{\mathcal{A}}
+\newcommand{\cM}{\mathcal{M}}
+\newcommand{\cT}{\mathcal{T}}
+\newcommand{\diag}{\operatorname{diag}}
+\newcommand{\tr}{\operatorname{tr}}
+\newcommand{\Var}{\operatorname{Var}}
+\newcommand{\Cov}{\operatorname{Cov}}
+\newcommand{\softmax}{\operatorname{softmax}}
+\newcommand{\KL}{D_{\mathrm{KL}}}
+\newcommand{\sg}{\operatorname{sg}}
+\begin{document}
+    \begin{center}
+      {\LARGE\bfseries 04\_NOPROP}
+    \end{center}
+    \vspace{0.8em}
+
+    \section{符号与维度}
+    \begin{longtable}{>{$}l<{$} >{$}l<{$} p{10cm}}
+    \toprule
+    \text{符号} & \text{维度} & \text{含义}\\
+    \midrule
+    x,y & -- & 输入与离散类别。\\
+        u_y & \R^d & 类别嵌入。\\
+        z_t & \R^d & 第 $t$ 个局部块使用的噪声状态。\\
+        f_{\theta_t} & -- & 仅在本块内反向传播的局部预测器。\\
+        q,p_\theta & -- & 提议链与生成链。\\
+    \bottomrule
+    \end{longtable}
+
+    所有向量默认是列向量；未特别说明时，期望同时对数据、噪声和采样时刻取值。下文只展开论文中承担方法逻辑的公式，并把所需假设写在推导发生的位置。
+
+\section{局部随机变量模型的 ELBO}
+
+设第 $t$ 层的干净目标表示为 $z_t$，人为构造带噪变量
+\begin{equation}
+ q_t(\widetilde z_t\mid z_t)
+ =\cN(a_tz_t,b_t^2I).
+\end{equation}
+局部解码/去噪模型 $p_{\theta_t}(z_t\mid\widetilde z_t)$ 只含第 $t$ 个模块参数。
+对局部边缘似然
+\begin{equation}
+ p_{\theta_t}(z_t)=\int p(\widetilde z_t)
+ p_{\theta_t}(z_t\mid\widetilde z_t)d\widetilde z_t,
+\end{equation}
+插入提议分布并用 Jensen：
+\begin{align}
+ \log p_{\theta_t}(z_t)
+ &=\log\E_{q_t}\left[
+ \frac{p(\widetilde z_t)p_{\theta_t}(z_t\mid\widetilde z_t)}
+ {q_t(\widetilde z_t\mid z_t)}\right]\\
+ &\ge\E_{q_t}\log p_{\theta_t}(z_t\mid\widetilde z_t)
+ -D_{\rm KL}(q_t(\widetilde z_t\mid z_t)\|p(\widetilde z_t)).
+\end{align}
+若先验和噪声日程固定，第二项不含 $\theta_t$，局部训练只需最大化重建/去噪项。
+
+令高斯解码器
+\begin{equation}
+ p_{\theta_t}(z_t\mid\widetilde z_t)
+ =\cN(f_{\theta_t}(\widetilde z_t),\sigma_t^2I),
+\end{equation}
+则负对数似然等价于
+\begin{equation}
+ \cL_t=\frac1{2\sigma_t^2}
+ \E\|z_t-f_{\theta_t}(\widetilde z_t)\|_2^2+C.
+\end{equation}
+平方损失最优解为
+\begin{equation}
+ f_t^*(\widetilde z)=\E[z_t\mid\widetilde z_t=\widetilde z].
+\end{equation}
+这说明局部模块学习的是由指定噪声通道决定的条件均值，而不是自动等同于全局任务最优表示。
+
+\section{高斯噪声下条件 score 与去噪器}
+
+设 $\widetilde z=az+b\epsilon$，$\epsilon\sim\cN(0,I)$，边缘密度
+\begin{equation}
+ q(\widetilde z)=\int p(z)
+ \cN(\widetilde z;az,b^2I)dz.
+\end{equation}
+对 $\widetilde z$ 求梯度：
+\begin{align}
+ \nabla_{\widetilde z}q(\widetilde z)
+ &=\int p(z)\cN(\widetilde z;az,b^2I)
+ \left[-\frac{\widetilde z-az}{b^2}\right]dz.
+\end{align}
+除以 $q(\widetilde z)$ 得
+\begin{equation}
+ \nabla_{\widetilde z}\log q(\widetilde z)
+ =-\frac1{b^2}\left(\widetilde z-a\E[z\mid\widetilde z]\right).
+\end{equation}
+所以条件均值去噪器与 score 可互换：
+\begin{equation}
+ \boxed{\E[z\mid\widetilde z]
+ =\frac1a\left(\widetilde z+b^2
+ \nabla_{\widetilde z}\log q(\widetilde z)\right).}
+\end{equation}
+当 $a$ 接近零时该换算病态，因此噪声端点需要单独参数化或避免直接除法。
+
+\section{局部流匹配的条件期望}
+
+令本层噪声端点 $z_0\sim p_0$、目标表示 $z_1\sim p_t$，路径
+\begin{equation}
+ z_s=(1-s)z_0+sz_1,\qquad u=z_1-z_0.
+\end{equation}
+局部速度损失
+\begin{equation}
+ \cL_t^{\rm FM}=\E\|v_{\theta_t}(z_s,s)-u\|_2^2
+\end{equation}
+最优场
+\begin{equation}
+ v_t^*(z,s)=\E[z_1-z_0\mid z_s=z].
+\end{equation}
+对任意测试函数 $\varphi$，
+\begin{align}
+ \frac d{ds}\E\varphi(z_s)
+ &=\E[\nabla\varphi(z_s)^Tu]\\
+ &=\int\nabla\varphi(z)^Tv_t^*(z,s)p_s(z)dz\\
+ &=-\int\varphi(z)\nabla\cdot(p_sv_t^*)dz,
+\end{align}
+所以局部边缘满足连续性方程
+\begin{equation}
+ \partial_sp_s+\nabla\cdot(p_sv_t^*)=0.
+\end{equation}
+每层可独立拟合自己的传输，但各层目标分布 $p_t$ 如何选定决定了串联后的语义。
+
+\section{为什么参数梯度可以完全局部}
+
+局部损失写成
+\begin{equation}
+ \cL_t(\theta_t)=\E_{z_t,\epsilon,s}
+ \ell(f_{\theta_t}(a_sz_t+b_s\epsilon,s),z_t,\epsilon).
+\end{equation}
+若目标 $z_t$ 和采样噪声对 $\theta_t$ 停止梯度，
+\begin{equation}
+ \nabla_{\theta_t}\cL_t
+ =\E[J_{\theta_t}f_{\theta_t}^T\nabla_f\ell].
+\end{equation}
+表达式不含其他模块的 Jacobian，因此可并行或异步更新。
+
+对全局串联系统
+\begin{equation}
+ h_T=F_{\theta_T}\circ\cdots\circ F_{\theta_1}(x),
+ \qquad \cL_{\rm global}=\ell(h_T,y),
+\end{equation}
+真正的全局梯度
+\begin{equation}
+ \nabla_{\theta_t}\cL_{\rm global}
+ =J_{\theta_t}F_t^T
+ J_{h_t}F_{t+1}^T\cdots J_{h_{T-1}}F_T^T
+ \nabla_{h_T}\ell.
+\end{equation}
+局部梯度省去后续 Jacobian 乘积。其优点是内存和并行性，代价是除非局部目标经过特别构造，
+它通常不是上述全局梯度的无偏估计。
+
+\section{局部目标与全局目标一致的充分情形}
+
+若存在目标表示 $z_t^*=G_t(y)$，满足后续最优模块能从 $z_t^*$ 无损恢复任务所需信息，
+并且局部损失的唯一极小点使 $h_t=z_t^*$，则逐层达到局部最优可导向全局最优。
+在线性平方损失下可具体说明。设目标映射
+\begin{equation}
+ y=A_TA_{T-1}\cdots A_1x,
+\end{equation}
+并令局部监督 $z_t^*=A_t\cdots A_1x$。若每层模型类包含 $A_t$ 且输入分布协方差满秩，
+\begin{equation}
+ \min_{W_t}\E\|W_th_{t-1}-z_t^*\|^2
+\end{equation}
+在 $h_{t-1}=z_{t-1}^*$ 时唯一给出 $W_t=A_t$，归纳即可恢复全局映射。
+
+若局部目标只保留 $P_tz_t^*$ 且投影 $P_t$ 丢失了后续需要的方向，
+即存在 $u\in\ker P_t$ 但
+\begin{equation}
+ A_T\cdots A_{t+1}u\ne0,
+\end{equation}
+则无论局部损失多小，后续都无法恢复该信息。局部可训练性不等于全局一致性。
+
+\section{噪声尺度对局部可辨识性的影响}
+
+在线性高斯例子中，$z\sim\cN(0,\Sigma)$、
+$\widetilde z=az+b\epsilon$。联合高斯条件均值为
+\begin{equation}
+ \E[z\mid\widetilde z]
+ =a\Sigma(a^2\Sigma+b^2I)^{-1}\widetilde z.
+\end{equation}
+沿 $\Sigma$ 特征方向，特征值为 $\lambda$ 时去噪增益
+\begin{equation}
+ g(\lambda)=\frac{a\lambda}{a^2\lambda+b^2}.
+\end{equation}
+条件后验方差
+\begin{equation}
+ \lambda_{\rm post}=
+ \lambda-\frac{a^2\lambda^2}{a^2\lambda+b^2}
+ =\frac{b^2\lambda}{a^2\lambda+b^2}.
+\end{equation}
+噪声越大，低方差方向越难恢复；多噪声尺度训练迫使模块学习数据分布结构，
+但过强噪声会让局部监督接近先验均值。
+
+\section{计算与激活内存}
+
+标准反向传播需保留所有层激活，粗略内存
+\begin{equation}
+ M_{\rm BP}=\sum_{t=1}^{T}M(h_t)+M_{\rm param,opt}.
+\end{equation}
+若每层局部更新完成即可释放激活，峰值近似
+\begin{equation}
+ M_{\rm local}\approx\max_t[M(h_{t-1})+M(h_t)]
+ +M_{\rm param,opt}^{(\rm active)}.
+\end{equation}
+若所有层真正并行，仍需为并行 worker 保存各自输入；节省取决于数据管线是否重新生成/缓存目标表示，
+不能只从没有跨层梯度图就断言总内存固定。
+
+\section{分布推送与可测生成器}
+
+潜变量 $z\sim p_Z$，生成器 $x=G_\theta(z)$ 诱导推送分布
+\begin{equation}
+ p_\theta=(G_\theta)_\#p_Z,
+\end{equation}
+其定义是任意可测集合 $A$ 满足
+\begin{equation}
+ p_\theta(A)=p_Z(G_\theta^{-1}(A)).
+\end{equation}
+等价地，对任意可积测试函数 $\varphi$，
+\begin{equation}
+ \E_{x\sim p_\theta}\varphi(x)
+ =\E_{z\sim p_Z}\varphi(G_\theta(z)).
+\end{equation}
+若 $G:\R^d\to\R^d$ 是可逆微分同胚，变量替换给出显式密度
+\begin{equation}
+ p_\theta(x)=p_Z(G^{-1}(x))
+ \left|\det J_{G^{-1}}(x)\right|.
+\end{equation}
+取对数并用 $J_{G^{-1}}(x)=J_G(z)^{-1}$：
+\begin{equation}
+ \log p_\theta(x)=\log p_Z(z)-\log|\det J_G(z)|.
+\end{equation}
+VAE、GAN、扩散和隐式光学生成器通常不同时满足同维可逆条件，
+因此分别使用变分界、判别散度、score/flow 或样本级目标绕开直接行列式。
+
+\section{KL、JS 与总变差的关系}
+
+KL 非负可由 $-\log$ 的凸性证明：
+\begin{align}
+ D_{\rm KL}(p\|q)
+ &=\E_p\left[-\log\frac{q(X)}{p(X)}\right]\\
+ &\ge-\log\E_p\frac{q(X)}{p(X)}=-\log1=0.
+\end{align}
+等号当且仅当 $p=q$ 几乎处处。KL 不对称且当 $q=0,p>0$ 时为无穷。
+
+Jensen--Shannon 散度
+\begin{equation}
+ D_{\rm JS}(p\|q)=\frac12D_{\rm KL}(p\|m)
+ +\frac12D_{\rm KL}(q\|m),\qquad m=(p+q)/2
+\end{equation}
+总是有限，$0\le D_{\rm JS}\le\log2$。当支撑不相交时取上界，
+却对支撑间几何距离不敏感。
+
+总变差
+\begin{equation}
+ \operatorname{TV}(p,q)=\frac12\int|p-q|
+ =\sup_A|p(A)-q(A)|.
+\end{equation}
+Pinsker 不等式
+\begin{equation}
+ \operatorname{TV}(p,q)
+ \le\sqrt{\frac12D_{\rm KL}(p\|q)}
+\end{equation}
+说明小正向 KL 保证事件概率接近；逆命题没有无条件形式，因为很小区域上的密度比可极大。
+
+\section{Wasserstein 距离与 Lipschitz 测试函数}
+
+一阶 Wasserstein 距离
+\begin{equation}
+ W_1(p,q)=\inf_{\gamma\in\Pi(p,q)}
+ \E_{(X,Y)\sim\gamma}\|X-Y\|
+\end{equation}
+显式考虑搬运距离。Kantorovich--Rubinstein 对偶
+\begin{equation}
+ W_1(p,q)=\sup_{\|f\|_{\rm Lip}\le1}
+ [\E_pf(X)-\E_qf(Y)].
+\end{equation}
+因此任意 $L$-Lipschitz 评价函数满足
+\begin{equation}
+ |\E_pf-\E_qf|\le L W_1(p,q).
+\end{equation}
+如果下游感知损失近似 Lipschitz，Wasserstein 小可以控制其期望差；
+但高维下从有限样本估计 Wasserstein 有较慢的维数依赖。
+
+\section{最大均值差异}
+
+在再生核 Hilbert 空间 $\mathcal H$ 中，均值嵌入
+\begin{equation}
+ \mu_p=\E_{X\sim p}k(X,\cdot).
+\end{equation}
+MMD 定义
+\begin{equation}
+ \operatorname{MMD}^2(p,q)=\|\mu_p-\mu_q\|_{\mathcal H}^2.
+\end{equation}
+利用再生性质展开
+\begin{align}
+ \operatorname{MMD}^2
+ &=\E_{X,X'\sim p}k(X,X')
+ +\E_{Y,Y'\sim q}k(Y,Y')\\
+ &\quad-2\E_{X\sim p,Y\sim q}k(X,Y).
+\end{align}
+样本 $x_{1:n},y_{1:m}$ 的无偏估计
+\begin{align}
+ \widehat{\operatorname{MMD}}_u^2
+ &=\frac1{n(n-1)}\sum_{i\ne j}k(x_i,x_j)\\
+ &\quad+\frac1{m(m-1)}\sum_{i\ne j}k(y_i,y_j)
+ -\frac2{nm}\sum_{i,j}k(x_i,y_j).
+\end{align}
+特征核选择决定它关注的尺度；特征空间中的 MMD 小不保证像素空间逐点接近。
+
+\section{高斯特征距离与 FID}
+
+将真实、生成图像经固定特征提取器映射并近似为高斯
+$\cN(\mu_r,\Sigma_r)$、$\cN(\mu_g,\Sigma_g)$。二阶 Wasserstein 距离闭式
+\begin{equation}
+ \operatorname{FID}=
+ \|\mu_r-\mu_g\|_2^2
+ +\tr\left(\Sigma_r+\Sigma_g
+ -2(\Sigma_r^{1/2}\Sigma_g\Sigma_r^{1/2})^{1/2}\right).
+\end{equation}
+若协方差可交换，可同时对角化，第二项简化为
+\begin{equation}
+ \sum_j(\sqrt{\lambda_{r,j}}-\sqrt{\lambda_{g,j}})^2.
+\end{equation}
+样本均值和协方差是有限样本估计，矩阵平方根的非线性导致 FID 有偏；
+比较模型时必须使用相同样本数、预处理和特征网络。
+
+\section{Monte Carlo 估计与控制变量}
+
+生成目标常写成 $J(\theta)=\E_Z f_\theta(Z)$。独立样本估计
+\begin{equation}
+ \widehat J_N=\frac1N\sum_{i=1}^{N}f_\theta(Z_i)
+\end{equation}
+无偏且
+\begin{equation}
+ \Var(\widehat J_N)=\frac1N\Var(f_\theta(Z)).
+\end{equation}
+若有已知期望 $\E C=\mu_C$ 的控制变量，
+\begin{equation}
+ \widehat J_\beta=\widehat J_N-\beta(\widehat C_N-\mu_C)
+\end{equation}
+仍无偏。方差是
+\begin{equation}
+ \Var(\widehat J_\beta)
+ =\Var(\widehat J_N)+\beta^2\Var(\widehat C_N)
+ -2\beta\Cov(\widehat J_N,\widehat C_N).
+\end{equation}
+最优
+\begin{equation}
+ \beta^*=\frac{\Cov(f,C)}{\Var(C)}.
+\end{equation}
+扩散中的已知噪声、RL 中的基线和光学中的参考传播都可视为利用相关结构降方差的不同形式。
+
+\section{score matching 的分部积分}
+
+数据 score 为 $s_p(x)=\nabla_x\log p(x)$。显式 score matching
+\begin{equation}
+ J(\theta)=\frac12\E_p\|s_\theta(x)-s_p(x)\|^2.
+\end{equation}
+展开并去掉与 $\theta$ 无关的 $\E\|s_p\|^2/2$：
+\begin{equation}
+ J(\theta)=\frac12\E_p\|s_\theta\|^2-E_p[s_\theta^Ts_p]+C.
+\end{equation}
+交叉项
+\begin{align}
+ \E_p[s_\theta^Ts_p]
+ &=\int s_\theta(x)^T\nabla p(x)dx\\
+ &=-\int p(x)\nabla\cdot s_\theta(x)dx
+\end{align}
+在边界项消失时成立。故
+\begin{equation}
+ J(\theta)=\E_p\left[
+ \frac12\|s_\theta(x)\|^2+\nabla\cdot s_\theta(x)
+ \right]+C.
+\end{equation}
+去噪 score matching通过已知高斯条件 score 避免计算模型散度，并在条件期望意义下恢复边缘 score。
+
+\section{模型误差到期望指标误差}
+
+若生成样本耦合为 $X=G(Z)$、$\widehat X=\widehat G(Z)$，且评价函数
+$f$ 为 $L_f$-Lipschitz，则
+\begin{align}
+ |\E f(X)-\E f(\widehat X)|
+ &\le\E|f(X)-f(\widehat X)|\\
+ &\le L_f\E\|G(Z)-\widehat G(Z)\|.
+\end{align}
+这给出点对点生成误差控制分布指标的充分条件。但无条件生成中通常不存在已知语义配对，
+逐样本 MSE 可能强迫平均化；分布距离允许不同耦合，因而更适合多模态目标。
+
+\end{document}

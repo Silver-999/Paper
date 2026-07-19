@@ -1,0 +1,621 @@
+\documentclass[UTF8,12pt,a4paper,fontset=none]{ctexart}
+\usepackage[a4paper,left=1.82cm,right=1.82cm,top=1.72cm,bottom=1.82cm,headheight=15pt]{geometry}
+\usepackage{fontspec,xeCJK}
+\setmainfont{Liberation Serif}
+\setsansfont{DejaVu Sans}
+\setmonofont{DejaVu Sans Mono}
+\setCJKmainfont[BoldFont=Noto Serif CJK SC Bold]{Noto Serif CJK SC}
+\setCJKsansfont[BoldFont=Noto Sans CJK SC Bold]{Noto Sans CJK SC}
+\setCJKmonofont{Noto Sans Mono CJK SC}
+\usepackage{amsmath,amssymb,mathtools,bm}
+\usepackage{booktabs,longtable,tabularx,array,multirow}
+\usepackage{enumitem,xcolor}
+\usepackage[most]{tcolorbox}
+\usepackage{fancyhdr,titlesec,hyperref,cleveref,lastpage}
+\usepackage{tikz,float,caption,listings}
+\usetikzlibrary{arrows.meta,positioning,calc,fit,backgrounds,shapes.geometric}
+\definecolor{mainblue}{RGB}{39,82,138}
+\definecolor{deepblue}{RGB}{25,55,95}
+\definecolor{softblue}{RGB}{235,243,252}
+\definecolor{softgreen}{RGB}{238,248,241}
+\definecolor{softorange}{RGB}{255,246,232}
+\definecolor{softgray}{RGB}{245,246,248}
+\definecolor{warnred}{RGB}{160,48,48}
+\hypersetup{unicode=true,colorlinks=true,linkcolor=deepblue,urlcolor=mainblue,citecolor=deepblue}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.36em}
+\setlength{\tabcolsep}{5pt}
+\renewcommand{\arraystretch}{1.2}
+\allowdisplaybreaks[4]
+\emergencystretch=3em
+\sloppy
+\pagestyle{fancy}\fancyhf{}\fancyfoot[C]{\small 第 \thepage\ 页，共 \pageref{LastPage} 页}\renewcommand{\headrulewidth}{0.4pt}
+\titleformat{\section}{\Large\bfseries\color{deepblue}}{\thesection}{0.65em}{}
+\titleformat{\subsection}{\large\bfseries\color{mainblue}}{\thesubsection}{0.55em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries}{\thesubsubsection}{0.5em}{}
+\numberwithin{equation}{section}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Prob}{\mathbb{P}}
+\newcommand{\Loss}{\mathcal{L}}
+\newcommand{\norm}[1]{\left\lVert #1\right\rVert}
+\newcommand{\ip}[2]{\left\langle #1,#2\right\rangle}
+\newcommand{\tr}{\operatorname{Tr}}
+\newcommand{\diag}{\operatorname{diag}}
+\newcommand{\rank}{\operatorname{rank}}
+\newcommand{\softmax}{\operatorname{softmax}}
+\newcommand{\argmin}{\operatorname*{arg\,min}}
+\newcommand{\argmax}{\operatorname*{arg\,max}}
+\newcommand{\sg}{\operatorname{sg}}
+\newcommand{\KL}{D_{\mathrm{KL}}}
+\newcommand{\dd}{\mathrm{d}}
+\newtcolorbox{keybox}[1][]{enhanced,breakable,colback=softblue,colframe=mainblue,boxrule=0.8pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\newtcolorbox{examplebox}[1][]{enhanced,breakable,colback=softgreen,colframe=green!45!black,boxrule=0.7pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\newtcolorbox{notebox}[1][]{enhanced,breakable,colback=softorange,colframe=orange!70!black,boxrule=0.7pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\newtcolorbox{criticalbox}[1][]{enhanced,breakable,colback=red!3,colframe=warnred,boxrule=0.8pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\lstset{basicstyle=\ttfamily\small,breaklines=true,frame=single,backgroundcolor=\color{softgray},numbers=left,numberstyle=\tiny,showstringspaces=false,columns=fullflexible}
+\hypersetup{pdftitle={03 Flow to the Mode 数学过程详解},pdfauthor={OpenAI}}
+\fancyhead[L]{\small 03 Flow to the Mode}
+\fancyhead[R]{\small 数学过程详解}
+\setlength{\abovedisplayskip}{0.82em}
+\setlength{\belowdisplayskip}{0.82em}
+\setlength{\abovedisplayshortskip}{0.45em}
+\setlength{\belowdisplayshortskip}{0.45em}
+\begin{document}
+\begin{center}
+{\LARGE\bfseries 03\_Flow to the Mode 数学过程详解}\par
+\vspace{0.35em}
+{\large LFQ 二值量化、Rectified Flow、一步重建与可微采样损失}
+\end{center}
+\vspace{0.45em}
+\begin{keybox}[本文只处理真正需要推导的部分]
+本文聚焦编码器量化、流匹配目标、一步重建恒等式、感知损失、熵/承诺正则、多步采样复合与非均匀时间网格。全文按“公式从哪里来--每个符号是什么--中间步骤为何成立--维度和复杂度如何核对--论文结论依赖哪些假设”的顺序展开；不复述实验表格，也不使用与论文无关的通用背景凑页数。
+\end{keybox}
+\tableofcontents
+\newpage
+
+\section{编码器、二值量化与解码器的变量关系}
+给定图像 $x\in\R^{H\times W\times3}$，编码器先输出连续隐变量
+\begin{equation}
+ \hat c=e_\phi(x,c_0),\qquad c_0=0.
+\end{equation}
+论文随后使用 lookup-free quantization，将每个分量二值化：
+\begin{equation}
+ \boxed{c=q(\hat c)=2\mathbf{1}[\hat c\ge0]-1.}
+\end{equation}
+因此 $c_j\in\{-1,+1\}$。若隐变量共有 $m$ 个二值位，理论码本容量为
+\begin{equation}
+ |\mathcal C|=2^m,
+\end{equation}
+但实现中不需要显式存储 $2^m$ 个向量，这正是 LFQ 与普通向量量化的重要区别。
+
+\subsection{量化不可导与直通估计}
+阶跃函数几乎处处导数为零，直接反向传播会得到
+\begin{equation}
+ \frac{\partial q(\hat c)}{\partial \hat c}=0\quad\text{a.e.}
+\end{equation}
+训练通常用 straight-through estimator：前向仍取 $q(\hat c)$，反向近似
+\begin{equation}
+ \frac{\partial c}{\partial\hat c}\approx I.
+\end{equation}
+可写成计算图技巧
+\begin{equation}
+ c=\hat c+\sg\!\left(q(\hat c)-\hat c\right),
+\end{equation}
+因为 $\sg$ 分支不传梯度，于是前向值等于 $q(\hat c)$，反向梯度却等于恒等映射。
+
+\section{Rectified Flow 路径与速度目标}
+论文定义噪声 $z\sim\mathcal N(0,I)$、数据 $x$ 与时间 $t\sim U[0,1]$，插值路径为
+\begin{equation}
+ \boxed{x_t=t z+(1-t)x.}
+\end{equation}
+对时间求导：
+\begin{equation}
+ \frac{\dd x_t}{\dd t}=z-x.
+\end{equation}
+若解码器 $d_\theta(x_t,c,t)$ 预测从噪声方向到数据方向的速度，论文采用相反符号目标
+\begin{equation}
+ v^\star=x-z.
+\end{equation}
+这是因为采样时从 $t=1$ 向 $t=0$ 积分，时间步长 $\Delta t<0$；若网络输出 $x-z$，更新
+\begin{equation}
+ x_{t+\Delta t}=x_t-\Delta s\,d_\theta(x_t,c,t),\qquad \Delta s>0,
+\end{equation}
+会沿数据方向移动。理解公式时必须同时检查“时间方向”和“速度符号”，不能只看 $x_t$ 的导数。
+
+\section{Flow Matching 损失的逐项解释}
+论文的核心回归损失为
+\begin{equation}
+ \boxed{\Loss_{\mathrm{flow}}
+ =\E_{x,z,t}\norm{x-z-d_\theta(x_t,q(e_\phi(x)),t)}_2^2.}
+\end{equation}
+令误差
+\begin{equation}
+ r_\theta=x-z-d_\theta(x_t,c,t),
+\end{equation}
+则
+\begin{equation}
+ \Loss_{\mathrm{flow}}=\E\,r_\theta^\top r_\theta.
+\end{equation}
+对网络输出 $d_\theta$ 的梯度为
+\begin{equation}
+ \frac{\partial\Loss_{\mathrm{flow}}}{\partial d_\theta}
+ =-2\E\,r_\theta
+ =2\E\left[d_\theta-(x-z)\right].
+\end{equation}
+在均方误差下，最优函数满足条件期望性质：
+\begin{equation}
+ d_{\theta^\star}(x_t,c,t)
+ =\E[x-z\mid x_t,c,t].
+\end{equation}
+因此网络一般学到的是所有可能 $(x,z)$ 对的平均速度，而不是某一个样本对的唯一速度。
+
+\section{一步重建公式为什么是 $x_t+t d_\theta$}
+从路径
+\begin{equation}
+ x_t=t z+(1-t)x
+\end{equation}
+出发，若速度预测完全正确 $d_\theta=x-z$，则
+\begin{align}
+ x_t+t d_\theta
+ &=tz+(1-t)x+t(x-z)\\
+ &=tz+(1-t)x+tx-tz\\
+ &=x.
+\end{align}
+所以一步干净图像估计为
+\begin{equation}
+ \boxed{\hat x_0=x_t+t d_\theta(x_t,c,t).}
+\end{equation}
+论文的感知损失正是作用于这个一步预测：
+\begin{equation}
+ \Loss_{\mathrm{perc}}
+ =\E\,d_{\mathrm{perc}}\!\left(x,x_t+t d_\theta(x_t,c,t)\right).
+\end{equation}
+它并不是直接约束速度向量，而是约束速度积分后得到的图像语义与纹理。
+
+\section{感知损失与像素损失的梯度差异}
+若 $d_{\mathrm{perc}}(x,\hat x)=\norm{\psi(x)-\psi(\hat x)}_2^2$，其中 $\psi$ 是冻结特征网络，则
+\begin{equation}
+ \frac{\partial\Loss_{\mathrm{perc}}}{\partial \hat x}
+ =2J_\psi(\hat x)^\top\left[\psi(\hat x)-\psi(x)\right].
+\end{equation}
+再由 $\hat x=x_t+t d_\theta$，
+\begin{equation}
+ \frac{\partial\Loss_{\mathrm{perc}}}{\partial d_\theta}
+ =t\frac{\partial\Loss_{\mathrm{perc}}}{\partial\hat x}.
+\end{equation}
+因此高噪声时刻 $t$ 较大，感知损失对速度的梯度更强；在 $t\approx0$ 时，一步重建本来已接近 $x$，梯度自然减弱。
+
+\section{量化承诺损失与熵正则}
+承诺损失常写为
+\begin{equation}
+ \Loss_{\mathrm{commit}}
+ =\E\norm{\hat c-\sg(q(\hat c))}_2^2.
+\end{equation}
+对 $\hat c$ 求导：
+\begin{equation}
+ \frac{\partial\Loss_{\mathrm{commit}}}{\partial\hat c}
+ =2\left(\hat c-q(\hat c)\right),
+\end{equation}
+它把连续编码推向 $\pm1$，减少量化前后偏差。
+
+若第 $j$ 位取 $+1$ 的经验概率为 $p_j$，二元熵为
+\begin{equation}
+ H_j=-p_j\log p_j-(1-p_j)\log(1-p_j).
+\end{equation}
+熵在 $p_j=1/2$ 时最大，在 $p_j\in\{0,1\}$ 时为零。最大化边际熵可避免某些位长期恒定；同时若只最大化每位熵而不控制样本条件熵，可能产生随机而无语义的编码，因此 LFQ 的熵项通常包含“码本利用率”和“单样本确定性”的平衡。
+
+\section{Stage 1A 总损失与不同项的尺度}
+论文第一阶段总目标为
+\begin{equation}
+ \Loss_{1A}=\Loss_{\mathrm{flow}}
+ +\lambda_{\mathrm{perc}}\Loss_{\mathrm{perc}}
+ +\lambda_{\mathrm{commit}}\Loss_{\mathrm{commit}}
+ +\lambda_{\mathrm{ent}}\Loss_{\mathrm{ent}}.
+\end{equation}
+四项单位并不相同：flow 是像素空间速度平方，perceptual 是特征距离，commit 是隐变量距离，entropy 是无量纲信息量。权重 $\lambda$ 不只是“重要性系数”，还承担数值尺度归一化作用。判断某项是否主导训练，应该比较
+\begin{equation}
+ \lambda_i\norm{\nabla_\theta\Loss_i},
+\end{equation}
+而不是只比较 $\lambda_i$ 的数值。
+
+\section{多步 Euler 采样与可微采样损失}
+定义一步更新
+\begin{equation}
+ d_{t_i}(x_{t_i})
+ =x_{t_i}+(t_i-t_{i+1})d_\theta(x_{t_i},c,t_i),
+\end{equation}
+其中采样方向满足 $t_{i+1}<t_i$。$n$ 步结果是函数复合
+\begin{equation}
+ \hat x=d_{t_n}\circ d_{t_{n-1}}\circ\cdots\circ d_{t_1}(z).
+\end{equation}
+Stage 1B 的采样损失可写为
+\begin{equation}
+ \boxed{\Loss_{\mathrm{sample}}
+ =\E\,d_{\mathrm{perc}}(x,\hat x).}
+\end{equation}
+它把训练目标从“每个时刻速度局部正确”推进到“有限步数积分后的最终图像正确”。梯度需要穿过全部 Euler 步：
+\begin{equation}
+ \frac{\partial\Loss_{\mathrm{sample}}}{\partial\theta}
+ =\frac{\partial\Loss}{\partial\hat x}
+ \prod_{i=n}^{1}\frac{\partial x_{t_{i+1}}}{\partial x_{t_i}}
+ \sum_{j=1}^{n}\frac{\partial x_{t_{j+1}}}{\partial\theta}.
+\end{equation}
+这比单步 flow matching 更耗显存，也更直接针对实际采样误差。
+
+\section{非均匀时间网格的推导}
+论文使用
+\begin{equation}
+ t_i=\left(\frac{i}{n}\right)^\rho,
+ \qquad i=0,1,\ldots,n.
+\end{equation}
+相邻步长为
+\begin{equation}
+ \Delta t_i=\left(\frac{i+1}{n}\right)^\rho-\left(\frac{i}{n}\right)^\rho.
+\end{equation}
+当 $\rho>1$ 时，导数
+\begin{equation}
+ \frac{\dd t}{\dd s}=\rho s^{\rho-1}
+\end{equation}
+随 $s=i/n$ 增大，因此靠近 $t=1$ 的步长更大，靠近 $t=0$ 的步长更密。若采样从 $1$ 走向 $0$，这意味着更多计算分配到低噪声精修区。极限 $\rho\to\infty$ 时，大多数 $t_i$ 接近零而最后一步接近一，时间网格高度不均匀。
+
+\section{码率与重建质量的数学关系}
+若图像有 $H\times W$ 像素，编码包含 $M$ 个二值位，则理想固定长度码率
+\begin{equation}
+ \operatorname{bpp}=\frac{M}{HW}.
+\end{equation}
+若使用熵编码，平均码长下界由熵给出：
+\begin{equation}
+ R\ge \frac{H(C)}{HW}.
+\end{equation}
+模式匹配 tokenizer 的目标不是逐像素重建最优，而是使条件分布 $p(x\mid c)$ 的主模态能够被解码器稳定命中。于是经典 rate--distortion 中的 distortion 被感知距离替代，优化更接近
+\begin{equation}
+ \min_{e,d}\;R(c)+\beta\E d_{\mathrm{perc}}(x,\hat x(c)).
+\end{equation}
+
+\section{容易混淆的符号与结论}
+\begin{criticalbox}[必须同时检查的四件事]
+(1) $x_t=tz+(1-t)x$ 的时间方向与网络目标 $x-z$ 符号相反，原因是采样从 $t=1$ 向 $0$；(2) 一步预测 $x_t+t d_\theta$ 只有在该符号约定下成立；(3) LFQ 的 $2^m$ 是潜在组合数，不等于训练中实际使用了全部码字；(4) 感知损失改善视觉质量并不保证逐像素似然或 PSNR 同步提高。
+\end{criticalbox}
+% AUGMENTED_DETAILED_MATH
+
+\section{二值量化与 Straight-Through Estimator 的精确梯度}
+编码器输出 $h\in\R^m$，二值量化
+\begin{equation}
+ q(h)_i=\operatorname{sign}(h_i)\in\{-1,+1\}.
+\end{equation}
+真实导数几乎处处为零：
+\begin{equation}
+ \frac{\partial q_i}{\partial h_i}=0\quad\text{a.e.}
+\end{equation}
+STE 用恒等映射替代反向导数。实现可写成
+\begin{equation}
+ c=h+\sg(q(h)-h).
+\end{equation}
+前向时 $c=q(h)$；反向时
+\begin{equation}
+ \frac{\partial c}{\partial h}
+ =I+0\cdot\left(\frac{\partial q}{\partial h}-I\right)=I.
+\end{equation}
+所以 STE 优化的不是原离散目标的真实梯度，而是一个代理梯度。若使用截断 STE
+\begin{equation}
+ \frac{\partial c_i}{\partial h_i}\approx\mathbf1(|h_i|\le1),
+\end{equation}
+可抑制远离阈值区域的无效大梯度。
+
+\section{码率、熵与互信息}
+长度为 $m$ 的独立二值码理论上需要 $m$ bit。若第 $i$ 位取 $+1$ 的概率为 $p_i$，最优无损熵码平均码长下界
+\begin{equation}
+ R\ge H(C)=\sum_{i=1}^{m}h_2(p_i),
+\end{equation}
+其中
+\begin{equation}
+ h_2(p)=-p\log_2p-(1-p)\log_2(1-p).
+\end{equation}
+当 $p_i=1/2$ 时每位熵为 1；当 $p_i\to0$ 或 $1$ 时熵趋于 0，但该位几乎不携带样本区分信息。若编码器是确定函数 $C=E(X)$，则
+\begin{equation}
+ I(X;C)=H(C)-H(C\mid X)=H(C).
+\end{equation}
+因此压缩率与可保留信息之间存在直接上界。
+
+\section{Flow Matching 最优向量场是条件期望}
+给定插值
+\begin{equation}
+ x_t=(1-t)x_0+tx_1,
+\end{equation}
+真实条件速度
+\begin{equation}
+ u_t(x_0,x_1)=x_1-x_0.
+\end{equation}
+训练目标
+\begin{equation}
+ \Loss(v)=\E\norm{v(x_t,t)-u_t}^2.
+\end{equation}
+对固定 $(x_t,t)$，令随机变量 $U=u_t$。平方损失分解为
+\begin{align}
+ \E[\norm{v-U}^2\mid x_t,t]
+ &=\norm{v-\E[U\mid x_t,t]}^2\\
+ &\quad+\E\norm{U-\E[U\mid x_t,t]}^2.
+\end{align}
+第二项与 $v$ 无关，所以最优场
+\begin{equation}
+ \boxed{v^*(x,t)=\E[x_1-x_0\mid x_t=x,t].}
+\end{equation}
+这解释了网络为何能从混合状态恢复一个确定速度：它学习所有可能配对速度的条件均值。
+
+\section{一步重建公式的符号核对}
+若论文把路径写成
+\begin{equation}
+ x_t=(1-t)x+t z,
+\end{equation}
+则速度
+\begin{equation}
+ \dot x_t=z-x.
+\end{equation}
+从时刻 $t$ 沿反方向积分到 $0$：
+\begin{equation}
+ x_0=x_t-\int_0^t\dot x_s\dd s.
+\end{equation}
+若用常速度近似 $d_\theta\approx x-z=-\dot x$，则
+\begin{equation}
+ \boxed{\widehat x_0=x_t+t d_\theta(x_t,c,t).}
+\end{equation}
+正号来自网络预测的是去噪方向 $x-z$，而非前向速度 $z-x$。若网络定义相反，公式符号也必须反转。
+
+\section{Euler 多步采样的局部与全局误差}
+反向 ODE 为
+\begin{equation}
+ \dot x=f_\theta(x,t).
+\end{equation}
+Euler 更新
+\begin{equation}
+ x_{i+1}=x_i+h_if_\theta(x_i,t_i).
+\end{equation}
+Taylor 展开精确解
+\begin{equation}
+ x(t_i+h_i)=x(t_i)+h_if(x_i,t_i)+\frac{h_i^2}{2}\ddot x(\xi_i)
+\end{equation}
+给出局部误差 $O(h_i^2)$。若 $f$ 对 $x$ 的 Lipschitz 常数为 $L$，离散 Grönwall 不等式给出
+\begin{equation}
+ \norm{e_n}\le
+ e^{LT}\left(\norm{e_0}+C\sum_i h_i^2\right).
+\end{equation}
+均匀步长 $h=T/n$ 时全局误差为 $O(h)=O(1/n)$。非均匀网格的误差由 $\sum_i h_i^2$ 决定，而不只由步数决定。
+
+\section{非均匀时间网格的密度解释}
+论文使用
+\begin{equation}
+ t_i=\left(\frac{i}{n}\right)^\rho.
+\end{equation}
+令连续索引 $s=i/n$，则
+\begin{equation}
+ \frac{\dd t}{\dd s}=\rho s^{\rho-1}.
+\end{equation}
+当 $\rho>1$，靠近 $t=0$ 时导数小，网格更密；靠近 $t=1$ 时步长更大。相邻步长近似
+\begin{equation}
+ h_i\approx\frac\rho n\left(\frac{i}{n}\right)^{\rho-1}.
+\end{equation}
+若去噪场在低噪声端曲率更大，这种分配可减少主导误差；若高噪声端更难，则应选择相反的时间变换。
+
+\section{感知损失梯度经过特征 Jacobian}
+设冻结感知网络为 $\phi$，损失
+\begin{equation}
+ \Loss_{\mathrm{perc}}
+ =\norm{\phi(\widehat x)-\phi(x)}_2^2.
+\end{equation}
+梯度
+\begin{equation}
+ \nabla_{\widehat x}\Loss_{\mathrm{perc}}
+ =2J_\phi(\widehat x)^\top[\phi(\widehat x)-\phi(x)].
+\end{equation}
+像素 MSE 的梯度方向是 $\widehat x-x$；感知损失则先把特征误差通过 $J_\phi^\top$ 映回像素空间，所以它会优先修正感知网络敏感的结构，而可能忽略像素级高频偏差。
+
+\section{量化承诺损失的作用}
+承诺项
+\begin{equation}
+ \Loss_{\mathrm{commit}}=\norm{h-\sg(q(h))}^2
+\end{equation}
+对编码器输出的梯度
+\begin{equation}
+ \nabla_h\Loss_{\mathrm{commit}}=2(h-q(h)).
+\end{equation}
+它把连续表示拉向离散顶点，减少训练时连续 $h$ 与推理时离散码之间的分布差。若权重过大，$h$ 很早饱和在 $\pm1$，STE 可用梯度区域缩小；若过小，量化误差
+\begin{equation}
+ \E\norm{h-q(h)}^2
+\end{equation}
+会主导重建失败。
+
+\section{模式寻求与条件均值模糊}
+平方误差下最优预测是条件均值。若给定码 $c$ 的真实图像分布有两个模式 $x^{(1)},x^{(2)}$，概率各 $1/2$，则 MSE 最优解
+\begin{equation}
+ \widehat x^*=\frac{x^{(1)}+x^{(2)}}2
+\end{equation}
+可能落在两个自然图像模式之间，产生模糊。Flow 解码器通过引入随机起点 $z$ 和动力学
+\begin{equation}
+ \dot x=v_\theta(x,c,t)
+\end{equation}
+表示完整条件分布，而非只输出均值；这就是“mode-seeking tokenization”区别于确定性回归解码的数学基础。
+\clearpage
+\section{Flow Matching 最优解的 $L^2$ 投影证明}
+论文用可采样的条件速度监督网络。设随机变量为 $(X,Z,T)$，条件目标速度为 $V$，网络只能观察 $(Z,T,C)$。考虑
+\begin{equation}
+ \Loss(f)=\E\|f(Z,T,C)-V\|_2^2.
+\end{equation}
+令
+\begin{equation}
+ m(Z,T,C)=\E[V\mid Z,T,C].
+\end{equation}
+把误差拆成
+\begin{equation}
+ f-V=(f-m)+(m-V).
+\end{equation}
+平方并取期望：
+\begin{align}
+ \Loss(f)
+ &=\E\|f-m\|_2^2+\E\|m-V\|_2^2
+ +2\E\langle f-m,m-V\rangle.
+\end{align}
+最后一项为零，因为
+\begin{align}
+ \E[\langle f-m,m-V\rangle]
+ &=\E\Bigl[\E[\langle f-m,m-V\rangle\mid Z,T,C]\Bigr]\\
+ &=\E\Bigl[\langle f-m,\E[m-V\mid Z,T,C]\rangle\Bigr]=0.
+\end{align}
+所以
+\begin{equation}
+ \Loss(f)=\E\|f-m\|_2^2+\text{与 $f$ 无关的常数},
+\end{equation}
+唯一的 Bayes 最优解为
+\begin{equation}
+ \boxed{f^*(z,t,c)=\E[V\mid Z=z,T=t,C=c].}
+\end{equation}
+这解释了为何用成对样本构造的速度监督，最终学到的是边缘概率流的条件平均速度。
+
+\section{直线路径、反向 ODE 与一步重建的符号核验}
+论文定义
+\begin{equation}
+ x_t=t z+(1-t)x,
+\end{equation}
+其中 $t=0$ 为真实图像，$t=1$ 为噪声。对 $t$ 求导：
+\begin{equation}
+ \dot x_t=z-x.
+\end{equation}
+若网络 $d_\theta(x_t,c,t)$ 预测 $z-x$，则从当前 $t$ 向 $0$ 做一步 Euler：
+\begin{align}
+ \widehat x_0
+ &=x_t+(0-t)d_\theta(x_t,c,t)\\
+ &=x_t-t d_\theta(x_t,c,t).
+\end{align}
+若论文的 $d_\theta$ 定义为相反方向 $x-z$，则公式变为 $x_t+t d_\theta$。因此阅读时必须同时检查“路径方向”和“速度符号”，不能只记忆一步重建公式。精确速度下，若 $d=x-z$，
+\begin{equation}
+ x_t+t(x-z)=tz+(1-t)x+t x-tz=x.
+\end{equation}
+
+\section{二值量化与 Straight-Through Estimator 的偏差}
+编码器输出 $\hat c\in\R^d$，二值量化为
+\begin{equation}
+ c=q(\hat c)=2\mathbf 1[\hat c\ge0]-1.
+\end{equation}
+真实导数几乎处处为零：
+\begin{equation}
+ \frac{\partial q}{\partial \hat c}=0\quad\text{a.e.}
+\end{equation}
+若直接反向传播，编码器无法收到重建损失梯度。STE 在反向时人为设定
+\begin{equation}
+ \frac{\partial q}{\partial \hat c}\approx I
+\end{equation}
+或带截断的
+\begin{equation}
+ \frac{\partial q_i}{\partial \hat c_i}
+ \approx \mathbf 1(|\hat c_i|\le1).
+\end{equation}
+于是编码器梯度近似为
+\begin{equation}
+ \nabla_{\hat c}\Loss\approx\nabla_c\Loss.
+\end{equation}
+该估计不是某个光滑量化函数的真实梯度，因此一般有偏。它能工作依赖于：前向使用真实离散码，反向使用能够推动 $\hat c$ 跨越阈值的代理方向。
+
+\section{熵正则的逐位梯度与码本塌缩}
+设第 $j$ 位取 $+1$ 的经验概率为 $p_j$，二元熵为
+\begin{equation}
+ H(p_j)=-p_j\log p_j-(1-p_j)\log(1-p_j).
+\end{equation}
+其导数
+\begin{equation}
+ \frac{\dd H}{\dd p_j}=\log\frac{1-p_j}{p_j}.
+\end{equation}
+当 $p_j\to0$ 时导数趋于 $+\infty$，当 $p_j\to1$ 时趋于 $-\infty$，最大值位于 $p_j=1/2$。因此最大化逐位熵会推动每一位均衡使用。
+
+但仅最大化边缘熵不能保证不同位独立。若所有位完全相同，仍可能有每位 $p_j=1/2$，而联合码只有两个状态。联合熵满足
+\begin{equation}
+ H(C_1,\ldots,C_d)\le\sum_{j=1}^{d}H(C_j),
+\end{equation}
+等号只在各位独立时成立。因此更严格的防塌缩目标需要同时抑制总相关性
+\begin{equation}
+ \mathrm{TC}(C)=\sum_j H(C_j)-H(C_1,\ldots,C_d).
+\end{equation}
+
+\section{可微多步采样链的 Jacobian 连乘}
+设离散采样步为
+\begin{equation}
+ x_{i+1}=x_i+\Delta t_i d_\theta(x_i,c,t_i).
+\end{equation}
+最终感知损失 $\ell(x_n,x)$ 对参数的梯度满足
+\begin{equation}
+ \frac{\partial\ell}{\partial\theta}
+ =\frac{\partial\ell}{\partial x_n}
+ \frac{\partial x_n}{\partial\theta}.
+\end{equation}
+递推
+\begin{equation}
+ \frac{\partial x_{i+1}}{\partial\theta}
+ =\left(I+\Delta t_i J_x d_i\right)
+ \frac{\partial x_i}{\partial\theta}
+ +\Delta t_i J_\theta d_i.
+\end{equation}
+展开后
+\begin{equation}
+ \frac{\partial x_n}{\partial\theta}
+ =\sum_{k=0}^{n-1}
+ \left[\prod_{j=k+1}^{n-1}
+ (I+\Delta t_j J_xd_j)\right]
+ \Delta t_k J_\theta d_k.
+\end{equation}
+这说明采样损失会把后续所有步的状态 Jacobian 乘到早期步梯度上；步数越多，显存和数值稳定压力越大。
+
+\section{Euler 采样误差的局部与全局界}
+对 ODE $\dot x=f(x,t)$，假设 $f$ 对 $x$ 是 $L$-Lipschitz，且真解二阶可导。一步 Euler 的局部截断误差为
+\begin{equation}
+ \tau_i=x(t_{i+1})-x(t_i)-h_i f(x(t_i),t_i)=O(h_i^2).
+\end{equation}
+数值误差 $e_i=\widehat x_i-x(t_i)$ 满足
+\begin{equation}
+ \|e_{i+1}\|\le(1+Lh_i)\|e_i\|+C h_i^2.
+\end{equation}
+若均匀步长 $h=T/n$，离散 Gronwall 不等式给出
+\begin{equation}
+ \max_i\|e_i\|=O(h)=O(n^{-1}).
+\end{equation}
+若网络速度还有误差 $\|d_\theta-f\|\le\varepsilon$，则额外项为 $h_i\varepsilon$，累计后约为 $T\varepsilon e^{LT}$。因此增加步数只能减少离散化误差，不能消除模型误差。
+
+\section{非均匀时间网格的密度推导}
+令连续变量 $s\in[0,1]$ 均匀离散，时间映射为 $t=\phi(s)$。第 $i$ 步宽度近似
+\begin{equation}
+ \Delta t_i\approx \phi'(s_i)\Delta s.
+\end{equation}
+某个时间区间内的点密度与 $\phi'$ 成反比：
+\begin{equation}
+ \rho_t(t)\propto\frac1{\phi'(\phi^{-1}(t))}.
+\end{equation}
+若希望在靠近数据端 $t=0$ 放置更多步，应选择那里较小的 $\phi'$。论文的幂次调度可写成
+\begin{equation}
+ t_i=\left(\frac{i}{n}\right)^\rho,
+\end{equation}
+当 $\rho>1$ 时，$t$ 接近 $0$ 的间隔更小；当 $\rho<1$ 时，点更集中在 $t=1$ 附近。
+
+\section{率失真拉格朗日视角}
+离散码率约为
+\begin{equation}
+ R\approx H(C),
+\end{equation}
+重建失真可取像素或感知距离
+\begin{equation}
+ D=\E[d(X,\widehat X)].
+\end{equation}
+经典率失真优化写成
+\begin{equation}
+ \min_\theta D+\beta R.
+\end{equation}
+论文中的流匹配、感知损失、承诺损失和熵正则可以理解为该目标的可训练替代：流匹配控制生成动力学，感知项定义失真，熵项控制码利用率。不同损失权重并非纯经验常数，而是在隐式选择率失真曲线上的工作点。
+
+\section{一个一维条件均值导致模糊的例子}
+假设同一个离散码 $c$ 对应两种等概率图像标量 $X\in\{-1,+1\}$。若解码器用平方误差直接回归，Bayes 最优输出为
+\begin{equation}
+ \widehat x^*(c)=\E[X\mid c]=0,
+\end{equation}
+它并不属于真实的两个模式。若使用能表达条件分布的生成解码器，则目标是学习
+\begin{equation}
+ p(x\mid c)=\frac12\delta_{-1}(x)+\frac12\delta_{+1}(x),
+\end{equation}
+采样会落在某个模式而不是均值。这就是“mode-seeking”相对于纯重建回归的数学动机。
+\end{document}

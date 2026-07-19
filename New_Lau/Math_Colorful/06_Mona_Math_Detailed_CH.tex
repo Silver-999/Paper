@@ -1,0 +1,1529 @@
+\documentclass[UTF8,12pt,a4paper,fontset=none]{ctexart}
+\usepackage{fontspec,xeCJK}
+\setmainfont{Liberation Serif}
+\setsansfont{DejaVu Sans}
+\setmonofont{DejaVu Sans Mono}
+\setCJKmainfont[BoldFont=Noto Serif CJK SC Bold]{Noto Serif CJK SC}
+\setCJKsansfont[BoldFont=Noto Sans CJK SC Bold]{Noto Sans CJK SC}
+\setCJKmonofont{Noto Sans Mono CJK SC}
+
+\usepackage[a4paper,left=1.82cm,right=1.82cm,top=1.72cm,bottom=1.82cm,headheight=15pt]{geometry}
+\usepackage{amsmath,amssymb,mathtools,bm}
+\usepackage{booktabs,longtable,array,tabularx}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{tikz}
+\usepackage{graphicx}
+\usepackage[most]{tcolorbox}
+\usepackage{microtype}
+\usepackage{fancyhdr}
+\usepackage{lastpage}
+
+\usetikzlibrary{arrows.meta,positioning,calc,fit}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!55!black,
+  urlcolor=blue!60!black,
+  citecolor=blue!55!black,
+  pdftitle={Mona 数学推导完整文字版},
+  pdfauthor={ChatGPT}
+}
+
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.36em}
+\setlength{\abovedisplayskip}{0.55em}
+\setlength{\belowdisplayskip}{0.55em}
+\setlength{\abovedisplayshortskip}{0.35em}
+\setlength{\belowdisplayshortskip}{0.35em}
+\renewcommand{\arraystretch}{1.18}
+\setlist[itemize]{leftmargin=2.1em,itemsep=0.18em,topsep=0.25em}
+\setlist[enumerate]{leftmargin=2.2em,itemsep=0.18em,topsep=0.25em}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small Mona 数学推导完整文字版}
+\fancyhead[R]{\small 公式、维度与参数量}
+\fancyfoot[C]{\small 第 \thepage\ 页，共 \pageref{LastPage} 页}
+\setlength{\headheight}{14pt}
+
+\definecolor{mainblue}{RGB}{36,79,120}
+\definecolor{lightblue}{RGB}{238,246,252}
+\definecolor{lightgray}{RGB}{246,247,249}
+\definecolor{lightgreen}{RGB}{239,248,242}
+\definecolor{lightorange}{RGB}{253,246,235}
+
+\newtcolorbox{keybox}[1][]{
+  enhanced,
+  breakable,
+  colback=lightblue,
+  colframe=mainblue,
+  boxrule=0.7pt,
+  arc=1.8mm,
+  left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,
+  title=#1,
+  fonttitle=\bfseries
+}
+
+\newtcolorbox{notebox}[1][]{
+  enhanced,
+  breakable,
+  colback=lightgray,
+  colframe=black!35,
+  boxrule=0.55pt,
+  arc=1.5mm,
+  left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,
+  title=#1,
+  fonttitle=\bfseries
+}
+
+\newtcolorbox{conclusionbox}[1][]{
+  enhanced,
+  breakable,
+  colback=lightgreen,
+  colframe=green!45!black,
+  boxrule=0.7pt,
+  arc=1.8mm,
+  left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,
+  title=#1,
+  fonttitle=\bfseries
+}
+
+\newcommand{\Loss}{\mathcal{L}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\LN}{\operatorname{LN}}
+\newcommand{\GeLU}{\operatorname{GeLU}}
+\newcommand{\avg}{\operatorname{avg}}
+\newcommand{\argmin}{\operatorname*{arg\,min}}
+\newcommand{\DWConv}{\operatorname{DWConv}}
+\newcommand{\PWConv}{\operatorname{PWConv}}
+
+\begin{document}
+
+\begin{center}
+  {\LARGE\bfseries 5\% $>$ 100\%：Mona 视觉适配器}\par
+  \vspace{0.35em}
+  {\Large\bfseries 数学推导部分完整文字解读}\par
+  \vspace{0.45em}
+  {\small 基于论文 \textit{Breaking Performance Shackles of Full Fine-Tuning on Visual Recognition Tasks}}
+\end{center}
+
+\vspace{0.35em}
+
+\begin{keybox}[阅读说明]
+本文集中解释论文中公式（1）--（6）的含义、张量维度、前向传播、反向传播直觉、卷积参数量与 Mona 总参数量。论文并不是“定理--证明”型工作，其数学重点在于：\textbf{如何把冻结的预训练视觉主干与少量可训练的多尺度适配参数组合起来。}
+\end{keybox}
+
+\tableofcontents
+\vspace{0.4em}
+
+\section{论文数学主线}
+
+论文的数学结构可以概括为
+\begin{equation}
+\begin{aligned}
+\text{输入分布调整}
+&\longrightarrow \text{降维}
+\longrightarrow \text{多尺度深度卷积}
+\longrightarrow 1\times1\text{卷积},\\
+&\longrightarrow \text{非线性激活}
+\longrightarrow \text{升维}
+\longrightarrow \text{残差相加}.
+\end{aligned}
+\end{equation}
+
+Mona 被插入 Swin Transformer Block 的注意力模块和前馈网络之后。预训练主干参数被冻结，只更新 Mona、任务头以及主干外的少量参数。
+
+\begin{center}
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+  node distance=5.5mm,
+  every node/.style={font=\small},
+  block/.style={draw=mainblue,rounded corners=1.5mm,fill=lightblue,minimum height=8mm,minimum width=25mm,align=center},
+  conv/.style={draw=orange!65!black,rounded corners=1.5mm,fill=lightorange,minimum height=8mm,minimum width=23mm,align=center},
+  arr/.style={-{Latex[length=2.2mm]},thick,draw=black!70}
+]
+\node[block] (x0) {$x_0$\\原始特征};
+\node[block,right=of x0] (norm) {$s_1\LN(x_0)+s_2x_0$\\输入优化};
+\node[block,right=of norm] (down) {$D^l$\\降维 $m\to n$};
+\node[conv,right=of down] (dw) {$3\times3,5\times5,7\times7$\\DWConv};
+\node[conv,right=of dw] (pw) {$1\times1$ Conv\\通道融合};
+\node[block,right=of pw] (up) {GeLU $+\ U^l$\\升维 $n\to m$};
+\node[block,right=of up] (out) {$x_0+\Delta x$\\输出};
+\draw[arr] (x0)--(norm);
+\draw[arr] (norm)--(down);
+\draw[arr] (down)--(dw);
+\draw[arr] (dw)--(pw);
+\draw[arr] (pw)--(up);
+\draw[arr] (up)--(out);
+\draw[arr,rounded corners=3mm] (x0.south) -- ++(0,-8mm) -| (out.south);
+\end{tikzpicture}%
+}
+\end{center}
+
+
+
+\subsection{先用一句话理解整套方法}
+
+普通全量微调的做法是：把预训练模型内部几乎所有参数都解冻，然后让下游数据重新调整它们。Mona 的做法则是：\textbf{保持预训练主干不动，在主干输出旁边增加一条很小的可训练支路，只学习下游任务需要的“修正量”}。因此可以先把整篇论文理解成
+\begin{equation}
+ \text{适配后的特征}
+ =\text{原有预训练特征}
+ +\text{Mona 学到的任务修正}.
+\end{equation}
+
+标准线性 Adapter 通常只有
+\begin{equation}
+ x\longrightarrow D(x)\longrightarrow \sigma(\cdot)\longrightarrow U(\cdot)\longrightarrow x+\Delta x,
+\end{equation}
+其中 $D$ 和 $U$ 分别负责降维和升维。Mona 在此基础上增加了三个关键结构：
+\begin{enumerate}
+  \item 在降维之前，用 $s_1\LN(x_0)+s_2x_0$ 调整冻结主干输出的分布；
+  \item 在低维空间中加入 $3\times3$、$5\times5$、$7\times7$ 三种深度卷积；
+  \item 用 $1\times1$ 卷积进行通道混合，并在多个位置保留残差路径。
+\end{enumerate}
+
+因此，Mona 并不是简单地“少训练一些参数”，而是把有限参数集中放在视觉任务最需要的空间建模位置。
+
+\subsection{公式阅读时要始终追踪的三件事}
+
+阅读后面的每个公式时，建议始终检查以下三点：
+\begin{enumerate}
+  \item \textbf{形状是否变化：}特征通道是 $m$ 还是 $n$，空间尺寸 $H\times W$ 是否保持；
+  \item \textbf{哪些参数可训练：}$\theta_F$ 固定，$\omega$、$s_1$、$s_2$、投影层和卷积核可训练；
+  \item \textbf{原始信息是否保留：}每个主要变换后都存在加法旁路，避免把预训练特征完全覆盖。
+\end{enumerate}
+
+\section{“5\% \texorpdfstring{$>$}{>} 100\%”是什么意思}
+
+标题中的
+\begin{equation}
+5\%>100\%
+\end{equation}
+不是普通数值不等式，而是一种性能对比的简写：
+\begin{itemize}
+  \item “100\%”表示全量微调，即更新整个预训练主干；
+  \item “5\%”表示只更新大约占主干参数量几个百分点的新增参数；
+  \item 尽管可训练参数更少，Mona 在论文实验中的性能反而超过全量微调。
+\end{itemize}
+
+更准确地说，标题表达的是
+\begin{equation}
+\text{少量可训练参数的 Mona 性能}
+>
+\text{全部参数参与更新的全量微调性能}.
+\end{equation}
+
+这并不意味着“参数越少必然越好”，而是说明：\textbf{可训练模块的结构与归纳偏置，可能比单纯增加可训练参数数量更重要。}
+
+\section{基本符号与张量维度}
+
+设某个 Mona 模块的输入为
+\begin{equation}
+ x_0\in\R^{B\times H\times W\times m},
+\end{equation}
+其中：
+\begin{itemize}
+  \item $B$：批量大小；
+  \item $H,W$：特征图的高与宽；
+  \item $m$：预训练主干输出的通道维度；
+  \item $x_0$：进入 Mona 之前的原始特征。
+\end{itemize}
+
+在 Transformer 表示中，也常写成
+\begin{equation}
+ x_0\in\R^{B\times L\times m},\qquad L=HW,
+\end{equation}
+即将二维空间位置展平成 $L$ 个 Token。Mona 首先把通道从 $m$ 压缩到中间维度 $n$，再恢复到 $m$：
+\begin{equation}
+ m\longrightarrow n\longrightarrow m.
+\end{equation}
+论文默认取
+\begin{equation}
+ n=64.
+\end{equation}
+
+\begin{longtable}{>{\centering\arraybackslash}p{2.4cm}p{10.8cm}}
+\toprule
+符号 & 含义\\
+\midrule
+\endfirsthead
+\toprule
+符号 & 含义\\
+\midrule
+\endhead
+$D=\{(x_i,y_i)\}_{i=1}^{N}$ & 下游训练数据集，$N$ 为样本数。\\
+$\theta$ & 全量微调中整个模型的可训练参数。\\
+$\theta_F$ & Adapter 微调中冻结的预训练参数。\\
+$\omega$ & Mona、任务头及其他允许更新的参数。\\
+$x_0$ & Mona 的原始输入特征。\\
+$x_{\mathrm{norm}}$ & 经过缩放 LayerNorm 融合后的特征。\\
+$m$ & Mona 输入和输出的通道维度。\\
+$n$ & 降维后的瓶颈维度，论文设置为 $64$。\\
+$D^l,U^l$ & 第 $l$ 个 Mona 的降维映射与升维映射。\\
+$\widehat{\otimes}$ & 深度卷积运算。\\
+$\otimes$ & 点卷积或普通卷积运算。\\
+\bottomrule
+\end{longtable}
+
+\section{公式（1）：全量微调的优化目标}
+
+论文将全量微调写成
+\begin{equation}
+ \theta\leftarrow\argmin_{\theta}\operatorname{loss}(D,\theta).
+ \tag{1}
+\end{equation}
+
+更规范的数学形式是
+\begin{equation}
+ \theta^{\ast}=\argmin_{\theta}\Loss(D;\theta).
+\end{equation}
+
+若模型为 $f(x;\theta)$，单样本损失为 $\ell(\cdot,\cdot)$，则经验风险可以写成
+\begin{equation}
+ \Loss(D;\theta)
+ =\frac{1}{N}\sum_{i=1}^{N}
+ \ell\bigl(f(x_i;\theta),y_i\bigr).
+\end{equation}
+
+“$\argmin$”不是最小损失值本身，而是\textbf{使损失达到最小的参数位置}。例如
+\begin{equation}
+ \theta^\ast=\argmin_{\theta}\Loss(\theta)
+\end{equation}
+表示寻找最优参数 $\theta^\ast$。
+
+实际神经网络无法直接一次求出全局最优解，而是通过迭代梯度下降更新：
+\begin{equation}
+ \theta_{t+1}
+ =\theta_t-\eta\nabla_{\theta}\Loss(D;\theta_t),
+\end{equation}
+其中 $\eta$ 是学习率，$t$ 是训练步数。
+
+全量微调中，注意力层、前馈网络、归一化层及任务头等几乎全部参数都可能更新。若模型共有 $P$ 个参数，则优化变量属于
+\begin{equation}
+ \theta\in\R^P.
+\end{equation}
+
+\begin{notebox}[全量微调不一定更好]
+当下游数据量有限时，大量参数同时更新可能造成过拟合、预训练知识被破坏、训练不稳定或灾难性遗忘。因此，“可训练参数更多”并不能推出“泛化性能一定更高”。
+\end{notebox}
+
+
+
+\subsection{用一个一维例子理解 \texorpdfstring{$\argmin$}{argmin}}
+
+假设损失函数只有一个变量：
+\begin{equation}
+ \Loss(\theta)=(\theta-3)^2.
+\end{equation}
+显然，当 $\theta=3$ 时损失最小，因此
+\begin{equation}
+ \argmin_{\theta}(\theta-3)^2=3.
+\end{equation}
+而最小损失值为
+\begin{equation}
+ \min_{\theta}(\theta-3)^2=0.
+\end{equation}
+二者不能混淆：$\min$ 给出“最小值”，$\argmin$ 给出“取得最小值的位置”。在神经网络中，$\theta$ 不再是一个数，而是由数百万甚至数亿个参数组成的高维向量。
+
+\subsection{全量微调中到底更新了什么}
+
+可将整个模型参数拆成
+\begin{equation}
+ \theta=\{\theta_{\mathrm{backbone}},\theta_{\mathrm{neck}},\theta_{\mathrm{head}}\}.
+\end{equation}
+全量微调通常意味着
+\begin{equation}
+ \nabla_{\theta_{\mathrm{backbone}}}\Loss\neq0,\qquad
+ \nabla_{\theta_{\mathrm{neck}}}\Loss\neq0,\qquad
+ \nabla_{\theta_{\mathrm{head}}}\Loss\neq0,
+\end{equation}
+并且优化器会对这三部分都执行更新。这里的风险不是“模型一定学不好”，而是自由度太高：当下游数据不足时，模型可能为了快速降低训练损失而改变原本有用的预训练表示。
+
+从几何角度看，全量微调是在 $P$ 维参数空间中寻找新位置。若起始点是预训练参数 $\theta_0$，训练后得到
+\begin{equation}
+ \theta^\ast=\theta_0+\Delta\theta.
+\end{equation}
+当 $\Delta\theta$ 在许多方向上都较大时，预训练模型原有的通用能力可能被破坏。Mona 则把允许变化的方向限制在新增模块所张成的低维子空间中。
+
+\section{公式（2）：Adapter 微调的优化目标}
+
+论文将 Adapter 微调写成
+\begin{equation}
+ \omega\leftarrow\argmin_{\omega}\operatorname{loss}(D,\theta_F,\omega).
+ \tag{2}
+\end{equation}
+
+更严格地写为
+\begin{equation}
+ \omega^\ast
+ =\argmin_{\omega}\Loss(D;\theta_F,\omega),
+\end{equation}
+其中
+\begin{equation}
+ \theta_F=\text{固定常量}.
+\end{equation}
+
+训练过程中，冻结参数保持不变：
+\begin{equation}
+ \theta_F^{(t+1)}=\theta_F^{(t)},
+\end{equation}
+而新增参数更新为
+\begin{equation}
+ \omega_{t+1}
+ =\omega_t-\eta\nabla_{\omega}
+ \Loss(D;\theta_F,\omega_t).
+\end{equation}
+
+全量微调与 Mona 微调的本质差异是优化空间维度：
+\begin{align}
+ \text{全量微调：}\quad
+ &\theta^\ast
+ =\argmin_{\theta\in\R^P}\Loss(\theta),\\
+ \text{Mona 微调：}\quad
+ &\omega^\ast
+ =\argmin_{\omega\in\R^Q}\Loss(\theta_F,\omega),
+ \qquad Q\ll P.
+\end{align}
+
+较低维的可训练空间形成了一种结构化约束，可视为隐式正则化：
+\begin{equation}
+ \text{较小的搜索空间}
+ \Longrightarrow
+ \text{较低的过拟合风险}.
+\end{equation}
+但 $Q<P$ 本身并不能保证性能提升；Mona 的关键是新增模块具有适合图像的空间结构。
+
+
+
+\subsection{“冻结参数”不等于数学偏导数天然为零}
+
+冻结 $\theta_F$ 的准确含义是：训练程序不把它交给优化器更新。计算图中，损失仍然通过冻结主干产生的特征依赖于 $\theta_F$，因此从纯数学角度，
+\begin{equation}
+ \frac{\partial\Loss}{\partial\theta_F}
+\end{equation}
+未必天然为零；只是实现时通常关闭其梯度存储，或者即使计算了梯度也不执行
+\begin{equation}
+ \theta_F\leftarrow\theta_F-\eta\frac{\partial\Loss}{\partial\theta_F}.
+\end{equation}
+真正被更新的是
+\begin{equation}
+ \omega=\{\omega_{\mathrm{Mona}},\omega_{\mathrm{neck}},\omega_{\mathrm{head}}\}.
+\end{equation}
+
+这样做还会减少优化器状态的存储。例如 Adam 类优化器通常需要为每个可训练参数保存一阶矩和二阶矩。若只训练 $Q$ 个参数而不是 $P$ 个参数，优化器状态的主要存储量也从 $O(P)$ 降至 $O(Q)$。
+
+\subsection{Mona 相当于带结构约束的优化}
+
+若把全量微调得到的所有可能函数集合记为 $\mathcal{F}_{\mathrm{full}}$，把冻结主干、只训练 Mona 时能得到的函数集合记为 $\mathcal{F}_{\mathrm{Mona}}$，通常有
+\begin{equation}
+ \mathcal{F}_{\mathrm{Mona}}\subset\mathcal{F}_{\mathrm{full}}.
+\end{equation}
+也就是说，Mona 的表达空间更受限制。限制会降低模型随意拟合噪声的能力，但也可能使模型错过某些最优解。因此，Mona 的成功依赖于：它所保留的方向恰好与视觉下游任务需要的变化较为一致。
+
+\section{公式（3）：Scaled LayerNorm 输入优化}
+
+论文在 Mona 顶部加入 LayerNorm 和两个可学习缩放参数：
+\begin{equation}
+ x_{\mathrm{norm}}
+ =s_1\LN(x_0)+s_2x_0.
+ \tag{3}
+\end{equation}
+其中 $s_1,s_2$ 是可学习标量。
+
+\subsection{LayerNorm 的完整计算}
+
+对某个 Token 或空间位置的通道向量
+\begin{equation}
+ x=[x_1,x_2,\ldots,x_m],
+\end{equation}
+先计算均值
+\begin{equation}
+ \mu=\frac{1}{m}\sum_{c=1}^{m}x_c,
+\end{equation}
+再计算方差
+\begin{equation}
+ \sigma^2=\frac{1}{m}\sum_{c=1}^{m}(x_c-\mu)^2.
+\end{equation}
+标准化为
+\begin{equation}
+ \widehat{x}_c
+ =\frac{x_c-\mu}{\sqrt{\sigma^2+\varepsilon}},
+\end{equation}
+最后使用可学习的缩放与平移：
+\begin{equation}
+ \LN(x_c)=\gamma_c\widehat{x}_c+\beta_c.
+\end{equation}
+向量形式为
+\begin{equation}
+ \LN(x)
+ =\bm{\gamma}\odot
+ \frac{x-\mu}{\sqrt{\sigma^2+\varepsilon}}
+ +\bm{\beta}.
+\end{equation}
+由于 $\bm{\gamma},\bm{\beta}\in\R^m$，LayerNorm 共有
+\begin{equation}
+ m+m=2m
+\end{equation}
+个可训练参数。
+
+\subsection{为什么同时保留归一化特征与原始特征}
+
+若只使用
+\begin{equation}
+ x_{\mathrm{norm}}=\LN(x_0),
+\end{equation}
+原特征的绝对尺度信息可能被削弱。Mona 使用
+\begin{equation}
+ \underbrace{s_1\LN(x_0)}_{\text{分布更稳定}}
+ +
+ \underbrace{s_2x_0}_{\text{保留原始幅值与预训练信息}},
+\end{equation}
+相当于两条特征路径的自适应融合。
+
+对缩放参数求偏导：
+\begin{align}
+ \frac{\partial x_{\mathrm{norm}}}{\partial s_1}
+ &=\LN(x_0),\\
+ \frac{\partial x_{\mathrm{norm}}}{\partial s_2}
+ &=x_0.
+\end{align}
+因此反向传播可以自动决定两条分支各占多大比重。
+
+\begin{center}
+\begin{tabular}{ccc}
+\toprule
+$s_1$ & $s_2$ & 模块行为\\
+\midrule
+$1$ & $0$ & 完全使用归一化特征\\
+$0$ & $1$ & 跳过 LayerNorm，保留原始特征\\
+非零 & 非零 & 自适应融合两类特征\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+
+
+\subsection{一个具体的 LayerNorm 数值例子}
+
+为了看清 LayerNorm 的作用，考虑一个只有四个通道的向量
+\begin{equation}
+ x=[1,2,3,4].
+\end{equation}
+忽略极小量 $\varepsilon$，其均值为
+\begin{equation}
+ \mu=\frac{1+2+3+4}{4}=2.5,
+\end{equation}
+方差为
+\begin{align}
+ \sigma^2
+ &=\frac{(1-2.5)^2+(2-2.5)^2+(3-2.5)^2+(4-2.5)^2}{4}\\
+ &=\frac{2.25+0.25+0.25+2.25}{4}=1.25.
+\end{align}
+标准差为
+\begin{equation}
+ \sigma=\sqrt{1.25}\approx1.118.
+\end{equation}
+若暂时取 $\gamma=1,\beta=0$，归一化结果约为
+\begin{equation}
+ \LN(x)\approx[-1.342,-0.447,0.447,1.342].
+\end{equation}
+它的均值接近 $0$，方差接近 $1$。若再取
+\begin{equation}
+ s_1=s_2=0.5,
+\end{equation}
+则
+\begin{align}
+ x_{\mathrm{norm}}
+ &=0.5\LN(x)+0.5x\\
+ &\approx[-0.171,0.777,1.724,2.671].
+\end{align}
+可以看到，输出既带有归一化后的相对关系，又没有完全丢掉原始数值尺度。
+
+\subsection{为什么这里更适合 LayerNorm 而不是 BatchNorm}
+
+BatchNorm 的统计量依赖一个 mini-batch 中多个样本，而 LayerNorm 在每个样本、每个 Token 的通道维度上独立计算。视觉 Transformer 的训练常受到批量大小、分辨率和任务类型变化的影响；LayerNorm 不依赖 batch 内其他样本，因此更容易与预训练 Transformer 的表示方式保持一致。论文对 LN 和 BN 的选择主要是经验结果，不能把它理解成对所有视觉网络都成立的理论定理。
+
+\subsection{\texorpdfstring{$s_1,s_2$}{s1, s2} 还提供了“软开关”能力}
+
+公式（3）可看作两个专家分支的线性组合：
+\begin{equation}
+ x_{\mathrm{norm}}=s_1\,\text{专家}_{\mathrm{norm}}(x_0)+s_2\,\text{专家}_{\mathrm{raw}}(x_0).
+\end{equation}
+如果新任务的数据分布与预训练任务差异大，模型可能增大 $s_1$，更强调标准化后的稳定特征；若新任务与预训练任务接近，模型可能保留更大的 $s_2$，减少对原始特征的扰动。这里是结构上的解释，具体数值仍由训练决定。
+
+\section{Down Projection：为什么先降维}
+
+输入优化后，Mona 进行降维：
+\begin{equation}
+ z_0=D^l(x_{\mathrm{norm}}).
+\end{equation}
+矩阵形式可写成
+\begin{equation}
+ z_0=x_{\mathrm{norm}}W_D+b_D,
+\end{equation}
+其中
+\begin{equation}
+ W_D\in\R^{m\times n},\qquad b_D\in\R^n.
+\end{equation}
+因此维度变化为
+\begin{equation}
+ \R^m\longrightarrow\R^n.
+\end{equation}
+
+降维主要有两个作用：
+\begin{enumerate}
+  \item 降低后续卷积与通道融合的计算量；
+  \item 构造瓶颈空间，迫使 Adapter 学习紧凑的任务相关增量。
+\end{enumerate}
+
+可以把它理解为
+\begin{equation}
+ \text{高维通用视觉特征}
+ \longrightarrow
+ \text{低维下游任务特征}.
+\end{equation}
+
+
+
+\subsection{降维前后的完整张量形状}
+
+若采用通道后置表示，输入为
+\begin{equation}
+ x_{\mathrm{norm}}\in\R^{B\times H\times W\times m},
+\end{equation}
+则降维映射只作用于最后一个通道维度：
+\begin{equation}
+ z_0=D^l(x_{\mathrm{norm}})\in\R^{B\times H\times W\times n}.
+\end{equation}
+空间尺寸 $H\times W$ 不变，变化的只有通道数。若采用 Token 表示，则
+\begin{equation}
+ \R^{B\times L\times m}\longrightarrow\R^{B\times L\times n}.
+\end{equation}
+为了执行二维卷积，实现中需要把 $L=HW$ 的 Token 重新排列成二维特征图。
+
+\subsection{为什么卷积必须放在低维空间中}
+
+假设直接在 $m$ 通道上做三个深度卷积，其参数量为 $83m$；降维到 $n$ 后，只需要 $83n$。当 $m\gg n$ 时，节省比例约为
+\begin{equation}
+ \frac{83n}{83m}=\frac{n}{m}.
+\end{equation}
+更重要的是，后面的 $1\times1$ 通道混合若直接在 $m$ 维进行，需要 $m^2$ 个参数；放在瓶颈中只需要 $n^2$。例如 $m=512,n=64$ 时，二者分别为
+\begin{equation}
+ 512^2=262144,
+ \qquad
+ 64^2=4096.
+\end{equation}
+因此，瓶颈设计使多尺度卷积在参数上可接受。
+
+\section{公式（4）：多尺度深度卷积与点卷积}
+
+论文使用 $3\times3$、$5\times5$ 和 $7\times7$ 三个并行深度卷积分支。更清晰的形式为
+\begin{equation}
+ f_{\mathrm{dw}}(z)
+ =z+\frac{1}{3}\sum_{i=1}^{3}
+ \omega_{\mathrm{dw}}^i\widehat{\otimes}z,
+ \tag{4a}
+\end{equation}
+以及
+\begin{equation}
+ f_{\mathrm{pw}}(u)
+ =u+\omega_{\mathrm{pw}}\otimes u.
+ \tag{4b}
+\end{equation}
+
+\subsection{三个多尺度分支}
+
+令
+\begin{equation}
+ k_1=3,\qquad k_2=5,\qquad k_3=7.
+\end{equation}
+三个分支分别输出
+\begin{align}
+ g_1&=\omega_{\mathrm{dw}}^1\widehat{\otimes}z,\\
+ g_2&=\omega_{\mathrm{dw}}^2\widehat{\otimes}z,\\
+ g_3&=\omega_{\mathrm{dw}}^3\widehat{\otimes}z.
+\end{align}
+求平均后得到
+\begin{equation}
+ g_{\mathrm{avg}}=\frac{g_1+g_2+g_3}{3},
+\end{equation}
+再与输入残差相加：
+\begin{equation}
+ z_{\mathrm{dw}}=z+g_{\mathrm{avg}}.
+\end{equation}
+
+三种尺度大致对应：
+\begin{itemize}
+  \item $3\times3$：细粒度边缘、纹理和局部角点；
+  \item $5\times5$：中等尺度形状与区域组合；
+  \item $7\times7$：更大范围的局部结构与上下文。
+\end{itemize}
+
+论文把这种多尺度处理称为“Multi-Cognitive”。从严格数学角度看，它本质上是\textbf{多感受野卷积特征融合}，而不是人类认知过程的形式化模型。
+
+
+
+\subsection{卷积输出尺寸为什么能够保持不变}
+
+对于步长 $s=1$ 的二维卷积，单个空间方向的输出尺寸为
+\begin{equation}
+ H_{\mathrm{out}}
+ =\left\lfloor\frac{H+2p-k}{s}\right\rfloor+1.
+\end{equation}
+若希望 $H_{\mathrm{out}}=H$，对奇数卷积核可取
+\begin{equation}
+ p=\frac{k-1}{2}.
+\end{equation}
+因此三个分支分别使用
+\begin{equation}
+ (k,p)=(3,1),(5,2),(7,3),
+\end{equation}
+即可让三条分支的输出都保持 $H\times W$，从而可以直接求平均并与输入相加。
+
+\subsection{为什么使用平均而不是拼接}
+
+若把三个分支在通道维拼接，则通道数会从 $n$ 变成 $3n$：
+\begin{equation}
+ [g_1;g_2;g_3]\in\R^{B\times H\times W\times3n}.
+\end{equation}
+随后需要更大的融合层。论文使用平均：
+\begin{equation}
+ g_{\mathrm{avg}}=\frac{g_1+g_2+g_3}{3}\in\R^{B\times H\times W\times n},
+\end{equation}
+不会扩大通道数，参数和计算都更可控。它的代价是三个分支被等权融合，不能像注意力加权那样为不同图像或不同层动态分配权重，这也是一个可以继续优化的方向。
+
+\subsection{公式（4）中的两个残差分别保护什么}
+
+第一层残差
+\begin{equation}
+ f_{\mathrm{dw}}(z)=z+\text{多尺度空间增量}
+\end{equation}
+保证卷积主要学习空间修正；第二层残差
+\begin{equation}
+ f_{\mathrm{pw}}(u)=u+\text{通道混合增量}
+\end{equation}
+保证 $1\times1$ 卷积主要学习通道修正。于是每个阶段都可以退化为恒等映射，降低新增结构训练失败时对原特征的破坏。
+
+\section{Depthwise Convolution 的数学含义}
+
+普通卷积让每个输出通道读取所有输入通道。若输入和输出通道均为 $n$，卷积核为 $k\times k$，参数量为
+\begin{equation}
+ P_{\mathrm{standard}}=k^2n^2.
+\end{equation}
+
+深度卷积则对每个通道独立卷积。对第 $c$ 个通道：
+\begin{equation}
+ g_{h,w,c}
+ =\sum_a\sum_b
+ K_{a,b,c}\,z_{h+a,w+b,c}.
+\end{equation}
+右侧只使用同一个通道 $c$，因此参数量为
+\begin{equation}
+ P_{\mathrm{DW}}=k^2n.
+\end{equation}
+两者比例为
+\begin{equation}
+ \frac{P_{\mathrm{DW}}}{P_{\mathrm{standard}}}
+ =\frac{k^2n}{k^2n^2}
+ =\frac{1}{n}.
+\end{equation}
+当 $n=64$ 时，深度卷积的参数量约为相应普通卷积的
+\begin{equation}
+ \frac{1}{64}.
+\end{equation}
+
+三个深度卷积总参数量为
+\begin{align}
+ P_{\mathrm{DW,total}}
+ &=(3^2+5^2+7^2)n\\
+ &=(9+25+49)n\\
+ &=83n.
+\end{align}
+当 $n=64$ 时，
+\begin{equation}
+ 83n=83\times64=5312.
+\end{equation}
+若全部换成普通卷积，则需要
+\begin{equation}
+ 83n^2=83\times64^2=339968
+\end{equation}
+个权重参数，明显更大。
+
+
+
+\subsection{\texorpdfstring{$n=64$}{n=64} 时逐个卷积核的参数对比}
+
+\begin{center}
+\begin{tabular}{cccc}
+\toprule
+卷积核 & 深度卷积 & 同通道普通卷积 & 普通/深度倍数\\
+\midrule
+$3\times3$ & $9\times64=576$ & $9\times64^2=36864$ & $64$\\
+$5\times5$ & $25\times64=1600$ & $25\times64^2=102400$ & $64$\\
+$7\times7$ & $49\times64=3136$ & $49\times64^2=200704$ & $64$\\
+\midrule
+合计 & $5312$ & $339968$ & $64$\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+若同时考虑空间位置数 $HW$，乘加运算量也近似从
+\begin{equation}
+ O(HWk^2n^2)
+\end{equation}
+降低为
+\begin{equation}
+ O(HWk^2n).
+\end{equation}
+因此 DWConv 不只是减少存储，也显著减少空间卷积部分的计算。
+
+\subsection{Depthwise Convolution 的局限}
+
+由于每个通道独立处理，深度卷积本身不能表达“第 1 个通道与第 7 个通道联合决定某个输出”的关系。这就是后续还需要 $1\times1$ 卷积的原因。可把二者类比为：
+\begin{equation}
+ \text{DWConv：每个通道分别观察周围像素},
+\end{equation}
+\begin{equation}
+ \text{PWConv：把不同通道观察到的信息重新组合}.
+\end{equation}
+
+\section{为什么还需要 \texorpdfstring{$1\times1$}{1x1} 卷积}
+
+Depthwise Convolution 只处理每个通道内部的空间关系，不能直接混合不同通道。$1\times1$ 点卷积负责通道融合：
+\begin{equation}
+ v_{h,w,c_{\mathrm{out}}}
+ =\sum_{c_{\mathrm{in}}=1}^{n}
+ W_{c_{\mathrm{out}},c_{\mathrm{in}}}
+ u_{h,w,c_{\mathrm{in}}}.
+\end{equation}
+因此
+\begin{align}
+ \text{Depthwise Conv}&\Rightarrow\text{空间建模},\\
+ 1\times1\text{ Conv}&\Rightarrow\text{跨通道融合}.
+\end{align}
+
+若输入与输出通道都是 $n$，则点卷积权重矩阵为
+\begin{equation}
+ W_{\mathrm{pw}}\in\R^{n\times n},
+\end{equation}
+参数量为
+\begin{equation}
+ P_{\mathrm{PW}}=n^2.
+\end{equation}
+
+
+
+\subsection{一个三通道的 \texorpdfstring{$1\times1$}{1x1} 卷积例子}
+
+假设某个像素位置的三通道向量为
+\begin{equation}
+ u=\begin{bmatrix}u_1&u_2&u_3\end{bmatrix}^{\mathsf T},
+\end{equation}
+点卷积权重为
+\begin{equation}
+ W=
+ \begin{bmatrix}
+ 1&0&1\\
+ 0&1&-1\\
+ \tfrac12&\tfrac12&0
+ \end{bmatrix}.
+\end{equation}
+则输出为
+\begin{equation}
+ v=Wu
+ =\begin{bmatrix}
+ u_1+u_3\\
+ u_2-u_3\\
+ (u_1+u_2)/2
+ \end{bmatrix}.
+\end{equation}
+它没有读取邻近像素，却在同一空间位置重新组合了通道。对于 Mona，$n=64$ 时就是在每个像素位置上执行一个 $64\times64$ 的线性通道变换。
+
+\subsection{为什么先 DWConv 再 PWConv}
+
+该顺序先获得各通道的多尺度空间响应，再对这些响应进行通道融合：
+\begin{equation}
+ \text{空间模式提取}\longrightarrow\text{语义通道组合}.
+\end{equation}
+若反过来，先混合通道再做深度卷积也可以形成另一种结构，但其特征含义和参数作用不同。论文选择的顺序与常见的深度可分离卷积思路一致。
+
+\section{公式（5）：Mona 的完整前向传播}
+
+论文给出
+\begin{equation}
+ x
+ =x_0+U^l\sigma\left(
+ f_{\mathrm{pw}}\left(
+ f_{\mathrm{dw}}\left(
+ D^l(x_{\mathrm{norm}})
+ \right)
+ \right)
+ \right).
+ \tag{5}
+\end{equation}
+
+将其拆成六步更容易理解。
+
+
+
+\subsection{把公式（5）完全展开}
+
+将公式（3）和公式（4）代入公式（5），可写成更完整的嵌套形式：
+\begin{align}
+ x_{\mathrm{out}}
+ =x_0+U^l\sigma\Bigg(&D^l(x_{\mathrm{norm}})
+ +\frac{1}{3}\sum_{i=1}^{3}
+ \omega_{\mathrm{dw}}^i\widehat{\otimes}D^l(x_{\mathrm{norm}})\\
+ &+\omega_{\mathrm{pw}}\otimes
+ \Big[D^l(x_{\mathrm{norm}})
+ +\frac{1}{3}\sum_{i=1}^{3}
+ \omega_{\mathrm{dw}}^i\widehat{\otimes}D^l(x_{\mathrm{norm}})\Big]
+ \Bigg),
+\end{align}
+其中
+\begin{equation}
+ x_{\mathrm{norm}}=s_1\LN(x_0)+s_2x_0.
+\end{equation}
+这个展开式较长，但它清楚说明：Mona 的输出始终建立在原始输入、空间卷积增量和通道混合增量之上。
+
+\subsection{完整的维度追踪表}
+
+\begin{center}
+\begin{tabularx}{\textwidth}{>{\centering\arraybackslash}p{2.5cm}>{\centering\arraybackslash}p{4.2cm}X}
+\toprule
+变量 & 张量形状 & 解释\\
+\midrule
+$x_0$ & $B\times H\times W\times m$ & 冻结主干输出\\
+$x_{\mathrm{norm}}$ & $B\times H\times W\times m$ & LN 与原特征融合，不改形状\\
+$z_1$ & $B\times H\times W\times n$ & Down Projection 后的瓶颈特征\\
+$z_2$ & $B\times H\times W\times n$ & 三个 DWConv 平均并残差相加\\
+$z_3$ & $B\times H\times W\times n$ & $1\times1$ Conv 通道融合\\
+$z_4$ & $B\times H\times W\times n$ & GeLU 激活，不改形状\\
+$\Delta x$ & $B\times H\times W\times m$ & Up Projection 恢复维度\\
+$x_{\mathrm{out}}$ & $B\times H\times W\times m$ & 与 $x_0$ 相加后的输出\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+只有当 $\Delta x$ 与 $x_0$ 的形状完全相同，最后的残差加法才合法。这也是升维层必须恢复到 $m$ 维的直接原因。
+
+\subsection{第一步：输入优化}
+\begin{equation}
+ z_0=s_1\LN(x_0)+s_2x_0.
+\end{equation}
+
+\subsection{第二步：降维}
+\begin{equation}
+ z_1=D^l(z_0),\qquad m\to n.
+\end{equation}
+
+\subsection{第三步：多尺度空间处理}
+\begin{equation}
+ z_2
+ =z_1+\frac{1}{3}\sum_{i=1}^{3}
+ \omega_{\mathrm{dw}}^i\widehat{\otimes}z_1.
+\end{equation}
+
+\subsection{第四步：通道融合}
+\begin{equation}
+ z_3=z_2+\omega_{\mathrm{pw}}\otimes z_2.
+\end{equation}
+
+\subsection{第五步：GeLU 非线性激活}
+\begin{equation}
+ z_4=\sigma(z_3)=\GeLU(z_3).
+\end{equation}
+GeLU 的定义为
+\begin{equation}
+ \GeLU(t)=t\Phi(t),
+\end{equation}
+其中 $\Phi(t)$ 为标准正态分布的累积分布函数。等价形式为
+\begin{equation}
+ \GeLU(t)
+ =\frac{t}{2}\left[1+\operatorname{erf}\left(\frac{t}{\sqrt{2}}\right)\right].
+\end{equation}
+常用近似为
+\begin{equation}
+ \GeLU(t)\approx
+ \frac{t}{2}\left[
+ 1+\tanh\left(
+ \sqrt{\frac{2}{\pi}}
+ \left(t+0.044715t^3\right)
+ \right)
+ \right].
+\end{equation}
+
+\subsection{第六步：升维并与原始输入相加}
+\begin{equation}
+ \Delta x=U^l(z_4),\qquad n\to m,
+\end{equation}
+最终
+\begin{equation}
+ x_{\mathrm{out}}=x_0+\Delta x.
+\end{equation}
+
+\begin{keybox}[Delta-tuning 的本质]
+Mona 学习的不是完全替换预训练特征的新表示，而是一个针对下游任务的修正量：
+\begin{equation*}
+\underbrace{x_{\mathrm{out}}}_{\text{适配后特征}}
+=
+\underbrace{x_0}_{\text{预训练知识}}
++
+\underbrace{\Delta x}_{\text{下游任务增量}}.
+\end{equation*}
+这就是 Delta-tuning 中“Delta”的直观含义。
+\end{keybox}
+
+
+
+\subsection{反向传播如何穿过整个 Mona}
+
+设任务损失为 $\Loss$。对于最后的残差
+\begin{equation}
+ x_{\mathrm{out}}=x_0+\Delta x,
+\end{equation}
+有
+\begin{equation}
+ \frac{\partial\Loss}{\partial x_0}
+ =\frac{\partial\Loss}{\partial x_{\mathrm{out}}}
+ \left(I+\frac{\partial\Delta x}{\partial x_0}\right).
+\end{equation}
+对于可学习参数 $s_1$，根据链式法则：
+\begin{equation}
+ \frac{\partial\Loss}{\partial s_1}
+ =\left\langle
+ \frac{\partial\Loss}{\partial x_{\mathrm{norm}}},
+ \LN(x_0)
+ \right\rangle,
+\end{equation}
+而
+\begin{equation}
+ \frac{\partial\Loss}{\partial s_2}
+ =\left\langle
+ \frac{\partial\Loss}{\partial x_{\mathrm{norm}}},
+ x_0
+ \right\rangle.
+\end{equation}
+这里 $\langle\cdot,\cdot\rangle$ 表示对全部张量元素求内积。投影矩阵和卷积核也按照相同的链式法则接收梯度。由于主干被冻结，这些梯度最终只用于更新 Mona 和任务相关模块。
+
+\section{Mona 中的多级残差连接}
+
+Mona 内部包含四类残差或旁路结构：
+\begin{align}
+ &s_1\LN(x_0)+s_2x_0,\\
+ &z_2=z_1+\operatorname{MultiDWConv}(z_1),\\
+ &z_3=z_2+\operatorname{PWConv}(z_2),\\
+ &x_{\mathrm{out}}=x_0+\Delta x.
+\end{align}
+
+设一般残差结构为
+\begin{equation}
+ y=x+F(x),
+\end{equation}
+则雅可比为
+\begin{equation}
+ \frac{\partial y}{\partial x}
+ =I+\frac{\partial F(x)}{\partial x}.
+\end{equation}
+即使 $\partial F/\partial x$ 较小，仍保留单位矩阵 $I$ 所对应的直接梯度路径。因此残差连接有助于：
+\begin{itemize}
+  \item 缓解梯度消失；
+  \item 保留预训练特征；
+  \item 降低新增模块对主干输出的初始破坏；
+  \item 提高训练稳定性。
+\end{itemize}
+
+
+
+\subsection{为什么说图中有四处旁路}
+
+从结构图逐层看，可以识别出：
+\begin{enumerate}
+  \item 原始输入 $x_0$ 绕过 LayerNorm 分支，以 $s_2x_0$ 进入融合；
+  \item 降维特征绕过三个 DWConv，与多尺度平均结果相加；
+  \item 多尺度输出绕过 $1\times1$ Conv，与通道融合结果相加；
+  \item 整个 Mona 的输入 $x_0$ 绕过全部适配变换，与升维后的 $\Delta x$ 相加。
+\end{enumerate}
+
+因此，Mona 更像是一系列“在恒等映射上叠加小修正”的模块，而不是一条必须完全依赖新卷积才能通过的单向链路。
+
+\subsection{恒等退化能力的重要性}
+
+若某些新增权重接近零，Mona 可以近似退化为
+\begin{equation}
+ x_{\mathrm{out}}\approx x_0.
+\end{equation}
+这意味着训练初期，即使新增模块尚未学会有用变换，模型仍可沿用预训练主干的表示。对于参数高效微调，这种“安全起点”非常重要。
+
+\section{公式（6）：Mona 参数量完整推导}
+
+设输入通道维度为 $m$，瓶颈维度为 $n$。Mona 参数来自：LayerNorm、缩放因子、降维层、升维层、三个深度卷积和一个点卷积。
+
+
+
+\subsection{参数统计中的默认假设}
+
+公式（6）隐含了以下统计约定：
+\begin{enumerate}
+  \item Down Projection 和 Up Projection 都包含偏置；
+  \item LayerNorm 包含 $\gamma$ 与 $\beta$；
+  \item $s_1,s_2$ 是两个标量，而不是长度为 $m$ 的向量；
+  \item DWConv 和 PWConv 的偏置未计入，或者实现中关闭了卷积偏置；
+  \item 三个 DWConv 的输入、输出通道均为 $n$，且通道乘子为 $1$。
+\end{enumerate}
+如果实现设置不同，参数量也应相应改变。例如，若三个 DWConv 和一个 PWConv 都使用偏置，则还应增加
+\begin{equation}
+ 3n+n=4n
+\end{equation}
+个参数，此时总量会变为
+\begin{equation}
+ (2n+3)m+n^2+88n+2.
+\end{equation}
+因此复现代码时应以实际层配置为准，论文公式对应的是其给定统计口径。
+
+\subsection{LayerNorm 与缩放因子}
+
+LayerNorm 的缩放和偏置各有 $m$ 个参数：
+\begin{equation}
+ P_{\mathrm{LN}}=m+m=2m.
+\end{equation}
+两个标量 $s_1,s_2$ 提供
+\begin{equation}
+ P_{\mathrm{scale}}=2.
+\end{equation}
+合计
+\begin{equation}
+ P_{\mathrm{LN+scale}}=2m+2.
+\end{equation}
+
+\subsection{降维层与升维层}
+
+降维层 $m\to n$：
+\begin{equation}
+ P_D=mn+n.
+\end{equation}
+升维层 $n\to m$：
+\begin{equation}
+ P_U=mn+m.
+\end{equation}
+合计
+\begin{equation}
+ P_{\mathrm{linear}}
+ =2mn+m+n.
+\end{equation}
+
+\subsection{三个深度卷积}
+\begin{equation}
+ P_{\mathrm{DW}}=(3^2+5^2+7^2)n=83n.
+\end{equation}
+
+\subsection{\texorpdfstring{$1\times1$}{1x1} 点卷积}
+\begin{equation}
+ P_{\mathrm{PW}}=n^2.
+\end{equation}
+
+\subsection{合并所有参数}
+
+将所有项相加：
+\begin{align}
+ P_{\mathrm{Mona}}
+ &=(2m+2)+(2mn+m+n)+83n+n^2\\
+ &=2mn+3m+n^2+84n+2\\
+ &=(2n+3)m+n^2+84n+2.
+ \tag{6}
+\end{align}
+因此
+\begin{equation}
+ \boxed{P_{\mathrm{Mona}}=(2n+3)m+n^2+84n+2}.
+\end{equation}
+
+\begin{center}
+\begin{tabular}{lcc}
+\toprule
+组成部分 & 参数量 & 来源\\
+\midrule
+LayerNorm & $2m$ & $\gamma,\beta\in\R^m$\\
+缩放参数 & $2$ & $s_1,s_2$\\
+Down Projection & $mn+n$ & 权重与偏置\\
+Up Projection & $mn+m$ & 权重与偏置\\
+三组 DWConv & $83n$ & $(3^2+5^2+7^2)n$\\
+$1\times1$ Conv & $n^2$ & $n\times n$ 通道映射\\
+\midrule
+总计 & $(2n+3)m+n^2+84n+2$ & 公式（6）\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+
+
+\subsection{用分组方式再次核对公式（6）}
+
+也可以把参数分成“与 $m$ 有关”“只与 $n$ 有关”和“常数”三组：
+\begin{align}
+ P_{m\text{-related}}
+ &=2mn+3m=(2n+3)m,\\
+ P_{n\text{-only}}
+ &=n^2+84n,\\
+ P_{\mathrm{constant}}
+ &=2.
+\end{align}
+三组相加即
+\begin{equation}
+ P_{\mathrm{Mona}}=(2n+3)m+n^2+84n+2.
+\end{equation}
+这种分组有助于看出：当 $n$ 固定时，Mona 参数量关于主干通道 $m$ 仅线性增长。
+
+\subsection{再给一个 \texorpdfstring{$m=1024,n=64$}{m=1024, n=64} 的例子}
+
+当 $m=1024$ 时，每个 Mona 的参数量为
+\begin{align}
+ P_{\mathrm{Mona}}
+ &=131\times1024+9474\\
+ &=134144+9474\\
+ &=143618.
+\end{align}
+每个 Block 中两个 Mona 共
+\begin{equation}
+ 2\times143618=287236
+\end{equation}
+个参数。虽然绝对数量比 $m=512$ 时增加，但增长是线性的，而主干 Block 的主要矩阵参数通常按 $m^2$ 增长。
+
+\section{为什么一个 Swin Block 的参数量要乘以 2}
+
+一个 Swin Block 中主要包含注意力模块和前馈网络。作者在两者之后各放置一个 Mona，因此
+\begin{equation}
+ P_{\mathrm{block}}
+ =2P_{\mathrm{Mona}}.
+\end{equation}
+即
+\begin{equation}
+ \boxed{
+ P_{\mathrm{block}}
+ =2\left[(2n+3)m+n^2+84n+2\right]
+ }.
+\end{equation}
+
+\section{代入 \texorpdfstring{$n=64$}{n=64} 后的参数公式}
+
+令 $n=64$，则
+\begin{align}
+ 2n+3&=131,\\
+ n^2&=4096,\\
+ 84n&=5376.
+\end{align}
+于是每个 Mona 的参数量为
+\begin{align}
+ P_{\mathrm{Mona}}
+ &=131m+4096+5376+2\\
+ &=\boxed{131m+9474}.
+\end{align}
+每个 Block 中有两个 Mona：
+\begin{equation}
+ P_{\mathrm{block}}
+ =2(131m+9474)
+ =\boxed{262m+18948}.
+\end{equation}
+
+例如，当 $m=512$ 时：
+\begin{align}
+ P_{\mathrm{Mona}}
+ &=131\times512+9474\\
+ &=67072+9474\\
+ &=76546,
+\end{align}
+一个 Block 中两个 Mona 共
+\begin{equation}
+ 2\times76546=153092
+\end{equation}
+个参数。
+
+\section{为什么模型越大，Mona 参数占比反而越小}
+
+固定 $n=64$ 后，Mona 参数量为
+\begin{equation}
+ P_{\mathrm{Mona}}=131m+9474=O(m).
+\end{equation}
+而 Transformer 中注意力矩阵和前馈网络的主要参数量通常与 $m^2$ 成正比：
+\begin{equation}
+ P_{\mathrm{backbone}}=O(m^2).
+\end{equation}
+因此比例近似为
+\begin{equation}
+ \frac{P_{\mathrm{Mona}}}{P_{\mathrm{backbone}}}
+ \approx\frac{O(m)}{O(m^2)}
+ =O\left(\frac{1}{m}\right).
+\end{equation}
+随着通道维度 $m$ 增大，Mona 的相对占比下降。因此，大模型反而更能体现参数高效微调的存储优势。
+
+
+
+\subsection{用简化的 Transformer Block 估算占比}
+
+忽略偏置和归一化参数，一个典型 Transformer Block 中：Q、K、V 和输出投影约贡献
+\begin{equation}
+ 4m^2
+\end{equation}
+个参数；若 MLP 扩张比例为 $4$，两层 MLP 约贡献
+\begin{equation}
+ m(4m)+(4m)m=8m^2.
+\end{equation}
+因此主块主要参数约为
+\begin{equation}
+ 12m^2.
+\end{equation}
+一个 Block 中两个 Mona 在 $n=64$ 时约为
+\begin{equation}
+ 262m+18948.
+\end{equation}
+忽略较小常数项，比例约为
+\begin{equation}
+ \frac{262m}{12m^2}
+ =\frac{21.83}{m}.
+\end{equation}
+当 $m$ 增大时，该比例按 $1/m$ 下降。这只是帮助理解量级的简化估算，不等同于论文对完整 Swin 网络的精确参数统计。
+
+\section{为什么中间维度 \texorpdfstring{$n$}{n} 不是越大越好}
+
+由公式（6）：
+\begin{equation}
+ P(n)=2mn+3m+n^2+84n+2.
+\end{equation}
+将 $m$ 看作常数，对 $n$ 求导：
+\begin{equation}
+ \frac{\mathrm{d}P}{\mathrm{d}n}=2m+2n+84>0.
+\end{equation}
+因此参数量随 $n$ 单调增加。但性能不一定单调增加：
+\begin{itemize}
+  \item $n$ 太小：压缩过强，任务信息容量不足；
+  \item $n$ 太大：参数增多、冗余增强，可能削弱正则化并引入过拟合；
+  \item 适中的 $n$：在表达能力和参数效率之间取得平衡。
+\end{itemize}
+
+论文比较 $n=32,64,128$，其中 $64$ 的效果最好。这说明 Adapter 性能并不是参数量的简单单调函数。
+
+
+
+\subsection{容量与约束之间的平衡}
+
+可以把 $n$ 看成 Mona 的信息通道宽度。降维映射把 $m$ 维特征压缩到 $n$ 维，若 $n$ 过小，映射的秩最多为 $n$，可能丢失下游任务需要的方向；若 $n$ 很大，低秩约束减弱，参数和计算迅速增加。
+
+从线性代数角度，忽略非线性和卷积时，$U^lD^l$ 的秩满足
+\begin{equation}
+ \operatorname{rank}(U^lD^l)\leq n.
+\end{equation}
+因此 $n$ 控制了 Adapter 能够施加的有效特征修正维度。$n=64$ 表示允许一个最多 64 维的瓶颈子空间，再由卷积和非线性增强表达能力。
+
+论文实验中的 $32,64,128$ 只说明在其训练设置和数据集上 $64$ 最合适，不能推导出所有模型和任务的最优 $n$ 都是 $64$。
+
+\section{从数学上理解 Mona 为什么可能优于全量微调}
+
+论文没有给出“对任意任务 Mona 必然优于全量微调”的理论定理，其结论主要来自实验。但可以从结构上理解其优势。
+
+\subsection{更小的优化空间}
+\begin{equation}
+ Q\ll P.
+\end{equation}
+较少的自由度有助于控制小数据下的过拟合。
+
+\subsection{保留预训练知识}
+\begin{equation}
+ \theta_F=\text{固定}.
+\end{equation}
+主干参数不会在下游训练中被大规模改写。
+
+\subsection{视觉归纳偏置}
+普通线性 Adapter 主要执行
+\begin{equation}
+ x\to D(x)\to\sigma\to U(x),
+\end{equation}
+而 Mona 显式加入二维卷积与多尺度感受野：
+\begin{equation}
+ 3\times3,\\qquad5\times5,
+ \qquad7\times7.
+\end{equation}
+这更符合图像特征的局部空间结构。
+
+\subsection{残差式增量学习}
+\begin{equation}
+ x_{\mathrm{out}}=x_0+\Delta x.
+\end{equation}
+模型只需要学习“新任务相对预训练表示需要修改什么”，而不是重新构造全部特征。
+
+
+
+\subsection{偏差--方差角度的直观解释}
+
+全量微调具有更大的函数空间，训练误差通常更容易降低，但其估计方差可能更大；Mona 增加了结构约束，可能带来一定偏差，却降低了在有限数据上的方差。可以用经典关系作直观理解：
+\begin{equation}
+ \mathbb{E}\big[(\widehat f(x)-f(x))^2\big]
+ =\operatorname{Bias}^2+\operatorname{Variance}+\text{Noise}.
+\end{equation}
+Mona 并不是让三项都自动减小，而是试图通过冻结主干和限制增量结构，在偏差与方差之间取得更好的平衡。
+
+\subsection{为什么低资源任务更容易体现优势}
+
+当数据量较少而主干模型很大时，全量微调的参数数量相对于监督信号过多，容易出现训练集表现很好、验证集下降的情况。Mona 固定大部分参数，相当于把预训练模型作为强先验，只允许有限的任务修正，因此更不容易严重偏离预训练解。
+
+\subsection{“超过全量微调”仍然是经验结论}
+
+必须区分结构解释与数学证明。上述分析只能说明 Mona \emph{为什么有可能} 更稳定、更适合视觉迁移，不能推出
+\begin{equation}
+ \forall D,\quad
+ \operatorname{Perf}_{\mathrm{Mona}}(D)
+ >\operatorname{Perf}_{\mathrm{Full}}(D).
+\end{equation}
+性能还会受到数据量、任务差异、学习率、训练轮数、优化器、随机种子和主干模型等因素影响。
+
+\section{论文数学表达中需要注意的问题}
+
+\subsection{公式（1）和（2）的箭头不是严格最优解求法}
+
+论文使用
+\begin{equation}
+ \theta\leftarrow\argmin_{\theta}\Loss,
+\end{equation}
+更规范的写法是
+\begin{equation}
+ \theta^\ast=\argmin_{\theta}\Loss.
+\end{equation}
+实际训练采用迭代优化，而不是一次精确求得全局最优解。
+
+\subsection{公式（4）的平均记号可以写得更清楚}
+
+论文形式中 $\avg$ 与求和记号较紧凑，更明确的写法为
+\begin{equation}
+ \frac{1}{3}\sum_{i=1}^{3}
+ \omega_{\mathrm{dw}}^i\widehat{\otimes}z.
+\end{equation}
+
+\subsection{深度卷积权重维度的标准写法}
+
+深度卷积权重通常写作
+\begin{equation}
+ W_{\mathrm{dw}}\in\R^{n\times1\times k\times k},
+\end{equation}
+或简写为
+\begin{equation}
+ W_{\mathrm{dw}}\in\R^{k\times k\times n}.
+\end{equation}
+因为每个输入通道对应一个独立卷积核。
+
+\subsection{参数量公式可能忽略卷积偏置}
+
+论文将 DWConv 和 PWConv 分别统计为 $83n$ 与 $n^2$，没有额外加入卷积偏置。因此公式（6）应当对应无偏置卷积，或作者在统计时忽略了这部分偏置。
+
+\subsection{论文没有给出理论性能上界证明}
+
+论文从实验上观察到
+\begin{equation}
+ \operatorname{Performance}(\mathrm{Mona})
+ >
+ \operatorname{Performance}(\mathrm{Full}),
+\end{equation}
+但没有证明该关系对任意数据集、任意模型和任意训练设置都成立。
+
+
+
+\subsection{多尺度分支使用固定等权平均}
+
+论文采用
+\begin{equation}
+ \frac{g_1+g_2+g_3}{3}
+\end{equation}
+进行融合，默认三个尺度同等重要。一个自然的改进方向是引入可学习权重
+\begin{equation}
+ g=\alpha_1g_1+\alpha_2g_2+\alpha_3g_3,
+\qquad
+ \sum_{i=1}^{3}\alpha_i=1,
+\end{equation}
+甚至让 $\alpha_i$ 随输入动态变化。但这会增加参数和计算，也可能降低当前结构的简洁性。该思路属于基于论文结构的延伸，不是论文原有公式。
+
+\subsection{只统计参数量并不能完整代表效率}
+
+参数高效不等于推理完全免费。Mona 在每个 Block 中增加多个卷积和投影运算，因此即使可训练参数少，仍会增加前向传播计算和延迟。完整效率评价还应同时考虑
+\begin{equation}
+ \text{训练显存},\quad
+ \text{训练 FLOPs},\quad
+ \text{推理 FLOPs},\quad
+ \text{实际延迟},\quad
+ \text{模型存储}.
+\end{equation}
+论文也在讨论部分承认 Adapter 类方法会引入额外推理成本。
+
+\section{整篇数学部分的压缩总结}
+
+Mona 的核心计算可以整理为
+\begin{align}
+ x_{\mathrm{norm}}
+ &=s_1\LN(x_0)+s_2x_0,\\
+ z_1&=D^l(x_{\mathrm{norm}}),\\
+ z_2&=z_1+\frac{1}{3}\sum_{i=1}^{3}
+ \omega_{\mathrm{dw}}^i\widehat{\otimes}z_1,\\
+ z_3&=z_2+\omega_{\mathrm{pw}}\otimes z_2,\\
+ x_{\mathrm{out}}
+ &=x_0+U^l\bigl(\GeLU(z_3)\bigr).
+\end{align}
+
+对应参数量为
+\begin{equation}
+ \boxed{P_{\mathrm{Mona}}=(2n+3)m+n^2+84n+2}.
+\end{equation}
+
+\begin{conclusionbox}[最终理解]
+Mona 的核心不是复杂的数学定理，而是一个高度结构化的增量映射：冻结庞大的预训练主干，只训练少量视觉友好的参数；用缩放 LayerNorm 调节输入分布，用多尺度深度卷积提取空间特征，用 $1\times1$ 卷积融合通道，再通过升维和残差连接把任务增量加回预训练特征。其优势来自“更合适的结构约束”，而不是单纯来自“参数更少”。
+\end{conclusionbox}
+
+
+
+\section{从零基础复述一次完整计算}
+
+假设冻结主干输出一张特征图 $x_0$，通道数为 $m$。Mona 的计算可以按下面的顺序复述：
+\begin{enumerate}
+  \item 对每个空间位置的 $m$ 维向量做 LayerNorm，得到分布更稳定的特征；
+  \item 用两个可学习标量把归一化特征和原始特征相加，得到 $x_{\mathrm{norm}}$；
+  \item 用矩阵 $W_D$ 把通道从 $m$ 压缩到 $n=64$；
+  \item 对每个通道分别做 $3\times3$、$5\times5$、$7\times7$ 卷积，把三个结果平均后加回输入；
+  \item 用 $1\times1$ 卷积在 64 个通道之间交换信息，再做一次残差相加；
+  \item 用 GeLU 引入非线性；
+  \item 用矩阵 $W_U$ 把通道从 64 恢复到 $m$；
+  \item 把得到的任务增量 $\Delta x$ 加回原始特征 $x_0$。
+\end{enumerate}
+
+所以最终输出仍与主干原特征形状相同，但已经包含针对新任务学习到的局部、多尺度和通道修正。
+
+\begin{keybox}[一条公式记住 Mona]
+\begin{equation*}
+\boxed{
+ x_{\mathrm{out}}
+ =x_0+U^l\GeLU\!\left(
+ f_{\mathrm{pw}}\!\left(
+ f_{\mathrm{dw}}\!\left(
+ D^l\!\left[s_1\LN(x_0)+s_2x_0\right]
+ \right)\right)\right)
+}
+\end{equation*}
+从最内层向外读即可：先调整输入，再降维，再做空间卷积和通道融合，随后激活、升维，最后与原输入相加。
+\end{keybox}
+
+\section{读完后应当能够回答的问题}
+
+\begin{enumerate}
+  \item 公式（1）与公式（2）的优化变量分别是什么？
+  \item 为什么冻结参数不代表损失对这些参数的数学偏导必然为零？
+  \item $s_1\LN(x_0)+s_2x_0$ 为什么比单独使用 LN 更灵活？
+  \item 为什么 $3\times3$、$5\times5$、$7\times7$ 分支能够直接求平均？
+  \item DWConv 为什么只有 $k^2n$ 个参数，而普通卷积需要 $k^2n^2$？
+  \item 为什么 DWConv 后面仍需要 $1\times1$ Conv？
+  \item 公式（5）中每一步的张量形状是什么？
+  \item 公式（6）中的 $84n$ 是如何由 $n+83n$ 得到的？
+  \item 为什么一个 Swin Block 的 Mona 参数量要乘以 2？
+  \item 为什么 $n$ 增大时参数量单调增加，但性能不一定单调增加？
+\end{enumerate}
+
+\section*{论文来源}
+\addcontentsline{toc}{section}{论文来源}
+Dongshuo Yin, Leiyi Hu, Bin Li, Youqun Zhang, and Xue Yang. \textit{5\% $>$ 100\%: Breaking Performance Shackles of Full Fine-Tuning on Visual Recognition Tasks}. arXiv:2408.08345, 2024.
+
+\end{document}

@@ -1,0 +1,548 @@
+\documentclass[UTF8,12pt,a4paper,fontset=none]{ctexart}
+\usepackage[a4paper,left=1.82cm,right=1.82cm,top=1.72cm,bottom=1.82cm,headheight=15pt]{geometry}
+\usepackage{fontspec,xeCJK}
+\setmainfont{Liberation Serif}
+\setsansfont{DejaVu Sans}
+\setmonofont{DejaVu Sans Mono}
+\setCJKmainfont[BoldFont=Noto Serif CJK SC Bold]{Noto Serif CJK SC}
+\setCJKsansfont[BoldFont=Noto Sans CJK SC Bold]{Noto Sans CJK SC}
+\setCJKmonofont{Noto Sans Mono CJK SC}
+\usepackage{amsmath,amssymb,mathtools,bm}
+\usepackage{booktabs,longtable,tabularx,array,multirow}
+\usepackage{enumitem,xcolor}
+\usepackage[most]{tcolorbox}
+\usepackage{fancyhdr,titlesec,hyperref,cleveref,lastpage}
+\usepackage{tikz,float,caption,listings}
+\usetikzlibrary{arrows.meta,positioning,calc,fit,backgrounds,shapes.geometric}
+\definecolor{mainblue}{RGB}{39,82,138}
+\definecolor{deepblue}{RGB}{25,55,95}
+\definecolor{softblue}{RGB}{235,243,252}
+\definecolor{softgreen}{RGB}{238,248,241}
+\definecolor{softorange}{RGB}{255,246,232}
+\definecolor{softgray}{RGB}{245,246,248}
+\definecolor{warnred}{RGB}{160,48,48}
+\hypersetup{unicode=true,colorlinks=true,linkcolor=deepblue,urlcolor=mainblue,citecolor=deepblue}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.36em}
+\setlength{\tabcolsep}{5pt}
+\renewcommand{\arraystretch}{1.2}
+\allowdisplaybreaks[4]
+\emergencystretch=3em
+\sloppy
+\pagestyle{fancy}\fancyhf{}\fancyfoot[C]{\small 第 \thepage\ 页，共 \pageref{LastPage} 页}\renewcommand{\headrulewidth}{0.4pt}
+\titleformat{\section}{\Large\bfseries\color{deepblue}}{\thesection}{0.65em}{}
+\titleformat{\subsection}{\large\bfseries\color{mainblue}}{\thesubsection}{0.55em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries}{\thesubsubsection}{0.5em}{}
+\numberwithin{equation}{section}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Prob}{\mathbb{P}}
+\newcommand{\Loss}{\mathcal{L}}
+\newcommand{\norm}[1]{\left\lVert #1\right\rVert}
+\newcommand{\ip}[2]{\left\langle #1,#2\right\rangle}
+\newcommand{\tr}{\operatorname{Tr}}
+\newcommand{\diag}{\operatorname{diag}}
+\newcommand{\rank}{\operatorname{rank}}
+\newcommand{\softmax}{\operatorname{softmax}}
+\newcommand{\argmin}{\operatorname*{arg\,min}}
+\newcommand{\argmax}{\operatorname*{arg\,max}}
+\newcommand{\sg}{\operatorname{sg}}
+\newcommand{\KL}{D_{\mathrm{KL}}}
+\newcommand{\dd}{\mathrm{d}}
+\newtcolorbox{keybox}[1][]{enhanced,breakable,colback=softblue,colframe=mainblue,boxrule=0.8pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\newtcolorbox{examplebox}[1][]{enhanced,breakable,colback=softgreen,colframe=green!45!black,boxrule=0.7pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\newtcolorbox{notebox}[1][]{enhanced,breakable,colback=softorange,colframe=orange!70!black,boxrule=0.7pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\newtcolorbox{criticalbox}[1][]{enhanced,breakable,colback=red!3,colframe=warnred,boxrule=0.8pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\lstset{basicstyle=\ttfamily\small,breaklines=true,frame=single,backgroundcolor=\color{softgray},numbers=left,numberstyle=\tiny,showstringspaces=false,columns=fullflexible}
+\hypersetup{pdftitle={34 Toy Models of Superposition 数学过程详解},pdfauthor={OpenAI}}
+\fancyhead[L]{\small 34 Toy Models of Superposition}
+\fancyhead[R]{\small 数学过程详解}
+\setlength{\abovedisplayskip}{0.82em}
+\setlength{\belowdisplayskip}{0.82em}
+\setlength{\abovedisplayshortskip}{0.45em}
+\setlength{\belowdisplayshortskip}{0.45em}
+\begin{document}
+\begin{center}
+{\LARGE\bfseries 34\_Toy Models of Superposition 数学过程详解}\par
+\vspace{0.35em}
+{\large Gram 矩阵、稀疏碰撞、ReLU 过滤与球面几何}
+\end{center}
+\vspace{0.45em}
+\begin{keybox}[本文只处理真正需要推导的部分]
+本文从玩具自编码器出发推导特征收益与干扰，解释线性模型、1-sparse 极限、antipodal 编码、碰撞概率、Welch bound 和多面体相变。全文按“公式从哪里来--每个符号是什么--中间步骤为何成立--维度和复杂度如何核对--论文结论依赖哪些假设”的顺序展开；不复述实验表格，也不使用与论文无关的通用背景凑页数。
+\end{keybox}
+\tableofcontents
+\newpage
+
+\section{玩具数据分布}
+输入 $x\in\R^n$ 的每个特征独立：
+\begin{equation}
+ x_i=\begin{cases}
+ 0,&\text{概率 }S_i,\\
+ U_i,&\text{概率 }1-S_i,
+ \end{cases}
+\end{equation}
+其中 $U_i$ 常取 $U[0,1]$。$S_i$ 越大，特征越稀疏。每个特征重要性 $I_i>0$。
+
+\section{编码--解码模型}
+隐藏维度 $m<n$，编码
+\begin{equation}
+ h=Wx,
+ \qquad W\in\R^{m\times n}.
+\end{equation}
+第 $i$ 列 $W_i$ 是特征 $i$ 在隐藏空间中的方向。线性解码
+\begin{equation}
+ x'=W^\top Wx+b,
+\end{equation}
+ReLU 解码
+\begin{equation}
+ \boxed{x'=\operatorname{ReLU}(W^\top Wx+b)}.
+\end{equation}
+加权均方误差
+\begin{equation}
+ \boxed{\Loss=\E_x\sum_{i=1}^{n}I_i(x_i-x_i')^2}.
+\end{equation}
+
+\section{Gram 矩阵与干扰}
+定义
+\begin{equation}
+ G=W^\top W,
+ \qquad G_{ij}=W_i^\top W_j.
+\end{equation}
+则预激活
+\begin{equation}
+ \widetilde x_i=G_{ii}x_i+
+ \sum_{j\ne i}G_{ij}x_j+b_i.
+\end{equation}
+第一项是自身信号，后面的和是其它特征的干扰。若所有被表示特征正交且 $\norm{W_i}=1$，则 $G=I$；但 $m<n$ 时最多只有 $m$ 个非零向量两两正交。
+
+\section{线性模型为何不愿超位置表示}
+忽略偏置，线性重构误差
+\begin{equation}
+ \Loss=\E\norm{(I-W^\top W)x}_I^2.
+\end{equation}
+若数据协方差 $\Sigma$，无权情形
+\begin{equation}
+ \Loss=\tr[(I-W^\top W)\Sigma(I-W^\top W)].
+\end{equation}
+最佳 rank-$m$ 线性自编码器等价于 PCA，选择协方差最大的 $m$ 个正交方向。表示额外非正交特征增加交叉干扰，却没有 ReLU 可以过滤负激活，因此不划算。
+
+\section{1-sparse 极限的损失分解}
+当 $S\to1$，样本大多为零或只有一个非零特征。总损失按活跃特征数 $k$ 分解：
+\begin{equation}
+ \Loss=\sum_{k=0}^{n}\binom{n}{k}(1-S)^kS^{n-k}\Loss_k.
+\end{equation}
+主导项为 $\Loss_0$ 和 $\Loss_1$。零输入损失
+\begin{equation}
+ \Loss_0=\sum_iI_i\operatorname{ReLU}(b_i)^2,
+\end{equation}
+所以正偏置受惩罚。
+
+对仅特征 $i$ 活跃、幅值 $x_i$ 的样本，输出第 $j$ 维
+\begin{equation}
+ x'_j=\operatorname{ReLU}(W_j^\top W_i x_i+b_j).
+\end{equation}
+损失包含两类：
+\begin{align}
+ \Loss_{1,i}=&\ I_i\E[(x_i-\operatorname{ReLU}(\norm{W_i}^2x_i+b_i))^2]\\
+ &+\sum_{j\ne i}I_j\E[\operatorname{ReLU}(W_j^\top W_i x_i+b_j)^2].
+\end{align}
+第一行是特征收益不足，第二行是干扰能量。
+
+\section{ReLU 为什么让负干扰近似免费}
+若 $x_i\ge0$、$b_j\le0$，且
+\begin{equation}
+ W_j^\top W_i<0,
+\end{equation}
+则
+\begin{equation}
+ W_j^\top W_i x_i+b_j<0
+\end{equation}
+并被 ReLU 截为 0。因此负内积不会错误激活特征 $j$。正内积却可能产生假阳性。模型因而偏好反向或钝角方向，解释了 antipodal pair 和多面体结构。
+
+\section{两个特征共享一维的显式例子}
+取 $m=1,n=2$，$W=[1,-1]$、$b=0$。则
+\begin{equation}
+ h=x_1-x_2,
+\end{equation}
+\begin{equation}
+ x_1'=\operatorname{ReLU}(h),
+ \qquad x_2'=\operatorname{ReLU}(-h).
+\end{equation}
+若稀疏到几乎不会同时激活：
+\begin{itemize}
+ \item $x_1>0,x_2=0$ 时，$(x_1',x_2')=(x_1,0)$；
+ \item $x_1=0,x_2>0$ 时，$(x_1',x_2')=(0,x_2)$。
+\end{itemize}
+只有二者同时出现时发生冲突。因此一维可近乎无损存两个互斥特征。
+
+\section{同时激活概率决定超位置收益}
+若两个特征独立，活跃概率 $p=1-S$，同时活跃概率
+\begin{equation}
+ p_{\rm collide}=p^2.
+\end{equation}
+各自单独活跃概率总和约 $2p(1-p)$。当 $p\ll1$，碰撞是二阶小量 $O(p^2)$，表示收益是 $O(p)$；所以稀疏度越高，超位置越划算。
+
+\section{特征维度与干扰度量}
+论文使用向量范数判断是否表示：
+\begin{equation}
+ \norm{W_i}.
+\end{equation}
+共享程度可用
+\begin{equation}
+ \operatorname{Interf}_i=
+ \sum_{j\ne i}\left(\frac{W_i^\top W_j}{\norm{W_i}}
+\right)^2.
+\end{equation}
+若 $W_i$ 与所有其它方向正交，该值为 0；若多个方向在 $W_i$ 上有大投影，则干扰高。
+
+\section{Welch Bound：有限维中不可避免的相关性}
+对 $n$ 个单位向量置于 $\R^m$，平均平方内积满足
+\begin{equation}
+ \frac{1}{n(n-1)}\sum_{i\ne j}(W_i^\top W_j)^2
+ \ge\frac{n-m}{m(n-1)}.
+\end{equation}
+当 $n>m$ 时右侧为正，不能让所有特征完全正交。超位置学习的几何问题就是如何把不可避免的相关性安排到损失最小的位置。
+
+\section{与球面码和 Thomson 问题的联系}
+在均匀重要性、单位范数、1-sparse 极限下，自身收益近似固定，目标主要最小化正干扰：
+\begin{equation}
+ E(W)=\sum_{i\ne j}\left[\max(0,W_i^\top W_j+b_j)
+\right]^2.
+\end{equation}
+这类似在球面上排斥点的能量最小化。最优方向常对应正多边形、正多面体或其它均匀球面码；几何相变来自 $n/m$ 和稀疏度变化时最优码结构突然改变。
+
+\section{容量的定性判据}
+新增特征 $i$ 的期望收益约
+\begin{equation}
+ B_i\propto (1-S_i)I_i,
+\end{equation}
+与已有特征碰撞造成的成本约
+\begin{equation}
+ C_i\propto \sum_j(1-S_i)(1-S_j)I_j[W_i^\top W_j]_+^2.
+\end{equation}
+当 $B_i>C_i$ 时值得表示；因成本含两个活跃概率，稀疏特征更容易满足该不等式。这是论文“重要性--稀疏度相图”的数学核心。
+% AUGMENTED_DETAILED_MATH_2
+
+\section{玩具模型目标的完整展开}
+输入特征 $x\in\R^n$ 独立、非负且稀疏。编码
+\begin{equation}
+ h=Wx,
+ \qquad W\in\R^{m\times n},
+\end{equation}
+解码共享转置并加偏置
+\begin{equation}
+ \widehat x=\operatorname{ReLU}(W^\top Wx+b).
+\end{equation}
+令 Gram 矩阵 $G=W^\top W$，则第 $i$ 个输出
+\begin{equation}
+ \widehat x_i=\operatorname{ReLU}
+ \left(G_{ii}x_i+\sum_{j\ne i}G_{ij}x_j+b_i\right).
+\end{equation}
+损失
+\begin{equation}
+ \Loss=\E\sum_iI_i(x_i-\widehat x_i)^2
+\end{equation}
+中，对角项控制自身重建，非对角项就是超位置干扰。
+
+\section{线性模型为何最多保留 $m$ 个正交特征}
+去掉 ReLU 与偏置，$\widehat x=Gx$。若特征独立、零均值、方差 $\sigma_i^2$，
+\begin{equation}
+ \Loss=\tr[(I-G)^\top D(I-G)],
+ \qquad D=\diag(I_i\sigma_i^2).
+\end{equation}
+约束 $G=W^\top W\succeq0$ 且 $\rank(G)\le m$。最佳解等价于对加权协方差做 rank-$m$ 投影，只保留最大的 $m$ 个特征方向。没有非线性时，额外非正交特征带来的交叉误差无法被门控消除。
+
+\section{ReLU 对负干扰的截断}
+若 $x_i=0$，其它特征对第 $i$ 个输出产生
+\begin{equation}
+ z_i=\sum_{j\ne i}G_{ij}x_j+b_i.
+\end{equation}
+当 $z_i<0$ 时
+\begin{equation}
+ \widehat x_i=0,
+\end{equation}
+干扰完全被 ReLU 删除。因而模型偏好让特征方向内积为负或用负偏置抵消正干扰。代价是当真实 $x_i>0$ 但总 pre-activation 仍小于零时产生漏检。
+
+\section{两个特征共享一维的显式解}
+取 $m=1,n=2$，权重 $W=[w_1,w_2]$。Gram
+\begin{equation}
+ G=\begin{bmatrix}w_1^2&w_1w_2\\w_1w_2&w_2^2\end{bmatrix}.
+\end{equation}
+若令 $w_1=1,w_2=-1$，则
+\begin{equation}
+ h=x_1-x_2,
+\end{equation}
+解码 pre-activation
+\begin{equation}
+ z_1=x_1-x_2+b_1,
+ \qquad z_2=-x_1+x_2+b_2.
+\end{equation}
+当两特征不会同时激活，$x_2=0$ 时 $z_1\approx x_1$，$x_1=0$ 时 $z_2\approx x_2$，一维即可区分两个特征；同时激活时 $h$ 相消，出现不可避免碰撞。
+
+\section{稀疏度阈值的收益--干扰平衡}
+设每个特征激活概率 $p$，单独表示一个新特征带来期望收益约
+\begin{equation}
+ B\approx pI\E[x_i^2].
+\end{equation}
+与已有 $M$ 个特征非正交共享时，碰撞概率约 $Mp^2$，干扰代价
+\begin{equation}
+ C\approx Mp^2\kappa,
+\end{equation}
+其中 $\kappa$ 汇总内积和幅值。新增特征有利的大致条件
+\begin{equation}
+ pI\E[x_i^2]>Mp^2\kappa,
+\end{equation}
+即
+\begin{equation}
+ p<\frac{I\E[x_i^2]}{M\kappa}.
+\end{equation}
+这解释了相变：稀疏度越高，线性 $O(p)$ 收益超过二阶 $O(p^2)$ 碰撞代价。
+
+\section{Gram 矩阵的 PSD 与秩约束}
+任意可实现 Gram 必须满足
+\begin{equation}
+ G\succeq0,
+ \qquad \rank(G)\le m.
+\end{equation}
+反之任何满足这两点的 $G$ 都可分解为 $W^\top W$。因此玩具模型的几何优化可直接看成在 PSD 低秩矩阵空间中选择对角与非对角结构。正多边形等几何解不是可视化巧合，而是低秩 Gram 约束下均匀分散内积的最优码。
+
+\section{Welch Bound 的推导}
+设单位列向量 $W_i$，Gram $G$。有
+\begin{equation}
+ \tr(G)=n,
+ \qquad \rank(G)\le m.
+\end{equation}
+设非零特征值为 $\lambda_1,\ldots,\lambda_m$。Cauchy--Schwarz
+\begin{equation}
+ \sum_{a=1}^{m}\lambda_a^2
+ \ge\frac{(\sum_a\lambda_a)^2}{m}
+ =\frac{n^2}{m}.
+\end{equation}
+另一方面
+\begin{equation}
+ \tr(G^2)=\sum_iG_{ii}^2+\sum_{i\ne j}G_{ij}^2
+ =n+\sum_{i\ne j}(W_i^\top W_j)^2.
+\end{equation}
+所以
+\begin{equation}
+ \sum_{i\ne j}(W_i^\top W_j)^2
+ \ge\frac{n^2}{m}-n
+ =\frac{n(n-m)}m.
+\end{equation}
+除以 $n(n-1)$ 得论文中的平均平方内积下界。
+
+\section{特征维度的微分解释}
+若特征 $i$ 的表示方向随样本略有变化，局部敏感度可由 Jacobian
+\begin{equation}
+ J_i=\frac{\partial h}{\partial x_i}=W_i
+\end{equation}
+衡量。论文扩展模型中“feature dimensionality”可概念化为该特征在表示空间占用的有效维度
+\begin{equation}
+ D_i=\frac{\norm{W_i}^2}{\sum_j(\widehat W_i^\top W_j)^2},
+ \qquad \widehat W_i=W_i/\norm{W_i}.
+\end{equation}
+分母是其它特征在该方向上的总投影；干扰越大，有效独占维度越小。
+
+\section{与压缩感知的区别}
+压缩感知从 $m<n$ 的线性测量
+\begin{equation}
+ h=Wx
+\end{equation}
+恢复 $s$-稀疏向量，典型需求
+\begin{equation}
+ m=O(s\log(n/s)).
+\end{equation}
+它依赖专门解码算法和 RIP；玩具模型只用一层 $W^\top$ 加 ReLU，因此不能达到一般压缩感知最优恢复界。两者共同点是稀疏性允许低维叠加，区别是神经网络同时学习测量矩阵和简单非线性解码器。
+
+\section{重要性不均匀时的几何分配}
+若特征重要性 $I_i$ 不同，模型倾向给高重要性特征更大范数和更独立方向。自重建收益近似
+\begin{equation}
+ I_i(1-\norm{W_i}^2)^2\E[x_i^2],
+\end{equation}
+干扰项含
+\begin{equation}
+ I_i(W_i^\top W_j)^2\E[x_j^2].
+\end{equation}
+因此几何排布不是均匀球面码，而是带权球面码：重要特征占据更接近正交的主方向，低重要性特征被压缩到超位置中。
+\clearpage
+\section{玩具模型目标的完整矩阵展开}
+设输入特征 $x\in\R^n$，编码矩阵 $W\in\R^{m\times n}$，模型
+\begin{equation}
+ \widehat x=\operatorname{ReLU}(W^\top Wx+b).
+\end{equation}
+第 $i$ 个特征重要性为 $I_i$，加权平方损失
+\begin{equation}
+ \Loss=\E_x\sum_{i=1}^{n}I_i(x_i-\widehat x_i)^2.
+\end{equation}
+令 Gram 矩阵
+\begin{equation}
+ G=W^\top W,
+\end{equation}
+则
+\begin{equation}
+ \widehat x_i=\operatorname{ReLU}
+ \left(G_{ii}x_i+
+ \sum_{j\ne i}G_{ij}x_j+b_i\right).
+\end{equation}
+对角项控制自身信号，非对角项是其他特征对第 $i$ 个输出的干扰。超位置的本质就是允许 $G_{ij}\ne0$，用非线性过滤干扰。
+
+\section{线性模型为什么最多无干扰表示 $m$ 个特征}
+若没有 ReLU 和 bias，并要求完美重建所有 $x$，需
+\begin{equation}
+ W^\top W=I_n.
+\end{equation}
+但
+\begin{equation}
+ \rank(W^\top W)\le\rank(W)\le m.
+\end{equation}
+若 $n>m$，$I_n$ 的秩为 $n$，不可能相等。因此线性瓶颈最多无损表示 $m$ 个独立方向。超位置通过允许近似相关和稀疏输入，突破“每维一个特征”的限制。
+
+\section{两个特征共享一维的显式求解}
+取 $m=1,n=2$，编码向量
+\begin{equation}
+ W=(w_1,w_2).
+\end{equation}
+Gram 矩阵
+\begin{equation}
+ G=\begin{pmatrix}w_1^2&w_1w_2\\w_1w_2&w_2^2\end{pmatrix}.
+\end{equation}
+若选择 $w_1=1,w_2=-1$，则
+\begin{equation}
+ G=\begin{pmatrix}1&-1\\-1&1\end{pmatrix}.
+\end{equation}
+输入 $(x_1,0)$ 时预激活
+\begin{equation}
+ (x_1,-x_1)+b;
+\end{equation}
+输入 $(0,x_2)$ 时
+\begin{equation}
+ (-x_2,x_2)+b.
+\end{equation}
+若 $x_i\ge0$ 且 $b=0$，ReLU 会把负交叉项截断，两个特征在不同时激活时都能正确恢复；只有同时激活才互相干扰。
+
+\section{稀疏度决定同时激活概率}
+设每个特征独立以概率 $p$ 非零。两个特征同时激活概率
+\begin{equation}
+ P_{\rm collision}=p^2.
+\end{equation}
+只有一个激活概率
+\begin{equation}
+ P_{\rm single}=2p(1-p).
+\end{equation}
+当 $p\ll1$，
+\begin{equation}
+ P_{\rm collision}=O(p^2),
+ \qquad P_{\rm single}=O(p).
+\end{equation}
+因此共享维度带来的收益是一阶出现，干扰损失是二阶出现，稀疏时超位置有利。
+
+\section{一个简化相变阈值}
+假设每个单独激活样本若表示该特征可减少损失 $B$，同时激活时造成干扰损失 $C$。共享表示的期望净收益近似
+\begin{equation}
+ \Delta=2p(1-p)B-p^2C.
+\end{equation}
+共享有利条件
+\begin{equation}
+ 2p(1-p)B>p^2C.
+\end{equation}
+若 $p>0$，化简
+\begin{equation}
+ p<\frac{2B}{2B+C}.
+\end{equation}
+这给出一个定性“相变”阈值：越稀疏、单特征价值越高、干扰代价越低，越倾向超位置。
+
+\section{Gram 矩阵的 PSD 与秩约束}
+因为 $G=W^\top W$，对任意 $z$，
+\begin{equation}
+ z^\top Gz=\|Wz\|^2\ge0,
+\end{equation}
+所以 $G\succeq0$。同时
+\begin{equation}
+ \rank(G)\le m.
+\end{equation}
+因此并非任意相关性矩阵都能由 $m$ 维表示实现。优化实际上是在“低秩 PSD Gram 矩阵”集合上寻找对角信号和非对角干扰的最佳权衡。
+
+\section{Welch Bound 的逐步推导}
+设 $n$ 个单位向量 $w_i\in\R^m$，矩阵 $W=[w_1,\ldots,w_n]$，Gram 矩阵 $G=W^\top W$。有
+\begin{equation}
+ \tr(G)=\sum_i\|w_i\|^2=n.
+\end{equation}
+$G$ 至多有 $m$ 个非零特征值 $\lambda_1,\ldots,\lambda_m$。由 Cauchy--Schwarz
+\begin{equation}
+ \sum_{k=1}^{m}\lambda_k^2
+ \ge\frac1m\left(\sum_k\lambda_k\right)^2
+ =\frac{n^2}{m}.
+\end{equation}
+另一方面
+\begin{equation}
+ \|G\|_F^2=	r(G^2)
+ =\sum_iG_{ii}^2+
+ \sum_{i\ne j}|w_i^\top w_j|^2
+ =n+
+ \sum_{i\ne j}|w_i^\top w_j|^2.
+\end{equation}
+因此
+\begin{equation}
+ \sum_{i\ne j}|w_i^\top w_j|^2
+ \ge\frac{n^2}{m}-n
+ =\frac{n(n-m)}{m}.
+\end{equation}
+平均平方相关至少
+\begin{equation}
+ \frac1{n(n-1)}\sum_{i\ne j}|w_i^\top w_j|^2
+ \ge\frac{n-m}{m(n-1)}.
+\end{equation}
+当 $n>m$ 时，非零干扰不可避免。
+
+\section{等角紧框架与规则多面体}
+Welch Bound 取等号需要非零特征值相等，并且向量间相关性尽可能均匀。若
+\begin{equation}
+ |w_i^\top w_j|=\mu,\quad i\ne j,
+\end{equation}
+则形成等角框架。低维中这些向量常对应规则多边形、多面体顶点。例如 $m=2,n=3$ 的最优布局是平面上相隔 $120^\circ$ 的三个方向，
+\begin{equation}
+ w_i^\top w_j=\cos120^\circ=-\frac12.
+\end{equation}
+这解释了论文观察到的多面体几何并非偶然，而是球面码优化的结果。
+
+\section{特征维度的微分解释}
+论文定义的特征维度可理解为对该特征缩放的敏感性。若第 $i$ 个特征向量长度平方为
+\begin{equation}
+ D_i=\|w_i\|^2,
+\end{equation}
+则 $D_i\approx1$ 表示几乎独立占据一维，$0<D_i<1$ 表示共享或被压缩，$D_i=0$ 表示未表示。对总容量
+\begin{equation}
+ \sum_iD_i=	r(W^\top W)=\tr(WW^\top),
+\end{equation}
+若行空间近似正交归一，右侧约为 $m$。所以特征维度总和受表示维度预算约束。
+
+\section{重要性不均匀时的资源分配}
+损失权重 $I_i$ 不同。若暂忽略干扰，表示第 $i$ 个特征带来的收益约与 $I_i$ 成正比，模型优先把维度分配给高重要性特征。加入干扰后，低重要性但高度稀疏的特征仍可能以超位置形式“搭便车”。这可写成近似背包问题：
+\begin{equation}
+ \max_{D_i\in[0,1]}
+ \sum_i I_iB_i(D_i)-
+ \sum_{i<j}C_{ij}(D_i,D_j),
+ \qquad
+ \sum_iD_i\le m.
+\end{equation}
+相变来自最优解在参数变化时从 $D_i=0$ 突然跳到正值或规则几何布局。
+
+\section{与压缩感知的相同点和不同点}
+压缩感知观测
+\begin{equation}
+ y=Ax,
+\end{equation}
+利用 $x$ 的稀疏性从 $m<n$ 的观测恢复 $x$。若 $A$ 满足 RIP，
+\begin{equation}
+ (1-\delta)\|x\|^2\le\|Ax\|^2\le(1+\delta)\|x\|^2
+\end{equation}
+对稀疏向量成立。超位置同样利用稀疏性把多个特征装入少量维度，但神经网络学习编码 $W$，并用 ReLU 等非线性做近似解码；它不一定满足统一 RIP，也不追求对所有稀疏向量精确恢复。
+
+\section{对抗扰动与干扰方向}
+若两个特征方向相关，输入沿某个未激活特征方向的小扰动 $\delta x_j$ 会在第 $i$ 个输出产生
+\begin{equation}
+ \delta z_i=G_{ij}\delta x_j.
+\end{equation}
+当许多小相关项同向累加，可能把预激活推过 ReLU 阈值，制造错误特征。这给出超位置与对抗脆弱性的一个线性化联系：对抗方向利用了 Gram 矩阵的非对角干扰。
+\end{document}

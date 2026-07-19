@@ -1,0 +1,493 @@
+\documentclass[11pt]{article}
+\usepackage{fontspec}
+\setmainfont[
+  Path=fonts/,
+  Extension=.ttf,
+  UprightFont=*-400,
+  BoldFont=*-700
+]{NotoSerifSC}
+\setsansfont[
+  Path=fonts/,
+  Extension=.ttf,
+  UprightFont=*-400,
+  BoldFont=*-700
+]{NotoSerifSC}
+\XeTeXlinebreaklocale "zh"
+\XeTeXlinebreakskip=0pt plus 1pt
+\usepackage[a4paper,margin=1.70cm]{geometry}
+\usepackage{amsmath,amssymb,mathtools,bm}
+\usepackage{booktabs,longtable,array}
+\usepackage{enumitem}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\setlist{nosep,leftmargin=2em}
+\allowdisplaybreaks[3]
+\numberwithin{equation}{section}
+\pagestyle{plain}
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Pp}{\mathbb{P}}
+\newcommand{\1}{\mathbf{1}}
+\newcommand{\T}{\mathsf{T}}
+\newcommand{\F}{\mathrm{F}}
+\newcommand{\cN}{\mathcal{N}}
+\newcommand{\cL}{\mathcal{L}}
+\newcommand{\cS}{\mathcal{S}}
+\newcommand{\cH}{\mathcal{H}}
+\newcommand{\cA}{\mathcal{A}}
+\newcommand{\cM}{\mathcal{M}}
+\newcommand{\cT}{\mathcal{T}}
+\newcommand{\diag}{\operatorname{diag}}
+\newcommand{\tr}{\operatorname{tr}}
+\newcommand{\Var}{\operatorname{Var}}
+\newcommand{\Cov}{\operatorname{Cov}}
+\newcommand{\softmax}{\operatorname{softmax}}
+\newcommand{\KL}{D_{\mathrm{KL}}}
+\newcommand{\sg}{\operatorname{sg}}
+\begin{document}
+    \begin{center}
+      {\LARGE\bfseries 07\_LoRI}
+    \end{center}
+    \vspace{0.8em}
+
+    \section{符号与维度}
+    \begin{longtable}{>{$}l<{$} >{$}l<{$} p{10cm}}
+    \toprule
+    \text{符号} & \text{维度} & \text{含义}\\
+    \midrule
+    W_0 & \R^{m\times n} & 冻结预训练权重。\\
+A,B & \R^{r\times n},\R^{m\times r} & 低秩下投影与上投影。\\
+r & \mathbb N & 适配器秩。\\
+x,\delta & \R^n,\R^m & 输入和输出端反向梯度。\\
+c & \R & 低秩更新缩放系数。\\
+M_t & \{0,1\}^{m\times r} & 任务 $t$ 的稀疏掩码。\\
+    \bottomrule
+    \end{longtable}
+
+    所有向量默认是列向量；未特别说明时，期望同时对数据、噪声和采样时刻取值。下文只展开论文中承担方法逻辑的公式，并把所需假设写在推导发生的位置。
+
+\section{低秩更新的完整矩阵微分}
+
+令冻结权重 $W_0\in\R^{m\times n}$，低秩更新
+\begin{equation}
+ W=W_0+cBA,\qquad
+ B\in\R^{m\times r},\quad A\in\R^{r\times n},\quad c=\alpha/r.
+\end{equation}
+对一个输入 $x\in\R^n$，
+\begin{equation}
+ h=W_0x+cB(Ax).
+\end{equation}
+令 $y=Ax\in\R^r$、输出梯度 $g=\partial\cL/\partial h\in\R^m$。
+微分为
+\begin{equation}
+ dh=c\,dB\,y+cB\,dA\,x+cBA\,dx+W_0dx.
+\end{equation}
+由 $d\cL=g^Tdh$ 以及
+$a^TdMb=\langle ab^T,dM\rangle_\F$，逐项得到
+\begin{align}
+ \boxed{\nabla_B\cL=c,g,y^T=c,g,x^TA^T,}\\
+ \boxed{\nabla_A\cL=c,B^Tg,x^T,}\\
+ \boxed{\nabla_x\cL=W_0^Tg+cA^TB^Tg.}
+\end{align}
+若批输入按行堆成 $X\in\R^{b\times n}$，上游梯度为
+$G\in\R^{b\times m}$，则
+\begin{align}
+ \nabla_B\cL&=cG^TXA^T,\\
+ \nabla_A\cL&=cB^TG^TX.
+\end{align}
+
+\subsection{rank-1 专家分解}
+
+写 $B=[b_1,\ldots,b_r]$、$A$ 的第 $i$ 行为 $a_i^T$，则
+\begin{equation}
+ BA=\sum_{i=1}^{r}b_i a_i^T,
+ \qquad BAx=\sum_{i=1}^{r}b_i(a_i^Tx).
+\end{equation}
+每一项均为秩至多 $1$ 的更新。对单样本，
+\begin{equation}
+ \nabla_{b_i}\cL=c(a_i^Tx)g,\qquad
+ \nabla_{a_i}\cL=c(b_i^Tg)x.
+\end{equation}
+于是列 $b_i$ 的更新强度由标量路由量 $a_i^Tx$ 控制；这也是把 rank 分量解释为隐式专家的数学依据。
+
+\section{初始化时两因子的非对称动力学}
+
+常见初始化为 $B_0=0$、$A_0$ 随机。此时
+\begin{equation}
+ \Delta W_0=cB_0A_0=0,
+\end{equation}
+所以前向不改变基座。梯度却满足
+\begin{equation}
+ \nabla_B\cL\big|_{0}=cG^TXA_0^T,\qquad
+ \nabla_A\cL\big|_{0}=cB_0^TG^TX=0.
+\end{equation}
+第一步梯度下降
+\begin{equation}
+ B_1=-\eta cG^TXA_0^T,\qquad A_1=A_0,
+\end{equation}
+因此第二步开始 $A$ 才获得非零梯度。若反过来令 $A_0=0$、$B_0$ 随机，
+则第一步只有 $A$ 更新。两种初始化前向等价，但早期优化动力学不同。
+
+还有尺度不识别性：任意 $s\ne0$ 满足
+\begin{equation}
+ BA=(sB)(s^{-1}A).
+\end{equation}
+然而带独立权重衰减时
+\begin{equation}
+ \|sB\|_F^2+\|s^{-1}A\|_F^2
+ =s^2\|B\|_F^2+s^{-2}\|A\|_F^2,
+\end{equation}
+最优平衡尺度由求导得到
+\begin{equation}
+ s^4=\frac{\|A\|_F^2}{\|B\|_F^2}.
+\end{equation}
+故因子正则化会隐式选择分解，即使乘积 $BA$ 相同。
+
+\section{最佳秩约束近似}
+
+设目标全量更新的奇异值分解为
+\begin{equation}
+ \Delta W^*=U\Sigma V^T
+ =\sum_{i=1}^{q}\sigma_i u_iv_i^T,
+ \qquad\sigma_1\ge\cdots\ge\sigma_q\ge0.
+\end{equation}
+截断矩阵
+\begin{equation}
+ \Delta W_r=\sum_{i=1}^{r}\sigma_i u_iv_i^T
+\end{equation}
+满足 Eckart--Young--Mirsky 结论
+\begin{equation}
+ \min_{\operatorname{rank}(M)\le r}
+ \|\Delta W^*-M\|_F^2
+ =\sum_{i>r}\sigma_i^2.
+\end{equation}
+一种直接证明如下。因 Frobenius 范数在正交变换下不变，令
+$C=U^TMV$，则 $\operatorname{rank}(C)\le r$ 且
+\begin{equation}
+ \|\Delta W^*-M\|_F^2=\|\Sigma-C\|_F^2.
+\end{equation}
+任意秩不超过 $r$ 的 $C$ 至多精确保留 $r$ 个相互正交奇异方向；
+由奇异值的变分刻画或 Pythagoras 分解，剩余平方能量至少为
+$\sum_{i>r}\sigma_i^2$。取
+$C=\diag(\sigma_1,\ldots,\sigma_r,0,\ldots)$ 达到该下界。
+
+谱范数版本为
+\begin{equation}
+ \min_{\operatorname{rank}(M)\le r}\|\Delta W^*-M\|_2=\sigma_{r+1}.
+\end{equation}
+这只是表达能力上界；训练能否找到截断 SVD 解还取决于非凸因子化、数据和优化器。
+
+\section{子空间限制与梯度投影}
+
+若 $A$ 冻结，只训练 $B$，可达更新集合为
+\begin{equation}
+ \cS_A=\{BA:B\in\R^{m\times r}\}.
+\end{equation}
+其中每一行都位于 $A$ 的行空间。若 $A$ 满行秩，其行空间正交投影为
+\begin{equation}
+ P_A=A^T(AA^T)^{-1}A.
+\end{equation}
+给定任意目标更新 $M$，最小二乘问题
+\begin{equation}
+ \min_B\|M-BA\|_F^2
+\end{equation}
+的正规方程为
+\begin{equation}
+ (BA-M)A^T=0,\qquad
+ B^*=MA^T(AA^T)^{-1}.
+\end{equation}
+故最佳可达更新
+\begin{equation}
+ B^*A=MP_A,\qquad
+ \min_B\|M-BA\|_F^2=\|M(I-P_A)\|_F^2.
+\end{equation}
+这把“冻结随机下投影”的表达损失精确写成目标在随机行空间外的能量。
+
+\section{随机投影的尺度与集中}
+
+设 $A_{ij}$ 独立、均值零、方差 $1/r$。对固定 $x\in\R^n$，
+\begin{align}
+ \E\|Ax\|_2^2
+ &=\sum_{i=1}^{r}\E\left(\sum_jA_{ij}x_j\right)^2\\
+ &=\sum_i\sum_j\E[A_{ij}^2]x_j^2
+ =\|x\|_2^2.
+\end{align}
+若 $A_{ij}\sim\cN(0,1/r)$，则
+\begin{equation}
+ \frac{\|Ax\|_2^2}{\|x\|_2^2}
+ \sim\frac1r\chi_r^2.
+\end{equation}
+利用卡方尾界，对 $0<\varepsilon<1$，
+\begin{equation}
+ \Pp\left(
+ \left|\|Ax\|_2^2-\|x\|_2^2\right|
+ \ge\varepsilon\|x\|_2^2\right)
+ \le2\exp\left(-\frac r8\varepsilon^2\right).
+\end{equation}
+对有限集合 $N$ 个向量做并合界，若
+\begin{equation}
+ r\ge\frac8{\varepsilon^2}\log\frac{2N}{\delta},
+\end{equation}
+则所有向量同时保持范数的概率至少为 $1-\delta$。对点对差向量应用同一结论即得到距离保持。
+
+稀疏随机投影若每个元素以概率 $\rho$ 非零，则为保持同样二阶矩，非零幅值应按
+$1/\sqrt{\rho r}$ 缩放：
+\begin{equation}
+ A_{ij}=\begin{cases}
+ +1/\sqrt{\rho r},&\rho/2,\\
+ -1/\sqrt{\rho r},&\rho/2,\\
+ 0,&1-\rho.
+ \end{cases}
+\end{equation}
+此时 $\E[A_{ij}^2]=1/r$，但四阶矩为
+$\E[A_{ij}^4]=1/(\rho r^2)$；$\rho$ 越小，尾部越重，获得同样集中精度通常需要更大 $r$。
+
+\section{任务更新的干扰量}
+
+两个任务的更新 $U_i=B_iA_i$、$U_j=B_jA_j$ 的 Frobenius 内积为
+\begin{align}
+ \langle U_i,U_j\rangle_F
+ &=\tr((B_iA_i)^TB_jA_j)\\
+ &=\tr(B_i^TB_jA_jA_i^T).
+\end{align}
+因此
+\begin{equation}
+ |\langle U_i,U_j\rangle_F|
+ \le\|B_i^TB_j\|_F\|A_jA_i^T\|_F.
+\end{equation}
+随机下投影近似正交只控制第二个因子；若 $B_i,B_j$ 范数无界，绝对干扰仍可任意大。
+对加权合并 $U=\sum_iw_iU_i$，
+\begin{equation}
+ \|U\|_F^2
+ =\sum_iw_i^2\|U_i\|_F^2
+ +2\sum_{i<j}w_iw_j\langle U_i,U_j\rangle_F.
+\end{equation}
+交叉项就是任务干扰对合并范数的精确贡献，而不是抽象的“方向冲突”。
+
+\section{参数量、训练内存与合并}
+
+全量矩阵参数量为 $mn$，低秩因子参数量为
+\begin{equation}
+ r(m+n),
+\end{equation}
+压缩要求 $r<mn/(m+n)$。训练时只有可训练因子需要梯度和优化器状态；
+冻结基座仍需存储权重并参与前向、反向的输入梯度计算。
+
+推理前可合并
+\begin{equation}
+ W_{\rm merged}=W_0+cBA.
+\end{equation}
+合并后对单个适配器不增加矩阵乘次数，但丢失了动态切换不同适配器的便利。
+若基座以低比特存储，通常必须先在计算精度中反量化再加 $BA$；直接在整数码空间相加并不等价。
+
+\section{光滑损失的下降引理}
+
+若 $L$ 的梯度是 $\beta$-Lipschitz：
+\begin{equation}
+ \|\nabla L(x)-\nabla L(y)\|
+ \le\beta\|x-y\|,
+\end{equation}
+则沿线段积分
+\begin{align}
+ L(y)-L(x)
+ &=\int_0^1\nabla L(x+t(y-x))^T(y-x)dt\\
+ &=\nabla L(x)^T(y-x)+R,
+\end{align}
+余项满足
+\begin{align}
+ |R|
+ &\le\int_0^1\beta t\|y-x\|^2dt
+ =\frac\beta2\|y-x\|^2.
+\end{align}
+故下降引理
+\begin{equation}
+ L(y)\le L(x)+\nabla L(x)^T(y-x)
+ +\frac\beta2\|y-x\|^2.
+\end{equation}
+取梯度步 $y=x-\eta\nabla L(x)$：
+\begin{equation}
+ L(y)\le L(x)-\eta\left(1-\frac{\beta\eta}{2}\right)
+ \|\nabla L(x)\|^2.
+\end{equation}
+当 $0<\eta<2/\beta$ 时每个精确梯度步下降；深网中 $\beta$ 未知且随位置变化，
+这仍解释了学习率过大造成不稳定的局部机制。
+
+\section{二阶近似与曲率方向}
+
+在 $x$ 附近 Taylor 展开
+\begin{equation}
+ L(x+\Delta)=L(x)+g^T\Delta
+ +\frac12\Delta^TH\Delta+O(\|\Delta\|^3).
+\end{equation}
+若 $H=U\diag(\lambda_i)U^T$，在本征方向 $u_i$ 上步长 $a$ 的变化
+\begin{equation}
+ \Delta L\approx a g_i+\frac12\lambda_i a^2.
+\end{equation}
+$\lambda_i>0$ 为局部碗形，$\lambda_i<0$ 是负曲率逃离鞍点方向。
+加阻尼的 Newton 步
+\begin{equation}
+ \Delta=-(H+\lambda I)^{-1}g
+\end{equation}
+在特征方向缩放为 $-g_i/(\lambda_i+\lambda)$，避免接近零或负特征值造成巨大步长。
+
+\section{链式 Jacobian 与条件数}
+
+复合映射 $y=f_L\circ\cdots\circ f_1(x)$ 的 Jacobian
+\begin{equation}
+ J_{y\leftarrow x}=J_LJ_{L-1}\cdots J_1.
+\end{equation}
+谱范数上界
+\begin{equation}
+ \|J_{y\leftarrow x}\|_2\le\prod_{\ell=1}^{L}\|J_\ell\|_2.
+\end{equation}
+若各层最小奇异值存在，
+\begin{equation}
+ \sigma_{\min}(J_{y\leftarrow x})
+ \ge\prod_\ell\sigma_{\min}(J_\ell).
+\end{equation}
+因此条件数至多乘法累积：
+\begin{equation}
+ \kappa(J_{y\leftarrow x})
+ \le\prod_\ell\kappa(J_\ell).
+\end{equation}
+低维映射、递归模块和物理传播都面临同一问题：表示存在不代表反向梯度数值良态。
+
+\section{随机梯度的偏差与方差}
+
+设样本梯度 $g(\theta;\xi)$ 满足
+\begin{equation}
+ \E_\xi g(\theta;\xi)=\nabla L(\theta),
+ \qquad \E\|g-\nabla L\|^2\le\sigma^2.
+\end{equation}
+独立批量 $B$ 的平均
+\begin{equation}
+ \bar g_B=\frac1B\sum_{i=1}^{B}g_i
+\end{equation}
+满足
+\begin{equation}
+ \E\bar g_B=\nabla L,\qquad
+ \E\|\bar g_B-\nabla L\|^2\le\frac{\sigma^2}{B}.
+\end{equation}
+若样本相关，协方差项出现：
+\begin{equation}
+ \Var(\bar g_B)=\frac1{B^2}\left[
+ \sum_i\Var(g_i)+\sum_{i\ne j}\Cov(g_i,g_j)
+ \right].
+\end{equation}
+扩大批量只有在交叉协方差不主导时才近似按 $1/B$ 降噪。
+
+若使用有偏估计 $\E\widehat g=\nabla L+b$，均方误差分解
+\begin{equation}
+ \E\|\widehat g-\nabla L\|^2
+ =\|b\|^2+\tr\Cov(\widehat g).
+\end{equation}
+直通估计、停止梯度目标和截断反传通常以可控偏差换低方差或低内存。
+
+\section{Adam 的尺度归一化}
+
+逐坐标 Adam 更新
+\begin{align}
+ m_t&=\beta_1m_{t-1}+(1-\beta_1)g_t,\\
+ v_t&=\beta_2v_{t-1}+(1-\beta_2)g_t^2,\\
+ \widehat m_t&=m_t/(1-\beta_1^t),\\
+ \widehat v_t&=v_t/(1-\beta_2^t),\\
+ \theta_{t+1}&=\theta_t-\eta
+ \frac{\widehat m_t}{\sqrt{\widehat v_t}+\epsilon}.
+\end{align}
+若梯度长期乘常数 $c>0$，忽略 $\epsilon$ 时
+$\widehat m$ 乘 $c$、$\sqrt{\widehat v}$ 也乘 $c$，更新近似不变。
+但瞬态、符号变化和 $\epsilon$ 会破坏精确尺度不变性。
+
+AdamW 把权重衰减解耦：
+\begin{equation}
+ \theta_{t+1}=(1-\eta\lambda)\theta_t
+ -\eta\frac{\widehat m_t}{\sqrt{\widehat v_t}+\epsilon}.
+\end{equation}
+这不同于把 $\lambda\theta$ 加入梯度后再经过自适应分母；后者会按坐标二阶矩缩放正则化。
+
+\section{范数约束与投影梯度}
+
+约束集合 $\mathcal C$ 上的投影梯度
+\begin{equation}
+ \theta^+=\Pi_{\mathcal C}(\theta-\eta g),
+ \qquad
+ \Pi_{\mathcal C}(x)=\arg\min_{y\in\mathcal C}\|x-y\|^2.
+\end{equation}
+对欧氏球 $\mathcal C=\{x:\|x\|\le R\}$，
+\begin{equation}
+ \Pi_{\mathcal C}(x)=
+ \begin{cases}
+ x,&\|x\|\le R,\\
+ Rx/\|x\|,&\|x\|>R.
+ \end{cases}
+\end{equation}
+对流形约束，局部一阶步先投影到切空间，再用 retraction 回到流形；
+仅把参数写成 $g(z)$ 相当于用参数化隐式满足约束，但会引入 $J_g^TJ_g$ 的坐标度量。
+
+\section{Lipschitz 误差的层间传播}
+
+真实模块 $f_\ell$、近似模块 $\widehat f_\ell$ 满足
+\begin{equation}
+ \|f_\ell(x)-\widehat f_\ell(x)\|\le\epsilon_\ell,
+ \qquad
+ \|f_\ell(x)-f_\ell(y)\|\le L_\ell\|x-y\|.
+\end{equation}
+令真实、近似中间状态差 $e_\ell$。三角不等式给出
+\begin{align}
+ e_{\ell+1}
+ &=\|f_\ell(h_\ell)-\widehat f_\ell(\widehat h_\ell)\|\\
+ &\le L_\ell e_\ell+\epsilon_\ell.
+\end{align}
+递归展开
+\begin{equation}
+ e_L\le
+ \left(\prod_{j=0}^{L-1}L_j\right)e_0
+ +\sum_{\ell=0}^{L-1}
+ \left(\prod_{j=\ell+1}^{L-1}L_j\right)\epsilon_\ell.
+\end{equation}
+早期层误差乘更多后续 Lipschitz 因子，所以量化、低秩近似或局部训练的相同单层误差，
+放在不同深度并不等价。
+
+\section{复杂度必须区分四个量}
+
+参数量、FLOPs、激活内存和通信量是不同指标。以线性层
+$Y=XW$、$X\in\R^{B\times n}$、$W\in\R^{n\times m}$ 为例：
+\begin{align}
+ \text{参数量}&=nm,\\
+ \text{前向乘加量}&\asymp Bnm,\\
+ \text{主要激活量}&=B(n+m),\\
+ \text{数据并行梯度通信}&\asymp nm.
+\end{align}
+低秩因子可同时减少参数与乘法，但动态稀疏若实现仍做稠密 kernel，参数/FLOPs 公式不会自动转化为墙钟加速。
+冻结参数减少梯度和优化器状态，却不一定减少前向计算或输入梯度计算。
+
+\section{冻结随机投影与任务掩码}
+LoRI 对任务 $t$ 使用
+\begin{equation}
+  \Delta W_t=c(B_t\odot M_t)A,
+\end{equation}
+其中 $A$ 随机初始化后冻结，$M_t\in\{0,1\}^{m\times r}$ 是任务稀疏掩码。若每个元素独立以概率 $s$ 保留，则期望可训练参数为 $smr$，相对 LoRA 的 $r(m+n)$ 进一步下降。
+
+\section{交叉任务干扰的内积}
+以 Frobenius 内积衡量两个任务更新的干扰：
+\begin{align}
+  \langle\Delta W_s,\Delta W_t\rangle_\F
+  &=c^2\tr\left((B_s\odot M_s)AA^{\T}(B_t\odot M_t)^{\T}\right).
+\end{align}
+若随机投影近似满足 $AA^{\T}\approx\sigma_A^2I_r$，则
+\begin{equation}
+  \langle\Delta W_s,\Delta W_t\rangle_\F
+  \approx c^2\sigma_A^2
+  \langle B_s\odot M_s,B_t\odot M_t\rangle_\F.
+\end{equation}
+掩码支持不相交时右侧严格为零；随机稀疏掩码只有“期望重叠小”，并不保证每次合并都正交。
+
+\section{随机投影的尺度}
+若 $A_{ij}\sim\cN(0,1/n)$，固定 $x$ 时
+\begin{equation}
+  \E\|Ax\|_2^2=\frac rn\|x\|_2^2.
+\end{equation}
+使用 $\sqrt{n/r}A$ 才在期望上保持范数。冻结 $A$ 的作用是固定共享子空间；它减少任务间自由度，也可能在 $r$ 太小时丢失任务需要的方向。
+
+\end{document}

@@ -1,0 +1,1120 @@
+\documentclass[UTF8,12pt,a4paper,fontset=none]{ctexart}
+
+\usepackage[a4paper,left=1.82cm,right=1.82cm,top=1.72cm,bottom=1.82cm,headheight=15pt]{geometry}
+\usepackage{fontspec}
+\usepackage{xeCJK}
+\setmainfont{Liberation Serif}
+\setsansfont{DejaVu Sans}
+\setmonofont{DejaVu Sans Mono}
+\setCJKmainfont[BoldFont=Noto Serif CJK SC Bold]{Noto Serif CJK SC}
+\setCJKsansfont{Noto Sans CJK SC}
+\setCJKmonofont{Noto Sans Mono CJK SC}
+
+\usepackage{amsmath,amssymb,mathtools,bm}
+\usepackage{booktabs,longtable,tabularx,array,multirow}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,calc,fit,backgrounds,shapes.geometric}
+\usepackage[most]{tcolorbox}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{hyperref}
+\usepackage{cleveref}
+\usepackage{caption}
+\usepackage{float}
+\usepackage{listings}
+
+\definecolor{mainblue}{RGB}{39,82,138}
+\definecolor{deepblue}{RGB}{25,55,95}
+\definecolor{softblue}{RGB}{235,243,252}
+\definecolor{softgreen}{RGB}{238,248,241}
+\definecolor{softorange}{RGB}{255,246,232}
+\definecolor{softgray}{RGB}{245,246,248}
+\definecolor{warnred}{RGB}{160,48,48}
+
+\hypersetup{
+  unicode=true,
+  colorlinks=true,
+  linkcolor=deepblue,
+  urlcolor=mainblue,
+  citecolor=deepblue,
+  pdftitle={LoRI 数学过程详解},
+  pdfauthor={OpenAI}
+}
+
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.36em}
+\setlength{\tabcolsep}{5pt}
+\renewcommand{\arraystretch}{1.22}
+\allowdisplaybreaks[4]
+\emergencystretch=3em
+\sloppy
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small LoRI 数学过程详解}
+\fancyhead[R]{\small 低秩适配、稀疏掩码与近似正交性}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\titleformat{\section}{\Large\bfseries\color{deepblue}}{\thesection}{0.65em}{}
+\titleformat{\subsection}{\large\bfseries\color{mainblue}}{\thesubsection}{0.55em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries}{\thesubsubsection}{0.5em}{}
+\numberwithin{equation}{section}
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Prob}{\mathbb{P}}
+\newcommand{\norm}[1]{\left\lVert #1\right\rVert}
+\newcommand{\ip}[2]{\left\langle #1,#2\right\rangle_F}
+\newcommand{\tr}{\operatorname{Tr}}
+\newcommand{\rank}{\operatorname{rank}}
+\newcommand{\Quantile}{\operatorname{Quantile}}
+\newcommand{\diag}{\operatorname{diag}}
+\newcommand{\odotm}{\odot}
+\newcommand{\Loss}{\mathcal{L}}
+\newcommand{\Dt}{\mathcal{D}_t}
+\newcommand{\Dc}{\mathcal{D}^{C}_t}
+
+\newtcolorbox{keybox}[1][]{
+  enhanced,breakable,colback=softblue,colframe=mainblue,
+  boxrule=0.8pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,
+  title={#1},fonttitle=\bfseries
+}
+\newtcolorbox{examplebox}[1][]{
+  enhanced,breakable,colback=softgreen,colframe=green!45!black,
+  boxrule=0.7pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,
+  title={#1},fonttitle=\bfseries
+}
+\newtcolorbox{notebox}[1][]{
+  enhanced,breakable,colback=softorange,colframe=orange!70!black,
+  boxrule=0.7pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,
+  title={#1},fonttitle=\bfseries
+}
+\newtcolorbox{criticalbox}[1][]{
+  enhanced,breakable,colback=red!3,colframe=warnred,
+  boxrule=0.8pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,
+  title={#1},fonttitle=\bfseries
+}
+
+\setlength{\abovedisplayskip}{0.82em}
+\setlength{\belowdisplayskip}{0.82em}
+\setlength{\abovedisplayshortskip}{0.45em}
+\setlength{\belowdisplayshortskip}{0.45em}
+\begin{document}
+
+\begin{center}
+  {\LARGE\bfseries 07\_LoRI 数学过程详解}\par
+  \vspace{0.35em}
+  {\large LoRA with Reduced Interference：从低秩分解、稀疏掩码到适配器近似正交性的完整推导}
+\end{center}
+\vspace{0.5em}
+
+\begin{keybox}[阅读说明]
+本文针对论文 \emph{LoRI: Reducing Cross-Task Interference in Multi-Task Low-Rank Adaptation} 的数学部分进行逐式拆解。正文不仅复现论文公式（1）--（15），还补充矩阵维度检查、梯度推导、参数量计算、掩码重叠概率、Taylor 展开、Hoeffding 不等式证明细节，以及论文中若干需要谨慎理解的假设。所有“补充推导”都会明确标注，不把推论误写成论文已证明的结论。
+\end{keybox}
+
+\tableofcontents
+\newpage
+
+\section{论文数学主线：LoRI 到底解决什么问题}
+
+LoRI 建立在标准 LoRA 的低秩更新上，但做了两个限制：
+\begin{enumerate}[label=\arabic*.,leftmargin=2.3em]
+  \item 将低秩投影矩阵 $A_t$ 冻结为随机矩阵，只训练 $B_t$；
+  \item 使用任务特定的二值掩码 $M_t$，只允许 $B_t$ 中少量位置更新。
+\end{enumerate}
+
+对任务 $t$，LoRI 的权重增量写成
+\begin{equation}
+  \Delta_t=A_t(B_t\odot M_t).
+  \label{eq:lori-core}
+\end{equation}
+这里 $\odot$ 表示逐元素乘法。整个方法的数学逻辑可概括为
+\begin{equation}
+  \boxed{
+  \text{随机低维子空间 }A_t
+  +\text{ 稀疏可训练坐标 }B_t\odot M_t
+  \Longrightarrow
+  \text{参数少、任务间干扰小}
+  }.
+\end{equation}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=1.1cm and 1.2cm,>=Latex,
+box/.style={draw,rounded corners,minimum height=0.95cm,minimum width=2.2cm,align=center,fill=softblue},
+train/.style={draw,rounded corners,minimum height=0.95cm,minimum width=2.4cm,align=center,fill=softgreen},
+frozen/.style={draw,rounded corners,minimum height=0.95cm,minimum width=2.4cm,align=center,fill=softgray}]
+\node[box] (x) {$x$};
+\node[frozen,right=of x] (w) {预训练权重\\$W_0$（冻结）};
+\node[frozen,below=of w] (a) {随机投影\\$A_t$（冻结）};
+\node[train,right=of a] (b) {稀疏更新\\$B_t\odot M_t$};
+\node[box,right=2.1cm of w] (h) {$h=xW_0+xA_t(B_t\odot M_t)$};
+\draw[->] (x) -- (w);
+\draw[->] (x.south) |- (a.west);
+\draw[->] (a) -- (b);
+\draw[->] (w) -- (h);
+\draw[->] (b.east) -| (h.south);
+\end{tikzpicture}
+\caption{LoRI 的核心计算图。灰色模块被冻结，绿色模块中只有掩码为 $1$ 的位置可训练。}
+\end{figure}
+
+\section{预备知识：后文频繁出现的数学对象}
+
+\subsection{矩阵形状与批量输入}
+
+设某个线性层的预训练权重为
+\begin{equation}
+  W_0\in\R^{d_{\mathrm{in}}\times d_{\mathrm{out}}}.
+\end{equation}
+若一条输入向量采用行向量记法，则
+\begin{equation}
+  x\in\R^{1\times d_{\mathrm{in}}},
+  \qquad xW_0\in\R^{1\times d_{\mathrm{out}}}.
+\end{equation}
+若批量大小为 $b$，则
+\begin{equation}
+  X\in\R^{b\times d_{\mathrm{in}}},
+  \qquad XW_0\in\R^{b\times d_{\mathrm{out}}}.
+\end{equation}
+论文使用行向量右乘权重的约定。部分代码库使用列向量写成 $W_0x$，二者只是记号转置，原理相同。
+
+\subsection{低秩矩阵与秩上界}
+
+LoRA 将一个大矩阵增量分解为
+\begin{equation}
+  \Delta_t=A_tB_t,
+  \qquad
+  A_t\in\R^{d_{\mathrm{in}}\times r},
+  \quad
+  B_t\in\R^{r\times d_{\mathrm{out}}},
+\end{equation}
+其中
+\begin{equation}
+  r\ll \min\{d_{\mathrm{in}},d_{\mathrm{out}}\}.
+\end{equation}
+根据矩阵秩的基本性质，
+\begin{equation}
+  \rank(A_tB_t)
+  \leq \min\{\rank(A_t),\rank(B_t)\}
+  \leq r.
+\end{equation}
+所以 $A_tB_t$ 虽然与 $W_0$ 形状相同，但只能位于秩不超过 $r$ 的低维集合中。
+
+\subsection{Frobenius 内积与范数}
+
+对同形状矩阵 $P,Q\in\R^{m\times n}$，Frobenius 内积定义为
+\begin{equation}
+  \ip{P}{Q}
+  =\sum_{i=1}^{m}\sum_{j=1}^{n}P_{ij}Q_{ij}
+  =\tr(P^{\top}Q).
+\end{equation}
+对应范数为
+\begin{equation}
+  \norm{P}_F=\sqrt{\ip{P}{P}}.
+\end{equation}
+若
+\begin{equation}
+  \ip{P}{Q}=0,
+\end{equation}
+则称 $P,Q$ 在参数空间中正交。LoRI 所说的“适配器近似正交”，就是不同任务的 $\Delta_s,\Delta_t$ 的 Frobenius 内积接近零。
+
+\subsection{逐元素掩码}
+
+二值掩码
+\begin{equation}
+  M_t\in\{0,1\}^{r\times d_{\mathrm{out}}}
+\end{equation}
+作用于 $B_t$：
+\begin{equation}
+  (B_t\odot M_t)_{ij}=(B_t)_{ij}(M_t)_{ij}.
+\end{equation}
+当 $(M_t)_{ij}=0$ 时，该坐标被永久压成零；当 $(M_t)_{ij}=1$ 时，该坐标允许学习。
+
+\section{公式（1）：从全量线性层到 LoRA 低秩增量}
+
+论文公式（1）为
+\begin{equation}
+  h=xW_0+x\Delta_t=xW_0+xA_tB_t.
+  \tag{1}
+  \label{eq:paper1}
+\end{equation}
+
+\subsection{逐步检查维度}
+
+各项形状如下：
+\begin{align}
+  x &: 1\times d_{\mathrm{in}},\\
+  W_0 &: d_{\mathrm{in}}\times d_{\mathrm{out}},\\
+  A_t &: d_{\mathrm{in}}\times r,\\
+  B_t &: r\times d_{\mathrm{out}}.
+\end{align}
+于是
+\begin{align}
+  xA_t &\in\R^{1\times r},\\
+  xA_tB_t &\in\R^{1\times d_{\mathrm{out}}},\\
+  xW_0+xA_tB_t &\in\R^{1\times d_{\mathrm{out}}}.
+\end{align}
+两条分支形状一致，因此可以相加。
+
+\subsection{为什么这叫“先投影、再展开”}
+
+第一步
+\begin{equation}
+  z=xA_t\in\R^{1\times r}
+\end{equation}
+把 $d_{\mathrm{in}}$ 维输入压入 $r$ 维子空间；第二步
+\begin{equation}
+  zB_t\in\R^{1\times d_{\mathrm{out}}}
+\end{equation}
+再将低维坐标展开到输出维度。因此可把 $A_t$ 理解成投影基，把 $B_t$ 理解成对低维基的组合系数。
+
+\subsection{标准 LoRA 的参数量}
+
+忽略偏置时，标准 LoRA 的新增可训练参数为
+\begin{equation}
+  P_{\mathrm{LoRA}}
+  =d_{\mathrm{in}}r+rd_{\mathrm{out}}
+  =r(d_{\mathrm{in}}+d_{\mathrm{out}}).
+  \label{eq:lora-param}
+\end{equation}
+而全量更新一个矩阵需要
+\begin{equation}
+  P_{\mathrm{FFT}}=d_{\mathrm{in}}d_{\mathrm{out}}.
+\end{equation}
+当 $r$ 很小时，LoRA 的参数比例为
+\begin{equation}
+  \frac{P_{\mathrm{LoRA}}}{P_{\mathrm{FFT}}}
+  =\frac{r(d_{\mathrm{in}}+d_{\mathrm{out}})}{d_{\mathrm{in}}d_{\mathrm{out}}}.
+\end{equation}
+若 $d_{\mathrm{in}}=d_{\mathrm{out}}=d$，则
+\begin{equation}
+  \frac{P_{\mathrm{LoRA}}}{P_{\mathrm{FFT}}}=\frac{2r}{d}.
+\end{equation}
+例如 $d=4096,r=32$ 时，该比例约为
+\begin{equation}
+  \frac{64}{4096}=1.5625\%.
+\end{equation}
+
+\subsection{标准 LoRA 的梯度}
+
+设上游梯度为
+\begin{equation}
+  G=\frac{\partial\Loss}{\partial h}
+  \in\R^{b\times d_{\mathrm{out}}},
+\end{equation}
+批量输入为 $X\in\R^{b\times d_{\mathrm{in}}}$，LoRA 分支输出为
+\begin{equation}
+  H_{\Delta}=XA_tB_t.
+\end{equation}
+由矩阵微分可得
+\begin{align}
+  \frac{\partial\Loss}{\partial B_t}
+  &=(XA_t)^{\top}G
+  =A_t^{\top}X^{\top}G,\\
+  \frac{\partial\Loss}{\partial A_t}
+  &=X^{\top}GB_t^{\top}.
+  \label{eq:lora-grad}
+\end{align}
+标准 LoRA 同时保存这两组梯度，并为两组参数维护优化器状态。
+
+\subsection{初始化为何令初始增量为零}
+
+标准做法是随机初始化 $A_t$，令
+\begin{equation}
+  B_t=0.
+\end{equation}
+则训练开始时
+\begin{equation}
+  \Delta_t=A_tB_t=0,
+  \qquad
+  h=xW_0.
+\end{equation}
+所以模型初始行为与预训练模型完全一致，不会在第一步就突然改变输出。
+
+\begin{notebox}[一个常被忽略的梯度现象]
+当 $B_t=0$ 时，由式 \eqref{eq:lora-grad} 可见，第一步中 $\partial\Loss/\partial A_t=X^{\top}GB_t^{\top}=0$，而 $\partial\Loss/\partial B_t=A_t^{\top}X^{\top}G$ 通常非零。因此训练最开始主要由 $B_t$ 先动起来，之后 $A_t$ 才获得非零梯度。LoRI 直接冻结 $A_t$，相当于把这种非对称性贯彻到底。
+\end{notebox}
+
+\section{冻结随机投影 \texorpdfstring{$A_t$}{A t}：LoRI 的第一个限制}
+
+LoRI 不再训练 $A_t$，而是将其固定为随机投影。论文采用 Kaiming Uniform 初始化：
+\begin{equation}
+  (A_t)_{ij}\sim
+  \mathcal{U}\left(-\sqrt{\frac{3}{d_{\mathrm{in}}}},
+  \sqrt{\frac{3}{d_{\mathrm{in}}}}\right).
+  \label{eq:kaiming}
+\end{equation}
+设
+\begin{equation}
+  a=\sqrt{\frac{3}{d_{\mathrm{in}}}},
+\end{equation}
+则均值与方差为
+\begin{align}
+  \E[(A_t)_{ij}]&=0,\\
+  \operatorname{Var}[(A_t)_{ij}]
+  &=\frac{a^2}{3}
+  =\frac{1}{d_{\mathrm{in}}}.
+\end{align}
+
+\subsection{随机列向量的期望长度}
+
+令 $a_k$ 为 $A_t$ 的第 $k$ 列，则
+\begin{equation}
+  \E\norm{a_k}_2^2
+  =\sum_{i=1}^{d_{\mathrm{in}}}\E[(A_t)_{ik}^2]
+  =d_{\mathrm{in}}\cdot\frac{1}{d_{\mathrm{in}}}=1.
+\end{equation}
+不同列 $a_k,a_l$ 的期望内积为
+\begin{equation}
+  \E[a_k^{\top}a_l]=0,\qquad k\neq l.
+\end{equation}
+因此
+\begin{equation}
+  \E[A_t^{\top}A_t]=I_r.
+  \label{eq:ata-expect}
+\end{equation}
+这说明随机 $A_t$ 在期望意义上提供了一组近似归一、近似互相正交的低维基。
+
+\subsection{冻结 \texorpdfstring{$A_t$}{A t} 后的优化变量}
+
+LoRI-D（稠密版本）只训练 $B_t$：
+\begin{equation}
+  B_t^{(q+1)}
+  =B_t^{(q)}-\eta_t
+  \frac{\partial\Loss_t}{\partial B_t}.
+\end{equation}
+而
+\begin{equation}
+  A_t^{(q+1)}=A_t^{(q)}=A_t^{(0)}.
+\end{equation}
+冻结后，无需为 $A_t$ 保存梯度与 Adam 的一阶、二阶动量。
+
+\subsection{LoRI-D 的参数量}
+
+LoRI-D 的可训练参数只有
+\begin{equation}
+  P_{\mathrm{LoRI-D}}=rd_{\mathrm{out}}.
+\end{equation}
+相对标准 LoRA 的比例为
+\begin{equation}
+  \frac{P_{\mathrm{LoRI-D}}}{P_{\mathrm{LoRA}}}
+  =\frac{d_{\mathrm{out}}}{d_{\mathrm{in}}+d_{\mathrm{out}}}.
+\end{equation}
+若输入输出维度相同，则正好为
+\begin{equation}
+  \frac{1}{2}.
+\end{equation}
+即仅冻结 $A_t$ 就减少约一半可训练参数。
+
+\section{公式（2）：全局分位数稀疏掩码}
+
+论文在校准阶段先临时训练稠密 $B_t$，然后把所有层、所有投影中的 $|B_t|$ 汇总，计算全局阈值
+\begin{equation}
+  \tau_t
+  =\Quantile_s\left(\bigcup_{l,m}\left|B_t^{(l,m)}\right|\right),
+  \label{eq:tau}
+\end{equation}
+再生成掩码
+\begin{equation}
+  M_t^{(l,m)}
+  =\mathbb{I}\left(
+  \left|B_t^{(l,m)}\right|\ge \tau_t
+  \right).
+  \tag{2}
+  \label{eq:paper2}
+\end{equation}
+其中 $s\in[0,1)$ 是稀疏率。若 $s=0.9$，则阈值取绝对值集合的 $90\%$ 分位点，只保留最大的约 $10\%$ 坐标。
+
+\subsection{指示函数是什么意思}
+
+逐元素指示函数定义为
+\begin{equation}
+  \mathbb{I}(|b|\ge\tau)=
+  \begin{cases}
+    1,& |b|\ge\tau,\\
+    0,& |b|<\tau.
+  \end{cases}
+\end{equation}
+因此
+\begin{equation}
+  B_t\odot M_t
+\end{equation}
+只留下大幅值位置。
+
+\begin{examplebox}[一个简单的分位数例子]
+假设校准后所有 $B$ 元素的绝对值汇总为
+\begin{equation*}
+  \{0.01,0.02,0.03,0.04,0.08,0.10,0.30,0.60,0.90,1.20\}.
+\end{equation*}
+若设稀疏率 $s=0.8$，目标是保留最大的 $20\%$，即大约两个元素。阈值可落在 $0.90$ 附近，于是掩码仅保留 $0.90$ 与 $1.20$ 对应位置。实际实现需处理并列值与分位数插值，因此保留数可能有极小偏差。
+\end{examplebox}
+
+\subsection{为什么采用“全局”阈值而不是每层固定保留相同比例}
+
+若每层都强制保留 $10\%$，就默认所有层同等重要。全局阈值则允许某些重要层保留更多坐标，某些不重要层保留更少坐标。数学上，全局掩码近似解决下面的预算分配问题：
+\begin{equation}
+  \max_{M\in\{0,1\}^{P}}
+  \sum_{j=1}^{P}|b_j|M_j,
+  \qquad
+  \text{s.t.}\quad \sum_{j=1}^{P}M_j\le (1-s)P.
+  \label{eq:topk-budget}
+\end{equation}
+对该问题，最优选择就是保留 $|b_j|$ 最大的若干项。
+
+\subsection{校准后为什么要把 \texorpdfstring{$B_t$}{B t} 重置为零}
+
+校准阶段的目的不是直接得到最终权重，而是估计“哪些坐标重要”。得到 $M_t$ 后，论文将
+\begin{equation}
+  B_t\leftarrow 0
+\end{equation}
+再在完整任务数据上正式训练。这样最终训练从同一个零增量起点开始，避免校准数据对最终参数造成额外偏置，同时保留坐标选择结果。
+
+\subsection{掩码梯度更新}
+
+正式适配阶段的更新为
+\begin{equation}
+  B_t^{(q+1)}
+  =B_t^{(q)}-
+  \eta_t\left(
+  \nabla_{B_t}\Loss_t\odot M_t
+  \right).
+  \label{eq:masked-gradient}
+\end{equation}
+对任意坐标 $(i,j)$：
+\begin{equation}
+  (B_t^{(q+1)})_{ij}
+  =(B_t^{(q)})_{ij}
+  -\eta_t
+  \frac{\partial\Loss_t}{\partial(B_t)_{ij}}
+  (M_t)_{ij}.
+\end{equation}
+若 $(M_t)_{ij}=0$，则该位置每一步都不变；由于初始值为零，它始终保持零。
+
+\subsection{LoRI-S 的参数量与“减少 95\%”}
+
+设掩码密度为
+\begin{equation}
+  p=1-s.
+\end{equation}
+LoRI-S 的可训练坐标数约为
+\begin{equation}
+  P_{\mathrm{LoRI-S}}
+  =p\,r d_{\mathrm{out}}
+  =(1-s)r d_{\mathrm{out}}.
+  \label{eq:lori-s-param}
+\end{equation}
+相对标准 LoRA：
+\begin{equation}
+  \rho
+  =\frac{P_{\mathrm{LoRI-S}}}{P_{\mathrm{LoRA}}}
+  =\frac{(1-s)d_{\mathrm{out}}}{d_{\mathrm{in}}+d_{\mathrm{out}}}.
+\end{equation}
+若 $d_{\mathrm{in}}=d_{\mathrm{out}}$ 且 $s=0.9$，则
+\begin{equation}
+  \rho=\frac{0.1}{2}=0.05.
+\end{equation}
+所以 LoRI-S 只使用 LoRA 的约 $5\%$ 可训练参数，即减少约 $95\%$。
+
+\begin{examplebox}[以 $d=4096,r=32$ 为例]
+标准 LoRA：
+\begin{equation*}
+  P_{\mathrm{LoRA}}=32(4096+4096)=262144.
+\end{equation*}
+LoRI-D：
+\begin{equation*}
+  P_{\mathrm{LoRI-D}}=32\times4096=131072.
+\end{equation*}
+LoRI-S（$90\%$ 稀疏）：
+\begin{equation*}
+  P_{\mathrm{LoRI-S}}=0.1\times131072\approx13107.
+\end{equation*}
+相对标准 LoRA 仅约 $5\%$。
+\end{examplebox}
+
+\section{LoRI 完整算法的逐步解释}
+
+对每个任务 $t$，算法可以分为五步。
+
+\subsection{步骤一：初始化所有层和投影}
+
+对层 $l=1,\ldots,L$、投影类型 $m=1,\ldots,M$：
+\begin{align}
+  A_t^{(l,m)}
+  &\sim \mathcal{U}\left(
+  -\sqrt{\frac{3}{d_{\mathrm{in}}}},
+  \sqrt{\frac{3}{d_{\mathrm{in}}}}
+  \right),\\
+  B_t^{(l,m)}&=0.
+\end{align}
+$A_t$ 随后冻结。
+
+\subsection{步骤二：在校准集上训练稠密 \texorpdfstring{$B_t$}{B t}}
+
+对校准数据 $(x,y)\sim\Dc$，执行
+\begin{equation}
+  B_t^{(l,m)}\leftarrow B_t^{(l,m)}
+  -\eta_t\nabla_{B_t^{(l,m)}}
+  \Loss_t(f(x,y)).
+\end{equation}
+此时暂时不加掩码，目的是让幅值反映累计的重要性。
+
+\subsection{步骤三：跨模型计算全局阈值并生成掩码}
+
+把所有 $|B_t^{(l,m)}|$ 展平拼接，求 $s$ 分位数 $\tau_t$，然后由式 \eqref{eq:paper2} 生成 $M_t^{(l,m)}$。
+
+\subsection{步骤四：清零 \texorpdfstring{$B_t$}{B t}}
+
+\begin{equation}
+  B_t^{(l,m)}\leftarrow 0.
+\end{equation}
+
+\subsection{步骤五：在完整任务数据上进行掩码训练}
+
+对 $(x,y)\sim\Dt$，执行式 \eqref{eq:masked-gradient}。
+
+\begin{keybox}[算法本质]
+校准阶段回答“哪里可以学”，正式阶段回答“这些位置具体学成什么值”。掩码是离散结构变量，$B_t$ 是连续参数变量。
+\end{keybox}
+
+\section{公式（3）：如何定义任务间干扰}
+
+对于任务 $t$，单独使用其适配器时的模型为
+\begin{equation}
+  W_t=W_0+\alpha_t\Delta_t.
+\end{equation}
+合并多个适配器后得到 $W_{\mathrm{merge}}$。论文定义额外损失
+\begin{equation}
+  I_t
+  =\Loss_t(W_{\mathrm{merge}})
+  -\Loss_t(W_0+\alpha_t\Delta_t).
+  \tag{3}
+  \label{eq:paper3}
+\end{equation}
+
+若
+\begin{equation}
+  I_t>0,
+\end{equation}
+说明合并后任务 $t$ 的损失上升，发生负干扰；若
+\begin{equation}
+  I_t<0,
+\end{equation}
+则其他任务更新反而对任务 $t$ 有帮助，可视为正迁移。
+
+\section{公式（4）与附录证明：不同任务适配器为何近似正交}
+
+论文的性质 1 声称：若 $A_s,A_t$ 是独立 Kaiming 随机矩阵，且 $r\ll d_{\mathrm{in}}$，则
+\begin{equation}
+  \ip{\Delta_s}{\Delta_t}
+  \xrightarrow[d_{\mathrm{in}}\to\infty]{\Prob}0,
+  \qquad s\neq t.
+  \tag{4}
+  \label{eq:paper4}
+\end{equation}
+下面完整展开附录 C 的证明。
+
+\subsection{第一步：吸收掩码记号}
+
+令
+\begin{equation}
+  \widetilde B_s=B_s\odot M_s,
+  \qquad
+  \widetilde B_t=B_t\odot M_t.
+\end{equation}
+于是
+\begin{equation}
+  \Delta_s=A_s\widetilde B_s,
+  \qquad
+  \Delta_t=A_t\widetilde B_t.
+\end{equation}
+Frobenius 内积为
+\begin{align}
+  \ip{\Delta_s}{\Delta_t}
+  &=\tr(\Delta_s^{\top}\Delta_t)\\
+  &=\tr(\widetilde B_s^{\top}A_s^{\top}A_t\widetilde B_t).
+  \tag{9}
+  \label{eq:paper9}
+\end{align}
+定义
+\begin{equation}
+  X=A_s^{\top}A_t\in\R^{r\times r}.
+  \label{eq:X-def}
+\end{equation}
+只要证明 $X$ 以概率收敛到零矩阵，再利用范数不等式即可。
+
+\subsection{第二步：分析 \texorpdfstring{$X$}{X} 的单个元素}
+
+设 $a_k^s$ 是 $A_s$ 的第 $k$ 列，$a_l^t$ 是 $A_t$ 的第 $l$ 列，则
+\begin{equation}
+  X_{kl}=(a_k^s)^{\top}a_l^t
+  =\sum_{i=1}^{d_{\mathrm{in}}}(A_s)_{ik}(A_t)_{il}.
+\end{equation}
+令
+\begin{equation}
+  Z_i=(A_s)_{ik}(A_t)_{il}.
+\end{equation}
+由于不同任务的 $A_s,A_t$ 独立，且每个元素均值为零，
+\begin{equation}
+  \E[Z_i]
+  =\E[(A_s)_{ik}]\E[(A_t)_{il}]=0.
+\end{equation}
+又因为每个元素绝对值不超过
+\begin{equation}
+  \sqrt{\frac{3}{d_{\mathrm{in}}}},
+\end{equation}
+所以
+\begin{equation}
+  |Z_i|\le \frac{3}{d_{\mathrm{in}}}.
+\end{equation}
+即
+\begin{equation}
+  Z_i\in\left[-\frac{3}{d_{\mathrm{in}}},
+  \frac{3}{d_{\mathrm{in}}}\right].
+\end{equation}
+
+\subsection{第三步：Hoeffding 不等式}
+
+对独立有界零均值变量 $Z_i\in[a_i,b_i]$，Hoeffding 不等式给出
+\begin{equation}
+  \Prob\left(\left|\sum_i Z_i\right|\ge u\right)
+  \le 2\exp\left(
+  -\frac{2u^2}{\sum_i(b_i-a_i)^2}
+  \right).
+\end{equation}
+本题中
+\begin{equation}
+  b_i-a_i=\frac{6}{d_{\mathrm{in}}},
+\end{equation}
+因此
+\begin{equation}
+  \sum_{i=1}^{d_{\mathrm{in}}}(b_i-a_i)^2
+  =d_{\mathrm{in}}
+  \left(\frac{6}{d_{\mathrm{in}}}\right)^2
+  =\frac{36}{d_{\mathrm{in}}}.
+\end{equation}
+代入得到
+\begin{equation}
+  \Prob(|X_{kl}|\ge u)
+  \le 2\exp\left(-\frac{u^2d_{\mathrm{in}}}{18}\right).
+  \tag{10}
+  \label{eq:paper10}
+\end{equation}
+这说明任意一个交叉内积元素都随 $d_{\mathrm{in}}$ 增大而集中到零附近。
+
+\subsection{第四步：并集界控制全部 \texorpdfstring{$r^2$}{r squared} 个元素}
+
+矩阵 $X$ 有 $r^2$ 个元素。由并集界
+\begin{align}
+  \Prob\left(\max_{k,l}|X_{kl}|\ge u\right)
+  &\le \sum_{k,l}\Prob(|X_{kl}|\ge u)\\
+  &\le 2r^2\exp\left(-\frac{u^2d_{\mathrm{in}}}{18}\right).
+  \tag{11}
+  \label{eq:paper11}
+\end{align}
+令右边等于失败概率 $\delta$：
+\begin{equation}
+  \delta
+  =2r^2\exp\left(-\frac{u^2d_{\mathrm{in}}}{18}\right).
+\end{equation}
+两边取对数：
+\begin{align}
+  \log\frac{2r^2}{\delta}
+  &=\frac{u^2d_{\mathrm{in}}}{18},\\
+  u&=\sqrt{
+  \frac{18\log(2r^2/\delta)}{d_{\mathrm{in}}}
+  }.
+  \tag{12}
+  \label{eq:paper12}
+\end{align}
+因此以至少 $1-\delta$ 的概率，所有元素同时满足
+\begin{equation}
+  |X_{kl}|\le u.
+\end{equation}
+
+\subsection{第五步：从逐元素界得到 Frobenius 范数界}
+
+\begin{align}
+  \norm{X}_F^2
+  &=\sum_{k=1}^{r}\sum_{l=1}^{r}|X_{kl}|^2\\
+  &\le r^2\max_{k,l}|X_{kl}|^2\\
+  &\le r^2u^2.
+  \tag{13}
+\end{align}
+所以
+\begin{align}
+  \norm{X}_F
+  &\le ru\\
+  &=r\sqrt{
+  \frac{18\log(2r^2/\delta)}{d_{\mathrm{in}}}
+  }\\
+  &=O\left(
+  r\sqrt{\frac{\log r}{d_{\mathrm{in}}}}
+  \right).
+  \tag{14}
+  \label{eq:paper14}
+\end{align}
+当 $r$ 固定而 $d_{\mathrm{in}}\to\infty$ 时，该上界趋于零。
+
+\subsection{第六步：回到适配器内积}
+
+由式 \eqref{eq:paper9}、Frobenius Cauchy--Schwarz 不等式与次乘性：
+\begin{align}
+  \left|\ip{\Delta_s}{\Delta_t}\right|
+  &=\left|\tr(\widetilde B_s^{\top}X\widetilde B_t)\right|\\
+  &=\left|\ip{\widetilde B_s}{X\widetilde B_t}\right|\\
+  &\le \norm{\widetilde B_s}_F
+  \norm{X\widetilde B_t}_F\\
+  &\le \norm{\widetilde B_s}_F
+  \norm{X}_F
+  \norm{\widetilde B_t}_F.
+  \tag{15}
+  \label{eq:paper15}
+\end{align}
+若 $\norm{\widetilde B_s}_F$ 与 $\norm{\widetilde B_t}_F$ 有限，且 $\norm{X}_F\to0$，则
+\begin{equation}
+  \ip{\Delta_s}{\Delta_t}\to0
+\end{equation}
+依概率成立，证明完成。
+
+\begin{criticalbox}[比论文表述更精确的增长条件]
+论文用“$r\ll d_{\mathrm{in}}$”概括条件。由式 \eqref{eq:paper14} 可见，若 $r$ 也随 $d_{\mathrm{in}}$ 增长，更精确的充分条件是
+\begin{equation*}
+  \frac{r^2\log r}{d_{\mathrm{in}}}\to0.
+\end{equation*}
+仅有 $r/d_{\mathrm{in}}\to0$ 并不自动保证上界趋零。例如 $r=d_{\mathrm{in}}^{0.75}$ 时，虽然 $r/d_{\mathrm{in}}\to0$，但 $r^2/d_{\mathrm{in}}$ 反而发散。实际 LoRA 中 $r$ 通常固定为 8、16、32、64，因此论文条件在工程设置下通常满足。
+\end{criticalbox}
+
+\section{公式（5）--（6）：拼接合并为什么没有交叉项}
+
+对 $T$ 个任务，论文定义
+\begin{equation}
+  A'=[\alpha_1A_1\ \alpha_2A_2\ \cdots\ \alpha_TA_T]
+  \in\R^{d_{\mathrm{in}}\times Tr},
+\end{equation}
+以及竖直拼接
+\begin{equation}
+  B'=\begin{bmatrix}
+  B_1\odot M_1\\
+  B_2\odot M_2\\
+  \vdots\\
+  B_T\odot M_T
+  \end{bmatrix}
+  \in\R^{Tr\times d_{\mathrm{out}}}.
+  \tag{5}
+  \label{eq:paper5}
+\end{equation}
+矩阵乘法的块结构给出
+\begin{align}
+  A'B'
+  &=[\alpha_1A_1\ \cdots\ \alpha_TA_T]
+  \begin{bmatrix}
+  \widetilde B_1\\ \vdots\\ \widetilde B_T
+  \end{bmatrix}\\
+  &=\alpha_1A_1\widetilde B_1+
+  \cdots+\alpha_TA_T\widetilde B_T\\
+  &=\sum_{t=1}^{T}\alpha_t\Delta_t.
+\end{align}
+所以
+\begin{equation}
+  W_{\mathrm{merge}}
+  =W_0+A'B'
+  =W_0+\sum_{t=1}^{T}\alpha_t\Delta_t.
+  \tag{6}
+  \label{eq:paper6}
+\end{equation}
+
+\begin{keybox}[关键点]
+拼接不是把 $A$ 与 $B$ 分别相加，而是扩大内部秩维度，将每个 $A_t$ 与自己的 $B_t$ 保持块配对。因此乘积中只有 $A_t\widetilde B_t$，不会出现 $A_s\widetilde B_t$（$s\neq t$）的交叉组合。
+\end{keybox}
+
+\subsection{合并后的秩}
+
+每个 $\Delta_t$ 的秩不超过 $r$，因此
+\begin{equation}
+  \rank\left(\sum_{t=1}^{T}\alpha_t\Delta_t\right)
+  \le \sum_{t=1}^{T}\rank(\Delta_t)
+  \le Tr.
+\end{equation}
+拼接合并相当于将有效秩从 $r$ 提高到至多 $Tr$。
+
+\section{公式（7）：用 Taylor 展开解释干扰损失}
+
+令任务 $t$ 的单任务点为
+\begin{equation}
+  W_t=W_0+\alpha_t\Delta_t,
+\end{equation}
+其余任务带来的扰动为
+\begin{equation}
+  E_t=\sum_{s\neq t}\alpha_s\Delta_s.
+\end{equation}
+于是
+\begin{equation}
+  W_{\mathrm{merge}}=W_t+E_t.
+\end{equation}
+对 $\Loss_t(W_t+E_t)$ 在 $W_t$ 处做一阶 Taylor 展开：
+\begin{equation}
+  \Loss_t(W_t+E_t)
+  \approx \Loss_t(W_t)
+  +\ip{\nabla\Loss_t(W_t)}{E_t}.
+\end{equation}
+所以
+\begin{align}
+  I_t
+  &=\Loss_t(W_t+E_t)-\Loss_t(W_t)\\
+  &\approx
+  \ip{\nabla\Loss_t(W_t)}{
+  \sum_{s\neq t}\alpha_s\Delta_s}\\
+  &=\sum_{s\neq t}\alpha_s
+  \ip{\nabla\Loss_t(W_t)}{\Delta_s}.
+  \label{eq:taylor1}
+\end{align}
+论文进一步采用“梯度方向与任务增量对齐”的启发式假设
+\begin{equation}
+  \nabla\Loss_t(W_t)\propto\Delta_t,
+\end{equation}
+于是
+\begin{equation}
+  I_t
+  \propto
+  \sum_{s\neq t}\alpha_s
+  \ip{\Delta_t}{\Delta_s}.
+  \tag{7}
+  \label{eq:paper7}
+\end{equation}
+若不同适配器近似正交，则每个内积都接近零，因而 $I_t$ 较小。
+
+\subsection{二阶项告诉我们什么}
+
+更完整的 Taylor 展开为
+\begin{equation}
+  I_t
+  \approx
+  \ip{\nabla\Loss_t(W_t)}{E_t}
+  +\frac12\operatorname{vec}(E_t)^{\top}
+  H_t(W_t)
+  \operatorname{vec}(E_t),
+  \label{eq:taylor2}
+\end{equation}
+其中 $H_t$ 是 Hessian。即使一阶项因正交性很小，二阶曲率项也可能不小。因此论文式（7）提供的是合理直觉，而不是严格保证“合并损失必然为零”的定理。
+
+\begin{criticalbox}[梯度对齐假设的张力]
+若 $W_t$ 真的是任务 $t$ 的精确局部最优点，则通常 $\nabla\Loss_t(W_t)\approx0$，这时“梯度与 $\Delta_t$ 成比例”虽然形式上可成立，但无法提供方向信息。更合理的理解是：在近似解或训练轨迹附近，任务敏感方向与已学习更新 $\Delta_t$ 存在相关性。论文明确将此部分称为 theoretical sketch，应按启发式解释，而非完整定理。
+\end{criticalbox}
+
+\section{公式（8）：线性合并为何产生交叉项}
+
+所谓线性合并先分别求和：
+\begin{equation}
+  \bar A=\sum_{s=1}^{T}\alpha_sA_s,
+  \qquad
+  \bar B=\sum_{t=1}^{T}\alpha_t\widetilde B_t.
+\end{equation}
+然后相乘：
+\begin{align}
+  \bar A\bar B
+  &=\left(\sum_{s=1}^{T}\alpha_sA_s\right)
+  \left(\sum_{t=1}^{T}\alpha_t\widetilde B_t\right)\\
+  &=\sum_{s=1}^{T}\sum_{t=1}^{T}
+  \alpha_s\alpha_tA_s\widetilde B_t.
+  \tag{8}
+  \label{eq:paper8}
+\end{align}
+把双重求和拆开：
+\begin{equation}
+  \bar A\bar B
+  =\underbrace{\sum_{t=1}^{T}\alpha_t^2A_t\widetilde B_t}_{\text{同任务主项}}
+  +\underbrace{\sum_{s\neq t}\alpha_s\alpha_tA_s\widetilde B_t}_{\text{交叉项}}.
+\end{equation}
+交叉项 $A_s\widetilde B_t$ 将任务 $s$ 的随机基与任务 $t$ 的组合系数错误配对，未必对应任何训练过的方向，因此容易产生干扰。
+
+\begin{examplebox}[两个任务时的展开]
+当 $T=2$ 时，
+\begin{align*}
+  (\alpha_1A_1+\alpha_2A_2)
+  (\alpha_1\widetilde B_1+\alpha_2\widetilde B_2)
+  ={}&\alpha_1^2A_1\widetilde B_1
+  +\alpha_2^2A_2\widetilde B_2\\
+  &+\alpha_1\alpha_2A_1\widetilde B_2
+  +\alpha_1\alpha_2A_2\widetilde B_1.
+\end{align*}
+后两项就是拼接合并中完全不存在的交叉项。
+\end{examplebox}
+
+\section{稀疏掩码与持续学习：为什么预计重叠约为 \texorpdfstring{$1\%$}{1 percent}}
+
+设每个任务掩码的密度为
+\begin{equation}
+  p=1-s.
+\end{equation}
+若两个任务的掩码位置近似独立，则任意一个坐标同时被两个任务选中的概率为
+\begin{equation}
+  \Prob(M_s=1,M_t=1)
+  =\Prob(M_s=1)\Prob(M_t=1)=p^2.
+\end{equation}
+当 $s=0.9$ 时，$p=0.1$，所以
+\begin{equation}
+  p^2=0.01=1\%.
+\end{equation}
+这就是论文所说的理论期望重叠。
+
+\begin{notebox}[“1\% 重叠”有两种分母]
+论文的 $1\%$ 是相对于全部坐标数的交集比例。如果改成“交集占单个任务已激活坐标的比例”，则为
+\begin{equation*}
+  \frac{p^2}{p}=p=10\%.
+\end{equation*}
+两种说法分母不同，不能混淆。
+\end{notebox}
+
+\subsection{为何稀疏能缓解灾难性遗忘}
+
+在安全任务后继续训练新任务时，若新任务仅更新 $M_t=1$ 的少量位置，而安全任务主要依赖 $M_{\mathrm{safety}}=1$ 的另一组位置，则大多数参数坐标互不覆盖：
+\begin{equation}
+  M_t\odot M_{\mathrm{safety}}\approx0.
+\end{equation}
+这是一种参数隔离。新任务梯度难以覆盖安全任务使用的坐标，从而降低遗忘风险。
+
+\subsection{为什么不强制完全不重叠}
+
+完全不重叠会把可用参数空间进一步缩小，并且可能禁止两个任务共享真正有用的公共坐标。少量自然重叠可允许正迁移。因此 LoRI 依赖高稀疏率使交集自然较小，而不硬性设置
+\begin{equation}
+  M_t\cap M_{\mathrm{safety}}=\varnothing.
+\end{equation}
+
+\section{参数、显存与计算量的系统比较}
+
+\begin{table}[H]
+\centering
+\caption{单个权重矩阵上的可训练参数量比较。}
+\begin{tabular}{lcc}
+\toprule
+方法 & 可训练对象 & 参数量\\
+\midrule
+全量微调 & $W_0$ & $d_{\mathrm{in}}d_{\mathrm{out}}$\\
+LoRA & $A_t,B_t$ & $r(d_{\mathrm{in}}+d_{\mathrm{out}})$\\
+LoRI-D & $B_t$ & $rd_{\mathrm{out}}$\\
+LoRI-S & $B_t\odot M_t$ & $(1-s)rd_{\mathrm{out}}$\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+若使用 AdamW，每个可训练标量通常至少需要：参数值、梯度、一阶动量、二阶动量。忽略精度混合与主副本差异，训练状态量大致与可训练参数数目成正比。因此冻结 $A_t$ 与稀疏化 $B_t$ 不仅减少参数文件，也减少梯度与优化器状态。
+
+\begin{notebox}[训练稀疏与实际算力]
+论文实现通过梯度掩码限制可训练坐标。若底层仍以稠密矩阵乘法计算 $A_t(B_t\odot M_t)$，理论参数稀疏不一定按相同比例减少前向 FLOPs。它最直接减少的是可训练参数、梯度和优化状态；要获得真正稀疏算子加速，还需要硬件和算子库对结构化或非结构化稀疏提供支持。
+\end{notebox}
+
+\section{一个从输入到合并的完整数值化示例}
+
+设
+\begin{equation}
+  d_{\mathrm{in}}=d_{\mathrm{out}}=4,
+  \qquad r=2.
+\end{equation}
+两个任务适配器为
+\begin{equation}
+  \Delta_1=A_1(B_1\odot M_1),
+  \qquad
+  \Delta_2=A_2(B_2\odot M_2).
+\end{equation}
+若
+\begin{equation}
+  M_1=\begin{bmatrix}1&0&0&1\\0&1&0&0\end{bmatrix},
+  \qquad
+  M_2=\begin{bmatrix}0&1&0&0\\0&0&1&0\end{bmatrix},
+\end{equation}
+则两个任务在 $B$ 坐标上没有重叠。拼接合并为
+\begin{equation}
+  A'=[\alpha_1A_1\ \alpha_2A_2],
+  \qquad
+  B'=\begin{bmatrix}
+  B_1\odot M_1\\ B_2\odot M_2
+  \end{bmatrix}.
+\end{equation}
+其乘积严格等于
+\begin{equation}
+  A'B'=\alpha_1\Delta_1+\alpha_2\Delta_2.
+\end{equation}
+而分别求和再相乘会额外产生
+\begin{equation}
+  A_1(B_2\odot M_2),
+  \qquad
+  A_2(B_1\odot M_1),
+\end{equation}
+这两个从未训练过的组合。
+
+\section{论文数学部分的优点、边界与可优化方向}
+
+\subsection{数学设计的优点}
+
+\begin{enumerate}[label=\arabic*.,leftmargin=2.3em]
+  \item 低秩分解、随机投影和稀疏掩码三者的维度关系清晰；
+  \item 拼接合并的块矩阵推导严格说明了为何不产生交叉项；
+  \item 附录使用 Hoeffding 不等式、并集界与 Frobenius 范数给出可验证的近似正交性证明；
+  \item 参数量减少比例可以直接由维度与稀疏率计算，而非仅靠实验陈述。
+\end{enumerate}
+
+\subsection{需要谨慎理解的地方}
+
+\begin{enumerate}[label=\arabic*.,leftmargin=2.3em]
+  \item 近似正交性证明控制的是随机 $A_s^{\top}A_t$，最终还需要训练后的 $\widetilde B_s,\widetilde B_t$ 范数不随维度爆炸；
+  \item 式（7）的干扰分析依赖局部线性与梯度对齐，是启发式而非严格上界；
+  \item 一阶正交不能消除 Hessian 二阶交互；
+  \item 掩码由校准训练的幅值确定，幅值是否总能代表最终任务重要性并无普遍定理；
+  \item 非结构化稀疏主要带来参数和优化器状态节省，不必然带来同等比例的计算加速。
+\end{enumerate}
+
+\subsection{可进一步研究的数学方向}
+
+\begin{enumerate}[label=\arabic*.,leftmargin=2.3em]
+  \item 用 Hessian 加权内积
+  \begin{equation*}
+    \langle \Delta_s,\Delta_t\rangle_{H_t}
+    =\operatorname{vec}(\Delta_s)^{\top}H_t\operatorname{vec}(\Delta_t)
+  \end{equation*}
+  替代普通 Frobenius 内积，更直接刻画损失曲率下的干扰；
+  \item 将全局 Top-$k$ 掩码写成带预算的双层优化，联合学习掩码与参数；
+  \item 对 $\norm{\widetilde B_t}_F$ 加显式正则，强化近似正交证明中的有界假设；
+  \item 对多个任务同时推导总干扰的高概率上界，而不仅是两两内积；
+  \item 研究结构化块稀疏，使参数稀疏能够转化为真实硬件加速。
+\end{enumerate}
+
+\section{公式总表}
+
+\begin{longtable}{p{0.12\textwidth}p{0.40\textwidth}p{0.40\textwidth}}
+\toprule
+编号 & 公式 & 含义\\
+\midrule
+\endfirsthead
+\toprule
+编号 & 公式 & 含义\\
+\midrule
+\endhead
+(1) & $h=xW_0+xA_tB_t$ & 标准 LoRA 的低秩增量\\
+(2) & $M_t=\mathbb I(|B_t|\ge\tau_t)$ & 全局分位数掩码\\
+(3) & $I_t=\Loss_t(W_{\rm merge})-\Loss_t(W_0+\alpha_t\Delta_t)$ & 合并干扰损失\\
+(4) & $\ip{\Delta_s}{\Delta_t}\to0$ & 不同任务适配器近似正交\\
+(5) & $A'$ 横向拼接，$B'$ 纵向拼接 & 保持任务块配对\\
+(6) & $W_{\rm merge}=W_0+\sum_t\alpha_t\Delta_t$ & 拼接合并结果\\
+(7) & $I_t\propto\sum_{s\ne t}\alpha_s\ip{\Delta_t}{\Delta_s}$ & 一阶干扰近似\\
+(8) & $(\sum_s\alpha_sA_s)(\sum_t\alpha_t\widetilde B_t)$ & 线性合并产生双重求和\\
+(9)--(15) & Hoeffding、并集界、范数界 & 性质 1 的高概率证明\\
+\bottomrule
+\end{longtable}
+
+\section*{结论}
+\addcontentsline{toc}{section}{结论}
+
+LoRI 的数学核心不是单纯“把 LoRA 再剪枝”，而是利用三个层次的约束：
+\begin{equation}
+  \boxed{
+  \text{低秩约束}
+  +\text{随机子空间隔离}
+  +\text{稀疏坐标隔离}
+  }.
+\end{equation}
+低秩限制单任务更新规模；独立随机 $A_t$ 使不同任务子空间在高维中近似正交；稀疏 $M_t$ 进一步减少参数重叠。拼接合并保持每个任务的 $A_t$ 与 $B_t$ 正确配对，避免线性合并中的交叉项。附录证明为“随机投影带来近似正交”提供了高概率依据，但从正交到真实损失无干扰仍依赖局部线性、梯度对齐、有限范数与较小二阶项等条件。
+
+\end{document}

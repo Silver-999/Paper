@@ -1,0 +1,1785 @@
+\documentclass[UTF8,12pt,a4paper]{ctexart}
+
+\usepackage[a4paper,left=1.6cm,right=1.6cm,top=1.6cm,bottom=1.6cm]{geometry}
+\usepackage{booktabs}
+\usepackage{fontspec}
+
+\IfFontExistsTF{Times New Roman}{
+    \newfontfamily\ipafont{Times New Roman}
+}{
+    \IfFontExistsTF{DejaVu Serif}{
+        \newfontfamily\ipafont{DejaVu Serif}
+    }{
+        \newfontfamily\ipafont{Latin Modern Roman}
+    }
+}
+\setlength{\parindent}{0pt}
+\setlength{\tabcolsep}{8pt}
+\renewcommand{\arraystretch}{1.22}
+\pagestyle{empty}
+\providecommand{\zh}[1]{#1}
+
+\begin{document}
+\begin{center}
+    {\Large\bfseries Fractal Generative Models}
+\end{center}
+
+\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}lll@{}}
+\toprule
+\textbf{English} & \textbf{IPA} & \textbf{Chinese} \\
+\midrule
+atomic building blocks & {\ipafont /əˈtɒmɪk/} & \zh{基本组成单元} \\
+self-similar fractal architectures & {\ipafont /ˈɑːkɪtektʃəz/} & \zh{自相似分形架构} \\
+autoregressive model & {\ipafont /ˌɔːtəʊrɪˈɡresɪv/} & \zh{自回归模型} \\
+likelihood estimation & {\ipafont /ˈlaɪklihʊd/} & \zh{似然估计} \\
+scale-invariant small-world network & {\ipafont /ɪnˈveəriənt/} & \zh{尺度不变小世界网络} \\
+pixel-by-pixel image generation & {\ipafont /ˌdʒenəˈreɪʃən/} & \zh{逐像素图像生成} \\
+intrinsic structure & {\ipafont /ɪnˈtrɪnsɪk/} & \zh{内在结构} \\
+hierarchical pyramid representation & {\ipafont /ˌhaɪəˈrɑːkɪkəl/} & \zh{层次化金字塔表征} \\
+scale-space analysis & {\ipafont /əˈnæləsɪs/} & \zh{尺度空间分析} \\
+compact latent space & {\ipafont /ˈleɪtənt/} & \zh{紧凑潜在空间} \\
+cascaded diffusion model & {\ipafont /dɪˈfjuːʒən/} & \zh{级联扩散模型} \\
+fractal generator & {\ipafont /ˈfræktəl/} & \zh{分形生成器} \\
+nonlinear dynamics & {\ipafont /daɪˈnæmɪks/} & \zh{非线性动力学} \\
+parametric fractal generator & {\ipafont /ˌpærəˈmetrɪk/} & \zh{参数化分形生成器} \\
+joint distribution & {\ipafont /ˌdɪstrɪˈbjuːʃən/} & \zh{联合分布} \\
+divide-and-conquer strategy & {\ipafont /ˈkɒŋkə/} & \zh{分治策略} \\
+conditional distribution & {\ipafont /kənˈdɪʃənəl/} & \zh{条件分布} \\
+interdependency & {\ipafont /ˌɪntədɪˈpendənsi/} & \zh{相互依赖关系} \\
+cross-entropy loss & {\ipafont /ˈentrəpi/} & \zh{交叉熵损失} \\
+causal transformer & {\ipafont /ˈkɔːzəl/} & \zh{因果 Transformer} \\
+bidirectional transformer & {\ipafont /ˌbaɪdəˈrekʃənəl/} & \zh{双向 Transformer} \\
+attention matrix & {\ipafont /ˈmeɪtrɪks/} & \zh{注意力矩阵} \\
+in a breadth-first manner & {\ipafont /bredθ/} & \zh{以广度优先方式} \\
+backpropagate & {\ipafont /ˌbækˈprɒpəɡeɪt/} & \zh{反向传播} \\
+in a depth-first order & {\ipafont /depθ/} & \zh{以深度优先顺序} \\
+negative log-likelihood & {\ipafont /ˈlaɪklihʊd/} & \zh{负对数似然} \\
+Fréchet Inception Distance & {\ipafont /freɪˈʃɛ/} & \zh{弗雷歇初始距离} \\
+throughput & {\ipafont /ˈθruːpʊt/} & \zh{吞吐量} \\
+image inpainting / outpainting & {\ipafont /ˈɪnpeɪntɪŋ/} & \zh{图像内补 / 图像外扩} \\
+classifier-free guidance & {\ipafont /ˈklæsɪfaɪə/} & \zh{无分类器引导} \\
+\bottomrule
+\end{tabular*}
+
+\newpage
+
+\begin{center}
+    {\Large\bfseries Do As I Can, Not As I Say}
+\end{center}
+
+\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}lll@{}}
+\toprule
+\textbf{English} & \textbf{IPA} & \textbf{Chinese} \\
+\midrule
+robotic affordances & {\ipafont /əˈfɔːrdənsɪz/} & \zh{机器人可供性} \\
+semantic knowledge & {\ipafont /sɪˈmæntɪk/} & \zh{语义知识} \\
+temporally extended instructions & {\ipafont /ˈtɛmpɚəli/} & \zh{时间延展指令} \\
+real-world grounding & {\ipafont /ˈɡraʊndɪŋ/} & \zh{现实世界语义落地} \\
+pretrained skills & {\ipafont /ˌpriːˈtreɪnd/} & \zh{预训练技能} \\
+contextually appropriate actions & {\ipafont /kənˈtɛkstʃuəli/} & \zh{情境适当的动作} \\
+value function & {\ipafont /ˈfʌŋkʃən/} & \zh{价值函数} \\
+mobile manipulator & {\ipafont /məˈnɪpjəˌleɪtɚ/} & \zh{移动机械臂} \\
+embodied agent & {\ipafont /ɪmˈbɑdid/} & \zh{具身智能体} \\
+physical environment & {\ipafont /ˈfɪzɪkəl/} & \zh{物理环境} \\
+skill repertoire & {\ipafont /ˈrɛpɚˌtwɑr/} & \zh{技能库} \\
+visuomotor control & {\ipafont /ˌvɪʒuəʊˈməʊtər/} & \zh{视觉运动控制} \\
+action feasibility & {\ipafont /ˌfizəˈbɪləti/} & \zh{动作可行性} \\
+task grounding & {\ipafont /ˈɡraʊndɪŋ/} & \zh{任务落地} \\
+world grounding & {\ipafont /ˈɡraʊndɪŋ/} & \zh{世界状态落地} \\
+language-conditioned policy & {\ipafont /kənˈdɪʃənd/} & \zh{语言条件策略} \\
+reinforcement learning & {\ipafont /ˌriɪnˈfɔrsmənt/} & \zh{强化学习} \\
+long-horizon task & {\ipafont /hɚˈaɪzən/} & \zh{长时程任务} \\
+prompt engineering & {\ipafont /ˈɛndʒəˈnɪrɪŋ/} & \zh{提示工程} \\
+subtask decomposition & {\ipafont /ˌdikəmpoʊˈzɪʃən/} & \zh{子任务分解} \\
+interpretable plan & {\ipafont /ɪnˈtɝːprətəbəl/} & \zh{可解释计划} \\
+instruction following & {\ipafont /ˌɪnˈstrʌkʃən/} & \zh{指令遵循} \\
+success probability & {\ipafont /ˌprɑbəˈbɪləˌti/} & \zh{成功概率} \\
+behavioral cloning & {\ipafont /bɪˈheɪvjɚəl/} & \zh{行为克隆} \\
+reward function & {\ipafont /rɪˈwɔrd/} & \zh{奖励函数} \\
+Q-function & {\ipafont /ˈfʌŋkʃən/} & \zh{Q 函数} \\
+policy evaluation & {\ipafont /ɪˌvæljuˈeɪʃən/} & \zh{策略评估} \\
+open-loop planning & {\ipafont /ˈplænɪŋ/} & \zh{开环规划} \\
+closed-loop execution & {\ipafont /ˌɛksəˈkjuʃən/} & \zh{闭环执行} \\
+human-robot interaction & {\ipafont /ˌɪntɚˈækʃən/} & \zh{人机交互} \\
+\bottomrule
+\end{tabular*}
+
+\newpage
+
+\begin{center}
+    {\Large\bfseries Flow to the Mode}
+\end{center}
+
+\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}lll@{}}
+\toprule
+\textbf{English} & \textbf{IPA} & \textbf{Chinese} \\
+\midrule
+image tokenization & {\ipafont /ˌtoʊkənəˈzeɪʃən/} & \zh{图像标记化} \\
+latent diffusion & {\ipafont /dɪˈfjuʒən/} & \zh{潜空间扩散} \\
+lower-dimensional latent space & {\ipafont /dɪˈmɛnʃənəl/} & \zh{低维潜空间} \\
+perceptual loss & {\ipafont /pɚˈsɛptʃəwəl/} & \zh{感知损失} \\
+adversarial loss & {\ipafont /ˌædvɚˈsɛriəl/} & \zh{对抗损失} \\
+diffusion autoencoder & {\ipafont /ˌɔːtoʊɛnˈkoʊdər/} & \zh{扩散自编码器} \\
+end-to-end compression & {\ipafont /kəmˈprɛʃən/} & \zh{端到端压缩} \\
+reconstruction FID & {\ipafont /ˌrikənˈstrʌkʃən/} & \zh{重建 FID} \\
+bits per pixel & {\ipafont /ˈpɪksəl/} & \zh{每像素比特数} \\
+mode-matching pre-training & {\ipafont /ˈmætʃɪŋ/} & \zh{模式匹配预训练} \\
+mode-seeking post-training & {\ipafont /ˈsikɪŋ/} & \zh{模式寻优后训练} \\
+rectified flow objective & {\ipafont /ˈrɛktəˌfaɪd/} & \zh{校正流目标} \\
+multimodal reconstruction distribution & {\ipafont /ˌmʌltiˈmoʊdəl/} & \zh{多模态重建分布} \\
+discrete latent code & {\ipafont /dɪˈskrit/} & \zh{离散潜编码} \\
+transformer-based encoder & {\ipafont /ɛnˈkoʊdər/} & \zh{基于 Transformer 的编码器} \\
+quantized latent & {\ipafont /ˈkwɑːntaɪzd/} & \zh{量化潜变量} \\
+conditional diffusion model & {\ipafont /kənˈdɪʃənəl/} & \zh{条件扩散模型} \\
+noise schedule & {\ipafont /ˈskɛdʒʊl/} & \zh{噪声调度} \\
+sampler design & {\ipafont /ˈsæmplɚ/} & \zh{采样器设计} \\
+vector quantization & {\ipafont /ˌkwɑːntəˈzeɪʃən/} & \zh{向量量化} \\
+perceptual similarity & {\ipafont /ˌsɪməˈlɛrəti/} & \zh{感知相似性} \\
+proxy objective & {\ipafont /ˈprɑksi/} & \zh{代理目标} \\
+spatial alignment & {\ipafont /əˈlaɪnmənt/} & \zh{空间对齐} \\
+one-dimensional representation & {\ipafont /ˌrɛprəzɛnˈteɪʃən/} & \zh{一维表征} \\
+distillation stage & {\ipafont /ˌdɪstəˈleɪʃən/} & \zh{蒸馏阶段} \\
+backpropagation through sampling & {\ipafont /ˌbækˌprɑːpəˈɡeɪʃən/} & \zh{穿越采样过程的反向传播} \\
+continuous noise schedule & {\ipafont /kənˈtɪnjuəs/} & \zh{连续噪声调度} \\
+reconstruction benchmark & {\ipafont /ˈbɛntʃˌmɑrk/} & \zh{重建基准} \\
+inductive bias & {\ipafont /ˌɪnˈdʌktɪv/} & \zh{归纳偏置} \\
+generation quality & {\ipafont /ˌdʒɛnɚˈeɪʃən/} & \zh{生成质量} \\
+\bottomrule
+\end{tabular*}
+
+\newpage
+
+\begin{center}
+    {\Large\bfseries NOPROP}
+\end{center}
+
+\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}lll@{}}
+\toprule
+\textbf{English} & \textbf{IPA} & \textbf{Chinese} \\
+\midrule
+full back-propagation & {\ipafont /ˌprɑpəˈɡeɪʃən/} & \zh{完整反向传播} \\
+forward-propagation & {\ipafont /ˌprɑpəˈɡeɪʃən/} & \zh{前向传播} \\
+hierarchical representation & {\ipafont /ˌhaɪˈrɑrkəkəl/} & \zh{层次化表征} \\
+local denoising process & {\ipafont /diːˈnɔɪzɪŋ/} & \zh{局部去噪过程} \\
+noisy target & {\ipafont /ˈnɔɪzi/} & \zh{含噪目标} \\
+block-wise learning & {\ipafont /ˈblɑːkwaɪz/} & \zh{分块学习} \\
+credit assignment & {\ipafont /əˈsaɪnmənt/} & \zh{信用分配} \\
+intermediate activations & {\ipafont /ˌɪntɚˈmidiɪt/} & \zh{中间激活值} \\
+memory overhead & {\ipafont /ˈoʊvɚˈhɛd/} & \zh{内存开销} \\
+parallel computation & {\ipafont /ˌkɑmpjəˈteɪʃən/} & \zh{并行计算} \\
+catastrophic forgetting & {\ipafont /ˌkætəˈstrɑfɪk/} & \zh{灾难性遗忘} \\
+biological plausibility & {\ipafont /ˌplɔzɪˈbɪlɪti/} & \zh{生物合理性} \\
+gradient-free optimization & {\ipafont /ɑptəməˈzeɪʃən/} & \zh{无梯度优化} \\
+zero-order gradient & {\ipafont /ˈɡreɪdiənt/} & \zh{零阶梯度} \\
+evolution strategies & {\ipafont /ˌɛvəˈluʃən/} & \zh{进化策略} \\
+target propagation & {\ipafont /ˌprɑpəˈɡeɪʃən/} & \zh{目标传播} \\
+forward-forward algorithm & {\ipafont /ˈælɡɚˌɪðəm/} & \zh{前向-前向算法} \\
+denoising score matching & {\ipafont /diːˈnɔɪzɪŋ/} & \zh{去噪分数匹配} \\
+local back-propagation & {\ipafont /ˈloʊkəl/} & \zh{局部反向传播} \\
+distributed training & {\ipafont /dɪˈstrɪbjətəd/} & \zh{分布式训练} \\
+variational diffusion model & {\ipafont /ˌvɛriˈeɪʃənəl/} & \zh{变分扩散模型} \\
+stochastic intermediate activation & {\ipafont /stoʊˈkæstɪk/} & \zh{随机中间激活} \\
+conditional distribution & {\ipafont /kənˈdɪʃənəl/} & \zh{条件分布} \\
+Gaussian noise & {\ipafont /ˈɡaʊsiən/} & \zh{高斯噪声} \\
+learned dynamics & {\ipafont /daɪˈnæmɪks/} & \zh{学习得到的动力学} \\
+classification benchmark & {\ipafont /ˌklæsəfəˈkeɪʃən/} & \zh{分类基准} \\
+adjoint sensitivity method & {\ipafont /əˈdʒɔɪnt/} & \zh{伴随灵敏度方法} \\
+neural ordinary differential equation & {\ipafont /ˌdɪfɚˈɛnʃəl/} & \zh{神经常微分方程} \\
+scalability & {\ipafont /ˈskeɪləˈbɪlɪti/} & \zh{可扩展性} \\
+modular learning & {\ipafont /ˈmɑdʒəlɚ/} & \zh{模块化学习} \\
+\bottomrule
+\end{tabular*}
+
+\newpage
+
+\begin{center}
+    {\Large\bfseries PC Agent}
+\end{center}
+
+\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}lll@{}}
+\toprule
+\textbf{English} & \textbf{IPA} & \textbf{Chinese} \\
+\midrule
+human cognition transfer & {\ipafont /kɑɡˈnɪʃən/} & \zh{人类认知迁移} \\
+digital agent & {\ipafont /ˈdɪdʒətəl/} & \zh{数字智能体} \\
+cognitive trajectory & {\ipafont /trəˈdʒɛktɚi/} & \zh{认知轨迹} \\
+interaction trajectory & {\ipafont /trəˈdʒɛktɚi/} & \zh{交互轨迹} \\
+PC Tracker & {\ipafont /ˈtrækɚ/} & \zh{电脑操作追踪器} \\
+action semantics & {\ipafont /sɪˈmæntɪks/} & \zh{动作语义} \\
+thought process & {\ipafont /ˈprɑˌsɛs/} & \zh{思维过程} \\
+cognition completion pipeline & {\ipafont /ˈpaɪˌplaɪn/} & \zh{认知补全流水线} \\
+multi-agent system & {\ipafont /ˈeɪdʒənt/} & \zh{多智能体系统} \\
+planning agent & {\ipafont /ˈplænɪŋ/} & \zh{规划智能体} \\
+grounding agent & {\ipafont /ˈɡraʊndɪŋ/} & \zh{定位智能体} \\
+visual grounding & {\ipafont /ˈvɪʒəwəl/} & \zh{视觉定位} \\
+human-computer interaction & {\ipafont /ˌɪntɚˈækʃən/} & \zh{人机交互} \\
+cognitive context & {\ipafont /ˈkɑɡnɪtɪv/} & \zh{认知上下文} \\
+presentation creation & {\ipafont /ˌprɛzənˈteɪʃən/} & \zh{演示文稿创建} \\
+cross-application workflow & {\ipafont /ˈwɝkˌfloʊ/} & \zh{跨应用工作流} \\
+aesthetic judgment & {\ipafont /ɛsˈθɛtɪk/} & \zh{审美判断} \\
+task automation & {\ipafont /ɔtəˈmeɪʃən/} & \zh{任务自动化} \\
+contextual awareness & {\ipafont /ˌkɑnˈtɛksˌtʃuəl/} & \zh{上下文感知} \\
+dynamic decision-making & {\ipafont /daɪˈnæmɪk/} & \zh{动态决策} \\
+execution outcome & {\ipafont /ˌɛksəˈkjuʃən/} & \zh{执行结果} \\
+observable behavior & {\ipafont /əbˈzɝvəbəl/} & \zh{可观察行为} \\
+data refinement & {\ipafont /rəˈfaɪnmənt/} & \zh{数据精炼} \\
+state observation & {\ipafont /ˌɑbzɚˈveɪʃən/} & \zh{状态观测} \\
+click position grounding & {\ipafont /pəˈzɪʃən/} & \zh{点击位置定位} \\
+representation world & {\ipafont /ˌrɛprəzɛnˈteɪʃən/} & \zh{表征世界} \\
+symbolic processing & {\ipafont /sɪmˈbɑlɪk/} & \zh{符号处理} \\
+autonomous agent & {\ipafont /ɔˈtɑnəməs/} & \zh{自主智能体} \\
+proprietary API & {\ipafont /prəˈpraɪəˌtɛri/} & \zh{专有 API} \\
+open-source infrastructure & {\ipafont /ˌɪnfrəˈstrʌktʃɚ/} & \zh{开源基础设施} \\
+\bottomrule
+\end{tabular*}
+
+\newpage
+
+\begin{center}
+    {\Large \bfseries Breaking Performance Shakcles}
+\end{center}
+
+\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}lll@{}}
+\toprule
+\textbf{English} & \textbf{IPA} & \textbf{Chinese} \\
+\midrule
+full fine-tuning & {\ipafont /ˈtunɪŋ/} & \zh{全参数微调} \\
+visual recognition task & {\ipafont /ˌrɛkəɡˈnɪʃən/} & \zh{视觉识别任务} \\
+delta tuning & {\ipafont /ˈdɛltə/} & \zh{增量参数微调} \\
+multi-cognitive visual adapter & {\ipafont /ˈkɑɡnɪtɪv/} & \zh{多认知视觉适配器} \\
+vision-friendly filter & {\ipafont /ˈfɪltɚ/} & \zh{视觉友好滤波器} \\
+scaled normalization layer & {\ipafont /ˌnɔrməlɪˈzeɪʃən/} & \zh{缩放归一化层} \\
+feature distribution & {\ipafont /ˌdɪstrəˈbjuʃən/} & \zh{特征分布} \\
+instance segmentation & {\ipafont /ˌsɛɡmənˈteɪʃən/} & \zh{实例分割} \\
+semantic segmentation & {\ipafont /sɪˈmæntɪk/} & \zh{语义分割} \\
+oriented object detection & {\ipafont /ˈɔriˌɛntəd/} & \zh{旋转目标检测} \\
+parameter-efficient fine-tuning & {\ipafont /ɪˈfɪʃənt/} & \zh{参数高效微调} \\
+transfer learning & {\ipafont /trænsˈfɝ/} & \zh{迁移学习} \\
+pretrained backbone & {\ipafont /ˈbækˌboʊn/} & \zh{预训练主干网络} \\
+adapter tuning & {\ipafont /əˈdæptɚ/} & \zh{适配器微调} \\
+dense prediction & {\ipafont /ˈdɛns/} & \zh{稠密预测} \\
+convolution-based adapter & {\ipafont /ˈkɑnvəˌluʃən/} & \zh{卷积式适配器} \\
+linear adapter & {\ipafont /ˈlɪniɚ/} & \zh{线性适配器} \\
+down projection & {\ipafont /prəˈdʒɛkʃən/} & \zh{降维投影} \\
+up projection & {\ipafont /prəˈdʒɛkʃən/} & \zh{升维投影} \\
+depth-wise convolution & {\ipafont /ˈkɑnvəˌluʃən/} & \zh{逐通道卷积} \\
+point-wise convolution & {\ipafont /ˈkɑnvəˌluʃən/} & \zh{逐点卷积} \\
+skip connection & {\ipafont /kəˈnɛkʃən/} & \zh{跳跃连接} \\
+layer normalization & {\ipafont /ˌnɔrməlɪˈzeɪʃən/} & \zh{层归一化} \\
+feature aggregation & {\ipafont /ˌæɡrəˈɡeɪʃən/} & \zh{特征聚合} \\
+downstream task & {\ipafont /ˈdaʊnˈstrim/} & \zh{下游任务} \\
+Swin Transformer & {\ipafont /trænsˈfɔrmɚ/} & \zh{Swin Transformer 模型} \\
+Kronecker product & {\ipafont /ˈprɑdəkt/} & \zh{克罗内克积} \\
+prompt tuning & {\ipafont /ˈprɑmpt/} & \zh{提示微调} \\
+low-rank subspace & {\ipafont /ˈsʌbˌspeɪs/} & \zh{低秩子空间} \\
+performance upper bound & {\ipafont /pɚˈfɔrməns/} & \zh{性能上限} \\
+\bottomrule
+\end{tabular*}
+
+\newpage
+
+\begin{center}
+    {\Large\bfseries LoRI}
+\end{center}
+
+\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}lll@{}}
+\toprule
+\textbf{English} & \textbf{IPA} & \textbf{Chinese} \\
+\midrule
+cross-task interference & {\ipafont /ˌɪntɚˈfɪrəns/} & \zh{跨任务干扰} \\
+low-rank adaptation & {\ipafont /ˌædəpˈteɪʃən/} & \zh{低秩适配} \\
+parameter-efficient fine-tuning & {\ipafont /ɪˈfɪʃənt/} & \zh{参数高效微调} \\
+projection matrix & {\ipafont /ˈmeɪtrɪks/} & \zh{投影矩阵} \\
+random projection & {\ipafont /ˈrændəm/} & \zh{随机投影} \\
+task-specific mask & {\ipafont /spəˈsɪfɪk/} & \zh{任务专用掩码} \\
+adapter merging & {\ipafont /ˈmɝdʒɪŋ/} & \zh{适配器合并} \\
+orthogonal subspace & {\ipafont /ɔrˈθɔɡənəl/} & \zh{正交子空间} \\
+continual learning & {\ipafont /kənˈtɪnjuəl/} & \zh{持续学习} \\
+catastrophic forgetting & {\ipafont /ˌkætəˈstrɑfɪk/} & \zh{灾难性遗忘} \\
+sparsity ratio & {\ipafont /ˈspɑːrsəti/} & \zh{稀疏率} \\
+trainable parameter & {\ipafont /ˈtreɪnəbəl/} & \zh{可训练参数} \\
+parameter redundancy & {\ipafont /rɪˈdʌndənsi/} & \zh{参数冗余} \\
+calibration process & {\ipafont /ˌkæləˈbreɪʃən/} & \zh{校准过程} \\
+highest-magnitude element & {\ipafont /ˈmæɡnəˌtud/} & \zh{最大幅值元素} \\
+constrained update & {\ipafont /kənˈstreɪnd/} & \zh{受约束更新} \\
+pretrained knowledge & {\ipafont /ˈnɑlədʒ/} & \zh{预训练知识} \\
+multi-task learning & {\ipafont /ˌmʌltiˈtæsk/} & \zh{多任务学习} \\
+weighted averaging & {\ipafont /ˈævrɪdʒɪŋ/} & \zh{加权平均} \\
+heterogeneous adapters & {\ipafont /ˌhɛtɚəˈdʒinjəs/} & \zh{异构适配器} \\
+performance degradation & {\ipafont /ˌdɛɡrəˈdeɪʃən/} & \zh{性能退化} \\
+safety alignment & {\ipafont /əˈlaɪnmənt/} & \zh{安全对齐} \\
+sequential adaptation & {\ipafont /səˈkwɛnʃəl/} & \zh{顺序适配} \\
+downstream task & {\ipafont /ˈdaʊnˈstrim/} & \zh{下游任务} \\
+concatenated merging & {\ipafont /kənˈkætəˌneɪtəd/} & \zh{拼接式合并} \\
+refusal rate & {\ipafont /rəˈfjuzəl/} & \zh{拒答率} \\
+natural language understanding & {\ipafont /ˌʌndɚˈstændɪŋ/} & \zh{自然语言理解} \\
+mathematical reasoning & {\ipafont /ˈrizənɪŋ/} & \zh{数学推理} \\
+code generation & {\ipafont /ˌdʒɛnɚˈeɪʃən/} & \zh{代码生成} \\
+model deployment & {\ipafont /dɪˈplɔɪmənt/} & \zh{模型部署} \\
+\bottomrule
+\end{tabular*}
+
+\newpage
+
+\begin{center}
+    {\Large\bfseries Building Vision Models upon Heat Conduction}
+\end{center}
+
+\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}lll@{}}
+\toprule
+\textbf{English} & \textbf{IPA} & \textbf{Chinese} \\
+\midrule
+heat conduction operator & {\ipafont /kənˈdʌkʃən/} & \zh{热传导算子} \\
+visual representation & {\ipafont /ˌrɛprəzɛnˈteɪʃən/} & \zh{视觉表征} \\
+attention mechanism & {\ipafont /ˈmɛkəˌnɪzəm/} & \zh{注意力机制} \\
+computational overhead & {\ipafont /ˌkɑmpjuˈteɪʃənəl/} & \zh{计算开销} \\
+receptive field & {\ipafont /rɪˈsɛptɪv/} & \zh{感受野} \\
+thermal energy diffusion & {\ipafont /ˈθɝməl/} & \zh{热能扩散} \\
+image patch & {\ipafont /ˈpætʃ/} & \zh{图像块} \\
+discrete cosine transform & {\ipafont /ˈkoʊsaɪn/} & \zh{离散余弦变换} \\
+plug-and-play module & {\ipafont /ˈmɑdʒul/} & \zh{即插即用模块} \\
+global receptive field & {\ipafont /rɪˈsɛptɪv/} & \zh{全局感受野} \\
+GPU memory allocation & {\ipafont /ˌæləˈkeɪʃən/} & \zh{GPU 显存分配} \\
+convolutional neural network & {\ipafont /ˌkɑːnvəˈluːʃənəl/} & \zh{卷积神经网络} \\
+long-range dependency & {\ipafont /dɪˈpɛndənsi/} & \zh{长程依赖} \\
+state space model & {\ipafont /ˈsteɪt/} & \zh{状态空间模型} \\
+spatial locality & {\ipafont /loʊˈkæləti/} & \zh{空间局部性} \\
+visual semantics & {\ipafont /sɪˈmæntɪks/} & \zh{视觉语义} \\
+heat source & {\ipafont /ˈsɔrs/} & \zh{热源} \\
+multidimensional extension & {\ipafont /ˌmʌltidaɪˈmɛnʃənəl/} & \zh{多维扩展} \\
+inverse transformation & {\ipafont /ˌɪnˈvɝs/} & \zh{逆变换} \\
+computational complexity & {\ipafont /kəmˈplɛksəti/} & \zh{计算复杂度} \\
+information propagation & {\ipafont /ˌprɑpəˈɡeɪʃən/} & \zh{信息传播} \\
+physics-inspired model & {\ipafont /ˌɪnˈspaɪɚd/} & \zh{物理启发模型} \\
+feature channel & {\ipafont /ˈtʃænəl/} & \zh{特征通道} \\
+throughput & {\ipafont /ˈθruˌpʊt/} & \zh{吞吐量} \\
+floating-point operations & {\ipafont /ˈfloʊtɪŋ/} & \zh{浮点运算量} \\
+interpretability & {\ipafont /ɪnˌtɝːprətəˈbɪləti/} & \zh{可解释性} \\
+adaptive diffusion & {\ipafont /əˈdæptɪv/} & \zh{自适应扩散} \\
+local correlation & {\ipafont /ˌkɔrəˈleɪʃən/} & \zh{局部相关性} \\
+training efficiency & {\ipafont /ɪˈfɪʃənsi/} & \zh{训练效率} \\
+high-resolution input & {\ipafont /ˌrɛzəˈluʃən/} & \zh{高分辨率输入} \\
+\bottomrule
+\end{tabular*}
+
+\newpage
+
+\begin{center}
+    {\Large\bfseries Mean Flows for One-step Generative Modeling}
+\end{center}
+
+\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}lll@{}}
+\toprule
+\textbf{English} & \textbf{IPA} & \textbf{Chinese} \\
+\midrule
+one-step generative modeling & {\ipafont /ˈdʒɛnɚətɪv/} & \zh{一步生成建模} \\
+average velocity & {\ipafont /vəˈlɑsəti/} & \zh{平均速度} \\
+instantaneous velocity & {\ipafont /ˌɪnstənˈtæniəs/} & \zh{瞬时速度} \\
+flow field & {\ipafont /ˈfild/} & \zh{流场} \\
+Flow Matching & {\ipafont /ˈmætʃɪŋ/} & \zh{流匹配} \\
+self-contained model & {\ipafont /kənˈteɪnd/} & \zh{自包含模型} \\
+function evaluation & {\ipafont /ɪˌvæljuˈeɪʃən/} & \zh{函数评估次数} \\
+prior distribution & {\ipafont /ˈpraɪɚ/} & \zh{先验分布} \\
+data distribution & {\ipafont /ˌdɪstrəˈbjuʃən/} & \zh{数据分布} \\
+flow path & {\ipafont /ˈpæθ/} & \zh{流动路径} \\
+iterative sampling & {\ipafont /ˈɪtɚˌeɪtɪv/} & \zh{迭代采样} \\
+feedforward generation & {\ipafont /ˌfiːdˈfɔːrwərd/} & \zh{前馈生成} \\
+consistency model & {\ipafont /kənˈsɪstənsi/} & \zh{一致性模型} \\
+consistency constraint & {\ipafont /kənˈstreɪnt/} & \zh{一致性约束} \\
+discretization curriculum & {\ipafont /dɪˌskriːtəˈzeɪʃən/} & \zh{离散化课程学习} \\
+ground-truth field & {\ipafont /ˈɡraʊnd/} & \zh{真实目标场} \\
+time interval & {\ipafont /ˈɪntɚvəl/} & \zh{时间区间} \\
+displacement & {\ipafont /dɪsˈpleɪsmənt/} & \zh{位移} \\
+intrinsic relation & {\ipafont /ˌɪnˈtrɪnsɪk/} & \zh{内在关系} \\
+classifier-free guidance & {\ipafont /ˈklæsəfaɪər/} & \zh{无分类器引导} \\
+sampling cost & {\ipafont /ˈsæmplɪŋ/} & \zh{采样开销} \\
+empirical performance & {\ipafont /ˌɛmˈpɪrɪkəl/} & \zh{实验性能} \\
+stochastic differential equation & {\ipafont /stoʊˈkæstɪk/} & \zh{随机微分方程} \\
+ordinary differential equation & {\ipafont /ˌdɪfɚˈɛnʃəl/} & \zh{常微分方程} \\
+normalizing flow & {\ipafont /ˈnɔrməˌlaɪzɪŋ/} & \zh{归一化流} \\
+score distillation & {\ipafont /ˌdɪstəˈleɪʃən/} & \zh{分数蒸馏} \\
+stochastic interpolant & {\ipafont /ɪnˈtɝːpələnt/} & \zh{随机插值过程} \\
+conditional velocity & {\ipafont /kənˈdɪʃənəl/} & \zh{条件速度} \\
+probability flow & {\ipafont /ˌprɑbəˈbɪləˌti/} & \zh{概率流} \\
+training from scratch & {\ipafont /ˈskrætʃ/} & \zh{从头训练} \\
+\bottomrule
+\end{tabular*}
+
+\newpage
+
+\begin{center}
+    {\Large\bfseries Exploring Diffusion Transformer Designs via Grafting}
+\end{center}
+
+\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}lll@{}}
+\toprule
+\textbf{English} & \textbf{IPA} & \textbf{Chinese} \\
+\midrule
+architecture design & {\ipafont /ˈɑrkəˌtɛktʃɚ/} & \zh{架构设计} \\
+diffusion transformer & {\ipafont /dɪˈfjuʒən/} & \zh{扩散 Transformer} \\
+pretrained model & {\ipafont /ˌpriːˈtreɪnd/} & \zh{预训练模型} \\
+architecture grafting & {\ipafont /ˈɡræftɪŋ/} & \zh{架构嫁接} \\
+compute budget & {\ipafont /ˈbʌdʒɪt/} & \zh{计算预算} \\
+activation behavior & {\ipafont /ˌæktəˈveɪʃən/} & \zh{激活行为} \\
+attention locality & {\ipafont /loʊˈkæləti/} & \zh{注意力局部性} \\
+hybrid architecture & {\ipafont /ˈhaɪbrəd/} & \zh{混合架构} \\
+gated convolution & {\ipafont /ˈɡeɪtɪd/} & \zh{门控卷积} \\
+local attention & {\ipafont /əˈtɛnʃən/} & \zh{局部注意力} \\
+linear attention & {\ipafont /ˈlɪniɚ/} & \zh{线性注意力} \\
+expansion ratio & {\ipafont /ɪkˈspænʃən/} & \zh{扩展比} \\
+operator replacement & {\ipafont /rɪˈpleɪsmənt/} & \zh{算子替换} \\
+architecture restructuring & {\ipafont /riˈstrʌktʃɚɪŋ/} & \zh{架构重构} \\
+text-to-image model & {\ipafont /ˈɪmədʒ/} & \zh{文生图模型} \\
+activation distillation & {\ipafont /ˌdɪstəˈleɪʃən/} & \zh{激活蒸馏} \\
+regression objective & {\ipafont /rəˈɡrɛʃən/} & \zh{回归目标} \\
+lightweight fine-tuning & {\ipafont /ˈlaɪˈtweɪt/} & \zh{轻量微调} \\
+error accumulation & {\ipafont /əˌkjumjəˈleɪʃən/} & \zh{误差累积} \\
+computational graph & {\ipafont /ˌkɑmpjuˈteɪʃənəl/} & \zh{计算图} \\
+operator initialization & {\ipafont /ɪˌnɪʃələˈzeɪʃən/} & \zh{算子初始化} \\
+self-grafting baseline & {\ipafont /ˈbeɪˌslaɪn/} & \zh{自嫁接基线} \\
+random initialization & {\ipafont /ɪˌnɪʃələˈzeɪʃən/} & \zh{随机初始化} \\
+model scaffold & {\ipafont /ˈskæfəld/} & \zh{模型脚手架} \\
+multi-head attention & {\ipafont /əˈtɛnʃən/} & \zh{多头注意力} \\
+multilayer perceptron & {\ipafont /pərˈsɛptrɑːn/} & \zh{多层感知机} \\
+FLOPs reduction & {\ipafont /rəˈdʌkʃən/} & \zh{浮点运算量削减} \\
+replacement ratio & {\ipafont /ˈreɪʃiˌoʊ/} & \zh{替换比例} \\
+parallel block & {\ipafont /ˈpɛrəˌlɛl/} & \zh{并行模块} \\
+architecture testbed & {\ipafont /ˈtɛstbɛd/} & \zh{架构试验平台} \\
+\bottomrule
+\end{tabular*}
+
+\newpage
+
+\begin{center}
+    {\Large\bfseries Localizing Lying in Llama}
+\end{center}
+
+\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}lll@{}}
+\toprule
+\textbf{English} & \textbf{IPA} & \textbf{Chinese} \\
+\midrule
+instructed dishonesty & {\ipafont /dɪˈsɑnəsti/} & \zh{指令诱导的不诚实} \\
+mechanistic interpretability & {\ipafont /ˌmɛkəˈnɪstɪk/} & \zh{机制可解释性} \\
+linear probing & {\ipafont /ˈproʊbɪŋ/} & \zh{线性探测} \\
+activation patching & {\ipafont /ˈpætʃɪŋ/} & \zh{激活修补} \\
+causal intervention & {\ipafont /ˈkɔzəl/} & \zh{因果干预} \\
+attention head & {\ipafont /əˈtɛnʃən/} & \zh{注意力头} \\
+truthful output & {\ipafont /ˈtruθfəl/} & \zh{真实输出} \\
+model misalignment & {\ipafont /ˌmɪsəˈlaɪnmənt/} & \zh{模型失配} \\
+deceptive behavior & {\ipafont /dɪˈsɛptɪv/} & \zh{欺骗行为} \\
+scalable misinformation & {\ipafont /ˌmɪsɪnfɚˈmeɪʃən/} & \zh{可规模化错误信息} \\
+internal representation & {\ipafont /ˌrɛprəzɛnˈteɪʃən/} & \zh{内部表征} \\
+black-box method & {\ipafont /ˈmɛθəd/} & \zh{黑箱方法} \\
+critical layer & {\ipafont /ˈkrɪtɪkəl/} & \zh{关键层} \\
+context following & {\ipafont /ˈkɑntɛkst/} & \zh{上下文遵循} \\
+prompt sensitivity & {\ipafont /ˌsɛnsɪˈtɪvɪti/} & \zh{提示敏感性} \\
+true-false dataset & {\ipafont /ˈdeɪtəˌsɛt/} & \zh{真假判断数据集} \\
+confidence threshold & {\ipafont /ˈθrɛˌʃoʊld/} & \zh{置信度阈值} \\
+counterfactual effect & {\ipafont /ˌkaʊntərˈfæktʃuəl/} & \zh{反事实效应} \\
+logistic classifier & {\ipafont /ləˈdʒɪstɪk/} & \zh{逻辑回归分类器} \\
+cached activation & {\ipafont /ˈkæʃt/} & \zh{缓存激活值} \\
+forward pass & {\ipafont /ˈfɔrwɚd/} & \zh{前向过程} \\
+dataset split & {\ipafont /ˈsplɪt/} & \zh{数据集划分} \\
+single-token answer & {\ipafont /ˈtoʊkən/} & \zh{单词元答案} \\
+truth value & {\ipafont /ˈtruθ/} & \zh{真值} \\
+chance accuracy & {\ipafont /ˈækjɚəsi/} & \zh{随机水平准确率} \\
+behavior localization & {\ipafont /ˌloʊkələˈzeɪʃən/} & \zh{行为定位} \\
+honest representation & {\ipafont /ˈɑnəst/} & \zh{诚实表征} \\
+system prompt & {\ipafont /ˈprɑmpt/} & \zh{系统提示} \\
+causal mechanism & {\ipafont /ˈmɛkəˌnɪzəm/} & \zh{因果机制} \\
+robust intervention & {\ipafont /roʊˈbʌst/} & \zh{稳健干预} \\
+\bottomrule
+\end{tabular*}
+
+\newpage
+
+\begin{center}
+    {\Large\bfseries MUDDFormer}
+\end{center}
+
+\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}lll@{}}
+\toprule
+\textbf{English} & \textbf{IPA} & \textbf{Chinese} \\
+\midrule
+residual bottleneck & {\ipafont /ˈbɑtəlˌnɛk/} & \zh{残差瓶颈} \\
+multiway dynamic dense connection & {\ipafont /ˈmʌltiweɪ/} & \zh{多路动态密集连接} \\
+cross-layer information flow & {\ipafont /ˌɪnfɚˈmeɪʃən/} & \zh{跨层信息流} \\
+residual connection & {\ipafont /rɪˈzɪdʒuəl/} & \zh{残差连接} \\
+connection weight & {\ipafont /ˈweɪt/} & \zh{连接权重} \\
+hidden state & {\ipafont /ˈhɪdən/} & \zh{隐藏状态} \\
+sequence position & {\ipafont /ˈsikwəns/} & \zh{序列位置} \\
+decoupled input stream & {\ipafont /diːˈkʌpəld/} & \zh{解耦输入流} \\
+depth-wise aggregation & {\ipafont /ˌæɡrəˈɡeɪʃən/} & \zh{沿深度聚合} \\
+dynamic weighting & {\ipafont /ˈweɪtɪŋ/} & \zh{动态加权} \\
+vanishing gradient & {\ipafont /ˈvænɪʃɪŋ/} & \zh{梯度消失} \\
+expressive capacity & {\ipafont /ɪkˈsprɛsɪv/} & \zh{表达能力} \\
+representation collapse & {\ipafont /kəˈlæps/} & \zh{表征坍缩} \\
+mechanistic interpretability & {\ipafont /ˌmɛkəˈnɪstɪk/} & \zh{机制可解释性} \\
+residual stream & {\ipafont /rɪˈzɪdʒuəl/} & \zh{残差流} \\
+communication channel & {\ipafont /kəˌmjunəˈkeɪʃən/} & \zh{通信通道} \\
+dense connection & {\ipafont /ˈdɛns/} & \zh{密集连接} \\
+query-key-value stream & {\ipafont /ˈkwiri/} & \zh{查询-键-值流} \\
+language model pretraining & {\ipafont /ˌpriːˈtreɪnɪŋ/} & \zh{语言模型预训练} \\
+compute efficiency & {\ipafont /ɪˈfɪʃənsi/} & \zh{计算效率} \\
+downstream accuracy & {\ipafont /ˈdaʊnˈstrim/} & \zh{下游准确率} \\
+perplexity & {\ipafont /pərˈplɛksəti/} & \zh{困惑度} \\
+five-shot setting & {\ipafont /ˈsɛtɪŋ/} & \zh{五样本设置} \\
+scalability & {\ipafont /ˈskeɪləˈbɪlɪti/} & \zh{可扩展性} \\
+vision transformer & {\ipafont /ˈvɪʒən/} & \zh{视觉 Transformer} \\
+pre-layer normalization & {\ipafont /ˌnɔrməlɪˈzeɪʃən/} & \zh{层前归一化} \\
+feed-forward network & {\ipafont /ˈnɛˌtwɝk/} & \zh{前馈网络} \\
+cross-layer bandwidth & {\ipafont /ˈbændwɪdθ/} & \zh{跨层带宽} \\
+static weight & {\ipafont /ˈstætɪk/} & \zh{静态权重} \\
+foundation model & {\ipafont /faʊnˈdeɪʃən/} & \zh{基础模型} \\
+\bottomrule
+\end{tabular*}
+
+\newpage
+
+\begin{center}
+    {\Large\bfseries Chain-of-Thought Is Not Explainability}
+\end{center}
+
+\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}lll@{}}
+\toprule
+\textbf{English} & \textbf{IPA} & \textbf{Chinese} \\
+\midrule
+chain-of-thought & {\ipafont /ˈθɔt/} & \zh{思维链} \\
+multi-step rationale & {\ipafont /ˌræʃəˈnæl/} & \zh{多步推理说明} \\
+interpretability & {\ipafont /ɪnˌtɝːprətəˈbɪləti/} & \zh{可解释性} \\
+faithfulness & {\ipafont /ˈfeɪθfəlnəs/} & \zh{忠实性} \\
+human-interpretable explanation & {\ipafont /ɪnˈtɝːprətəbəl/} & \zh{人类可理解的解释} \\
+hidden computation & {\ipafont /ˌkɑmpjəˈteɪʃən/} & \zh{隐藏计算过程} \\
+high-stakes domain & {\ipafont /ˈsteɪks/} & \zh{高风险领域} \\
+causal validation & {\ipafont /ˌvæləˈdeɪʃən/} & \zh{因果验证} \\
+counterfactual intervention & {\ipafont /ˌkaʊntərˈfæktʃuəl/} & \zh{反事实干预} \\
+verifier model & {\ipafont /ˈvɛrəfaɪər/} & \zh{验证器模型} \\
+communicative benefit & {\ipafont /kəˈmjunəkətɪv/} & \zh{交流层面的益处} \\
+expert verification & {\ipafont /ˌvɛrəfəˈkeɪʃən/} & \zh{专家核验} \\
+human-AI collaboration & {\ipafont /kəˌlæbɚˈeɪʃən/} & \zh{人机协作} \\
+unfaithful reasoning & {\ipafont /ənˈfeɪθfəl/} & \zh{不忠实推理} \\
+prompt bias & {\ipafont /ˈbaɪəs/} & \zh{提示偏差} \\
+reasoning shortcut & {\ipafont /ˈʃɔrtˌkʌt/} & \zh{推理捷径} \\
+latent knowledge & {\ipafont /ˈleɪtənt/} & \zh{潜在知识} \\
+plausible explanation & {\ipafont /ˈplɔzəbəl/} & \zh{看似合理的解释} \\
+causal completeness & {\ipafont /kəmˈplitnəs/} & \zh{因果完备性} \\
+activation patching & {\ipafont /ˈpætʃɪŋ/} & \zh{激活修补} \\
+responsible use & {\ipafont /riˈspɑnsəbəl/} & \zh{负责任使用} \\
+downstream decision-making & {\ipafont /ˈdaʊnˈstrim/} & \zh{下游决策} \\
+self-correcting narrative & {\ipafont /ˈnærətɪv/} & \zh{自纠正叙述} \\
+faithfulness metric & {\ipafont /ˈmɛtrɪk/} & \zh{忠实性指标} \\
+cognitive underpinning & {\ipafont /ˈʌndɚˌpɪnɪŋ/} & \zh{认知基础} \\
+mechanistic computation & {\ipafont /ˌmɛkəˈnɪstɪk/} & \zh{机制计算过程} \\
+restoration error & {\ipafont /ˌrɛstɚˈeɪʃən/} & \zh{恢复误差} \\
+trustworthy explanation & {\ipafont /ˈtrʌsˌtwɝði/} & \zh{可信解释} \\
+autonomous system & {\ipafont /ɔˈtɑnəməs/} & \zh{自主系统} \\
+research roadmap & {\ipafont /ˈroʊdˌmæp/} & \zh{研究路线图} \\
+\bottomrule
+\end{tabular*}
+
+\newpage
+
+\begin{center}
+    {\Large\bfseries Multiverse}
+\end{center}
+
+\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}lll@{}}
+\toprule
+\textbf{English} & \textbf{IPA} & \textbf{Chinese} \\
+\midrule
+implicit parallelism & {\ipafont /ˈpɛrəˌlɛˌlɪzəm/} & \zh{隐式并行性} \\
+autoregressive language model & {\ipafont /ˌɔːtoʊrɪˈɡrɛsɪv/} & \zh{自回归语言模型} \\
+parallel generation & {\ipafont /ˈpɛrəˌlɛl/} & \zh{并行生成} \\
+MapReduce paradigm & {\ipafont /ˈpɛrəˌdaɪm/} & \zh{MapReduce 范式} \\
+adaptive task decomposition & {\ipafont /ˌdikəmpoʊˈzɪʃən/} & \zh{自适应任务分解} \\
+subtask execution & {\ipafont /ˌɛksəˈkjuʃən/} & \zh{子任务执行} \\
+lossless result synthesis & {\ipafont /ˈsɪnθəsəs/} & \zh{无损结果综合} \\
+data curation & {\ipafont /kjʊˈreɪʃən/} & \zh{数据整理} \\
+structured training data & {\ipafont /ˈstrʌktʃɚd/} & \zh{结构化训练数据} \\
+causal attention & {\ipafont /ˈkɔzəl/} & \zh{因果注意力} \\
+parallel inference & {\ipafont /ˈɪnfɚəns/} & \zh{并行推理} \\
+dedicated interpreter & {\ipafont /ˌɪnˈtɝprətɚ/} & \zh{专用解释器} \\
+sequential generation & {\ipafont /səˈkwɛnʃəl/} & \zh{顺序生成} \\
+test-time scaling & {\ipafont /ˈskeɪlɪŋ/} & \zh{测试时扩展} \\
+parallel task solving & {\ipafont /ˈpɛrəˌlɛl/} & \zh{并行任务求解} \\
+economies of scale & {\ipafont /ɪˈkɑnəmiz/} & \zh{规模经济} \\
+artificial superintelligence & {\ipafont /ˌsuːpərɪnˈtɛlɪdʒəns/} & \zh{人工超级智能} \\
+non-autoregressive architecture & {\ipafont /ˈɑrkəˌtɛktʃɚ/} & \zh{非自回归架构} \\
+logical dependency & {\ipafont /dɪˈpɛndənsi/} & \zh{逻辑依赖} \\
+brute-force parallelism & {\ipafont /ˈbrut/} & \zh{暴力并行} \\
+intermediate reasoning state & {\ipafont /ˌɪntɚˈmidiɪt/} & \zh{中间推理状态} \\
+collective branch & {\ipafont /kəˈlɛktɪv/} & \zh{汇聚型分支} \\
+selective branch & {\ipafont /səˈlɛktɪv/} & \zh{选择型分支} \\
+summary tree & {\ipafont /ˈsʌmɚi/} & \zh{摘要树} \\
+position embedding & {\ipafont /ɛmˈbɛdɪŋ/} & \zh{位置嵌入} \\
+attention mask & {\ipafont /ˈmæsk/} & \zh{注意力掩码} \\
+recursive invocation & {\ipafont /ˌriˈkɝsɪv/} & \zh{递归调用} \\
+synthetic SAT problem & {\ipafont /sɪnˈθɛtɪk/} & \zh{合成 SAT 问题} \\
+linear-time solution & {\ipafont /səˈluʃən/} & \zh{线性时间解法} \\
+system co-design & {\ipafont /dɪˈzaɪn/} & \zh{系统协同设计} \\
+\bottomrule
+\end{tabular*}
+
+\newpage
+
+\begin{center}
+    {\Large\bfseries DiC}
+\end{center}
+
+\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}lll@{}}
+\toprule
+\textbf{English} & \textbf{IPA} & \textbf{Chinese} \\
+\midrule
+diffusion CNN & {\ipafont /dɪˈfjuʒən/} & \zh{扩散卷积网络} \\
+3x3 convolution & {\ipafont /ˈkɑnvəˌluʃən/} & \zh{3x3 卷积} \\
+isotropic architecture & {\ipafont /ˌaɪsəˈtrɑːpɪk/} & \zh{各向同性架构} \\
+encoder-decoder hourglass & {\ipafont /ˈaʊɚˌɡlæs/} & \zh{编码器-解码器沙漏结构} \\
+sparse skip connection & {\ipafont /ˈspɑrs/} & \zh{稀疏跳跃连接} \\
+stage-specific embedding & {\ipafont /spəˈsɪfɪk/} & \zh{阶段专用嵌入} \\
+mid-block condition injection & {\ipafont /ˌɪnˈdʒɛkʃən/} & \zh{块中条件注入} \\
+conditional gating & {\ipafont /kənˈdɪʃənəl/} & \zh{条件门控} \\
+self-attention overhead & {\ipafont /ˈoʊvɚˈhɛd/} & \zh{自注意力开销} \\
+inference latency & {\ipafont /ˈleɪtənsi/} & \zh{推理延迟} \\
+purely convolutional model & {\ipafont /ˌkɑːnvəˈluːʃənəl/} & \zh{纯卷积模型} \\
+receptive field & {\ipafont /rɪˈsɛptɪv/} & \zh{感受野} \\
+scalability & {\ipafont /ˈskeɪləˈbɪlɪti/} & \zh{可扩展性} \\
+hardware-friendly operator & {\ipafont /ˈɑpɚˌeɪtɚ/} & \zh{硬件友好算子} \\
+Winograd acceleration & {\ipafont /ˌækˌsɛlɚˈeɪʃən/} & \zh{Winograd 加速} \\
+downsampling & {\ipafont /ˌdaʊnˈsæmplɪŋ/} & \zh{下采样} \\
+upsampling & {\ipafont /ˌʌpˈsæmplɪŋ/} & \zh{上采样} \\
+feature space & {\ipafont /ˈfitʃɚ/} & \zh{特征空间} \\
+non-overlapping embedding & {\ipafont /ˈoʊvɚˌlæpɪŋ/} & \zh{非重叠嵌入} \\
+GELU activation & {\ipafont /ˌæktəˈveɪʃən/} & \zh{GELU 激活} \\
+U-shaped architecture & {\ipafont /ˈɑrkəˌtɛktʃɚ/} & \zh{U 形架构} \\
+latent-domain resolution & {\ipafont /ˌrɛzəˈluʃən/} & \zh{潜空间分辨率} \\
+state-space model & {\ipafont /ˈsteɪt/} & \zh{状态空间模型} \\
+throughput & {\ipafont /ˈθruˌpʊt/} & \zh{吞吐量} \\
+visual generation & {\ipafont /ˌdʒɛnɚˈeɪʃən/} & \zh{视觉生成} \\
+temporal consistency & {\ipafont /ˈtɛmpɚəl/} & \zh{时间一致性} \\
+blockwise skip & {\ipafont /ˈblɑːkwaɪz/} & \zh{分块跳连} \\
+condition embedding & {\ipafont /ɛmˈbɛdɪŋ/} & \zh{条件嵌入} \\
+diffusion transformer & {\ipafont /trænsˈfɔrmɚ/} & \zh{扩散 Transformer} \\
+resource-constrained application & {\ipafont /kənˈstreɪnd/} & \zh{资源受限应用} \\
+\bottomrule
+\end{tabular*}
+
+\newpage
+
+\begin{center}
+    {\Large\bfseries SepLLM}
+\end{center}
+
+\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}lll@{}}
+\toprule
+\textbf{English} & \textbf{IPA} & \textbf{Chinese} \\
+\midrule
+separator token & {\ipafont /ˈsɛpəˌreɪtɚ/} & \zh{分隔符词元} \\
+segment compression & {\ipafont /kəmˈprɛʃən/} & \zh{片段压缩} \\
+attention score & {\ipafont /əˈtɛnʃən/} & \zh{注意力分数} \\
+semantic token & {\ipafont /sɪˈmæntɪk/} & \zh{语义词元} \\
+redundant token & {\ipafont /rɪˈdʌndənt/} & \zh{冗余词元} \\
+plug-and-play framework & {\ipafont /ˈfreɪmˌwɝk/} & \zh{即插即用框架} \\
+KV cache & {\ipafont /ˈkæʃ/} & \zh{键值缓存} \\
+streaming setting & {\ipafont /ˈstrimɪŋ/} & \zh{流式场景} \\
+quadratic complexity & {\ipafont /kwɑˈdrɑtɪk/} & \zh{二次复杂度} \\
+next-token prediction & {\ipafont /priˈdɪkʃən/} & \zh{下一词元预测} \\
+linear attention & {\ipafont /ˈlɪniɚ/} & \zh{线性注意力} \\
+cache optimization & {\ipafont /ɑptəməˈzeɪʃən/} & \zh{缓存优化} \\
+cumulative attention score & {\ipafont /ˈkjumjələtɪv/} & \zh{累积注意力分数} \\
+controlled sparsity & {\ipafont /ˈspɑːrsəti/} & \zh{受控稀疏性} \\
+attention sink & {\ipafont /ˈsɪŋk/} & \zh{注意力汇点} \\
+neighboring token & {\ipafont /ˈneɪbɚɪŋ/} & \zh{邻近词元} \\
+information retrieval & {\ipafont /rɪˈtrivəl/} & \zh{信息检索} \\
+data-dependent sparse attention & {\ipafont /dɪˈpɛndənt/} & \zh{数据依赖稀疏注意力} \\
+training-free setting & {\ipafont /ˈsɛtɪŋ/} & \zh{免训练设置} \\
+training from scratch & {\ipafont /ˈskrætʃ/} & \zh{从头训练} \\
+post-training & {\ipafont /ˈtreɪnɪŋ/} & \zh{后训练} \\
+hardware-efficient kernel & {\ipafont /ˈkɝnəl/} & \zh{硬件高效内核} \\
+lossless acceleration & {\ipafont /ˌækˌsɛlɚˈeɪʃən/} & \zh{近无损加速} \\
+training-inference discrepancy & {\ipafont /dɪˈskrɛpənsi/} & \zh{训练-推理差异} \\
+memory overhead & {\ipafont /ˈoʊvɚˈhɛd/} & \zh{内存开销} \\
+long-context modeling & {\ipafont /ˈkɑntɛkst/} & \zh{长上下文建模} \\
+punctuation token & {\ipafont /ˌpʌŋktʃuˈeɪʃən/} & \zh{标点词元} \\
+token retention & {\ipafont /riˈtɛnʃən/} & \zh{词元保留} \\
+computational cost & {\ipafont /ˌkɑmpjuˈteɪʃənəl/} & \zh{计算成本} \\
+language modeling capability & {\ipafont /ˌkeɪpəˈbɪləti/} & \zh{语言建模能力} \\
+\bottomrule
+\end{tabular*}
+
+\newpage
+
+\begin{center}
+    {\Large\bfseries Mixture-of-Recursions}
+\end{center}
+
+\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}lll@{}}
+\toprule
+\textbf{English} & \textbf{IPA} & \textbf{Chinese} \\
+\midrule
+Mixture-of-Recursions & {\ipafont /rɪˈkɝːʒənz/} & \zh{递归混合架构} \\
+dynamic recursive depth & {\ipafont /ˌriˈkɝsɪv/} & \zh{动态递归深度} \\
+adaptive token-level computation & {\ipafont /əˈdæptɪv/} & \zh{自适应词元级计算} \\
+parameter sharing & {\ipafont /ˈʃɛrɪŋ/} & \zh{参数共享} \\
+recursive transformer & {\ipafont /ˌriˈkɝsɪv/} & \zh{递归 Transformer} \\
+lightweight router & {\ipafont /ˈlaɪˈtweɪt/} & \zh{轻量路由器} \\
+token-level thinking & {\ipafont /ˈθɪŋkɪŋ/} & \zh{词元级思考} \\
+active token & {\ipafont /ˈæktɪv/} & \zh{活跃词元} \\
+quadratic attention & {\ipafont /kwɑˈdrɑtɪk/} & \zh{二次复杂度注意力} \\
+key-value caching & {\ipafont /ˈkæʃɪŋ/} & \zh{键值缓存} \\
+memory footprint & {\ipafont /ˈfʊtˌprɪnt/} & \zh{内存占用} \\
+Pareto frontier & {\ipafont /frənˈtɪr/} & \zh{帕累托前沿} \\
+validation perplexity & {\ipafont /pərˈplɛksəti/} & \zh{验证困惑度} \\
+few-shot accuracy & {\ipafont /ˈækjɚəsi/} & \zh{少样本准确率} \\
+training FLOPs & {\ipafont /ˈtreɪnɪŋ/} & \zh{训练浮点运算量} \\
+layer tying & {\ipafont /ˈtaɪɪŋ/} & \zh{层权重绑定} \\
+early exiting & {\ipafont /ˈɛɡzɪtɪŋ/} & \zh{提前退出} \\
+fixed-depth recursion & {\ipafont /rɪˈkɝːʒən/} & \zh{固定深度递归} \\
+compute allocation & {\ipafont /ˌæləˈkeɪʃən/} & \zh{计算分配} \\
+recursion-wise caching & {\ipafont /ˈkæʃɪŋ/} & \zh{按递归层级缓存} \\
+memory traffic & {\ipafont /ˈtræfɪk/} & \zh{内存访问流量} \\
+latent-space reasoning & {\ipafont /ˈrizənɪŋ/} & \zh{潜空间推理} \\
+continuous prompt & {\ipafont /kənˈtɪnjuəs/} & \zh{连续提示} \\
+end-to-end routing & {\ipafont /ˈraʊtɪŋ/} & \zh{端到端路由} \\
+shared parameter block & {\ipafont /pɚˈæmətɚ/} & \zh{共享参数模块} \\
+hyperscale data center & {\ipafont /ˈhaɪpərskeɪl/} & \zh{超大规模数据中心} \\
+deployment efficiency & {\ipafont /dɪˈplɔɪmənt/} & \zh{部署效率} \\
+token-specific depth & {\ipafont /spəˈsɪfɪk/} & \zh{词元专属深度} \\
+post-hoc modification & {\ipafont /ˌmɑdəfəˈkeɪʃən/} & \zh{事后修改} \\
+throughput & {\ipafont /ˈθruˌpʊt/} & \zh{吞吐量} \\
+\bottomrule
+\end{tabular*}
+
+\newpage
+
+\begin{center}
+    {\Large\bfseries Native Sparse Attention}
+\end{center}
+
+\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}lll@{}}
+\toprule
+\textbf{English} & \textbf{IPA} & \textbf{Chinese} \\
+\midrule
+native sparse attention & {\ipafont /ˈspɑrs/} & \zh{原生稀疏注意力} \\
+hardware-aligned optimization & {\ipafont /əˈlaɪnd/} & \zh{硬件对齐优化} \\
+long-context modeling & {\ipafont /ˈkɑntɛkst/} & \zh{长上下文建模} \\
+hierarchical sparse strategy & {\ipafont /ˌhaɪˈrɑrkəkəl/} & \zh{分层稀疏策略} \\
+coarse-grained compression & {\ipafont /ˈkɔrs/} & \zh{粗粒度压缩} \\
+fine-grained selection & {\ipafont /səˈlɛkʃən/} & \zh{细粒度选择} \\
+global context awareness & {\ipafont /əˈwɛrnəs/} & \zh{全局上下文感知} \\
+arithmetic intensity-balanced design & {\ipafont /ˌɛrɪθˈmɛtɪk/} & \zh{算术强度平衡设计} \\
+end-to-end training & {\ipafont /ˈtreɪnɪŋ/} & \zh{端到端训练} \\
+pretraining computation & {\ipafont /ˌkɑmpjəˈteɪʃən/} & \zh{预训练计算量} \\
+full attention baseline & {\ipafont /ˈbeɪˌslaɪn/} & \zh{全注意力基线} \\
+instruction-based reasoning & {\ipafont /ˌɪnˈstrʌkʃən/} & \zh{基于指令的推理} \\
+forward propagation & {\ipafont /ˌprɑpəˈɡeɪʃən/} & \zh{前向传播} \\
+backward propagation & {\ipafont /ˌprɑpəˈɡeɪʃən/} & \zh{反向传播} \\
+model lifecycle & {\ipafont /ˈlaɪfsaɪkəl/} & \zh{模型生命周期} \\
+latency bottleneck & {\ipafont /ˈleɪtənsi/} & \zh{延迟瓶颈} \\
+softmax attention & {\ipafont /əˈtɛnʃən/} & \zh{Softmax 注意力} \\
+query-key pair & {\ipafont /ˈkwiri/} & \zh{查询-键对} \\
+computational overhead & {\ipafont /ˈoʊvɚˈhɛd/} & \zh{计算开销} \\
+KV-cache eviction & {\ipafont /ɪˈvɪkʃən/} & \zh{键值缓存淘汰} \\
+blockwise selection & {\ipafont /ˈblɑːkwaɪz/} & \zh{分块选择} \\
+hashing-based selection & {\ipafont /ˈhæʃɪŋ/} & \zh{基于哈希的选择} \\
+theoretical speedup & {\ipafont /ˌθiɚˈɛtɪkəl/} & \zh{理论加速比} \\
+hardware scheduling & {\ipafont /ˈskɛdʒʊlɪŋ/} & \zh{硬件调度} \\
+prefilling stage & {\ipafont /ˌpriːˈfɪlɪŋ/} & \zh{预填充阶段} \\
+decoding stage & {\ipafont /dɪˈkoʊdɪŋ/} & \zh{解码阶段} \\
+memory access & {\ipafont /ˈækˌsɛs/} & \zh{内存访问} \\
+trainable sparsity & {\ipafont /ˈtreɪnəbəl/} & \zh{可训练稀疏性} \\
+local precision & {\ipafont /priˈsɪʒən/} & \zh{局部精度} \\
+dynamic token selection & {\ipafont /daɪˈnæmɪk/} & \zh{动态词元选择} \\
+\bottomrule
+\end{tabular*}
+
+
+\newpage
+
+\begin{center}
+    {\Large\bfseries OverLoCK}
+\end{center}
+
+\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}lll@{}}
+\toprule
+\textbf{English} & \textbf{IPA} & \textbf{Chinese} \\
+\midrule
+top-down attention & {\ipafont /əˈtɛnʃən/} & \zh{自上而下注意力} \\
+biomimetic principle & {\ipafont /ˌbaɪoʊmɪˈmɛtɪk/} & \zh{仿生原理} \\
+pure ConvNet backbone & {\ipafont /ˈbækˌboʊn/} & \zh{纯卷积主干网络} \\
+branched architecture & {\ipafont /ˈbræntʃt/} & \zh{分支式架构} \\
+Base-Net & {\ipafont /ˈbeɪs/} & \zh{基础网络} \\
+Overview-Net & {\ipafont /ˈoʊvɚˌvju/} & \zh{概览网络} \\
+Focus-Net & {\ipafont /ˈfoʊkəs/} & \zh{聚焦网络} \\
+coarse global context & {\ipafont /ˈkɔrs/} & \zh{粗粒度全局上下文} \\
+finer-grained perception & {\ipafont /pɚˈsɛpʃən/} & \zh{细粒度感知} \\
+context-mixing dynamic convolution & {\ipafont /ˈkɑnvəˌluʃən/} & \zh{上下文混合动态卷积} \\
+long-range dependency & {\ipafont /dɪˈpɛndənsi/} & \zh{长程依赖} \\
+local inductive bias & {\ipafont /ˌɪnˈdʌktɪv/} & \zh{局部归纳偏置} \\
+input resolution & {\ipafont /ˌrɛzəˈluʃən/} & \zh{输入分辨率} \\
+top-down semantic guidance & {\ipafont /sɪˈmæntɪk/} & \zh{自上而下语义引导} \\
+effective receptive field & {\ipafont /rɪˈsɛptɪv/} & \zh{有效感受野} \\
+class activation map & {\ipafont /ˌæktəˈveɪʃən/} & \zh{类激活图} \\
+deep-stage decomposition & {\ipafont /ˌdikəmpoʊˈzɪʃən/} & \zh{深层阶段分解} \\
+context prior & {\ipafont /ˈpraɪɚ/} & \zh{上下文先验} \\
+token mixer & {\ipafont /ˈmɪksɚ/} & \zh{词元混合器} \\
+affinity map & {\ipafont /əˈfɪnəti/} & \zh{亲和度图} \\
+region center & {\ipafont /ˈridʒən/} & \zh{区域中心} \\
+spatially varying kernel & {\ipafont /ˈspeɪʃəli/} & \zh{空间变化卷积核} \\
+deformable convolution & {\ipafont /dɪˈfɔːrməbəl/} & \zh{可变形卷积} \\
+fixed kernel size & {\ipafont /ˈkɝnəl/} & \zh{固定卷积核尺寸} \\
+performance-complexity trade-off & {\ipafont /ˈtreɪdˌɔːf/} & \zh{性能-复杂度权衡} \\
+object detection & {\ipafont /dɪˈtɛkʃən/} & \zh{目标检测} \\
+semantic segmentation & {\ipafont /ˌsɛɡmənˈteɪʃən/} & \zh{语义分割} \\
+Top-1 accuracy & {\ipafont /ˈækjɚəsi/} & \zh{Top-1 准确率} \\
+computational overhead & {\ipafont /ˈoʊvɚˈhɛd/} & \zh{计算开销} \\
+feedback signal & {\ipafont /ˈfidˌbæk/} & \zh{反馈信号} \\
+\bottomrule
+\end{tabular*}
+
+\newpage
+
+\begin{center}
+    {\Large\bfseries Cambrian-1}
+\end{center}
+
+\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}lll@{}}
+\toprule
+\textbf{English} & \textbf{IPA} & \textbf{Chinese} \\
+\midrule
+vision-centric approach & {\ipafont /ˈsɛntrɪk/} & \zh{视觉中心方法} \\
+multimodal LLM & {\ipafont /ˌmʌltiˈmoʊdəl/} & \zh{多模态大语言模型} \\
+sensory grounding & {\ipafont /ˈsɛnsɚi/} & \zh{感知落地} \\
+visual representation learning & {\ipafont /ˌrɛprəzɛnˈteɪʃən/} & \zh{视觉表征学习} \\
+visual instruction tuning & {\ipafont /ˌɪnˈstrʌkʃən/} & \zh{视觉指令微调} \\
+vision encoder & {\ipafont /ɛnˈkoʊdər/} & \zh{视觉编码器} \\
+self-supervised learning & {\ipafont /ˈsupɚˌvaɪzd/} & \zh{自监督学习} \\
+strongly supervised representation & {\ipafont /ˌrɛprəzɛnˈteɪʃən/} & \zh{强监督表征} \\
+vision-centric benchmark & {\ipafont /ˈbɛntʃˌmɑrk/} & \zh{视觉中心基准} \\
+CV-Bench & {\ipafont /ˈbɛntʃˌmɑrk/} & \zh{CV-Bench 基准} \\
+Spatial Vision Aggregator & {\ipafont /ˈæɡrɪɡeɪtər/} & \zh{空间视觉聚合器} \\
+spatially-aware connector & {\ipafont /ˈspeɪʃəli/} & \zh{空间感知连接器} \\
+high-resolution vision feature & {\ipafont /ˌrɛzəˈluʃən/} & \zh{高分辨率视觉特征} \\
+token reduction & {\ipafont /rəˈdʌkʃən/} & \zh{词元压缩} \\
+data curation & {\ipafont /kjʊˈreɪʃən/} & \zh{数据整理} \\
+data source balancing & {\ipafont /ˈbælənsɪŋ/} & \zh{数据源平衡} \\
+distribution ratio & {\ipafont /ˌdɪstrəˈbjuʃən/} & \zh{分布比例} \\
+open cookbook & {\ipafont /ˈkʊkˌbʊk/} & \zh{开放式实践指南} \\
+model ensemble & {\ipafont /ɑnˈsɑmbəl/} & \zh{模型集成} \\
+multiple vision encoders & {\ipafont /ˈmʌltəpəl/} & \zh{多视觉编码器} \\
+benchmark consolidation & {\ipafont /kənˌsɑləˈdeɪʃən/} & \zh{基准汇总} \\
+evaluation recipe & {\ipafont /ˈrɛsəpi/} & \zh{评估流程} \\
+instruction-tuning data & {\ipafont /ˌɪnˈstrʌkʃən/} & \zh{指令微调数据} \\
+answer machine phenomenon & {\ipafont /fəˈnɑməˌnɑn/} & \zh{答题机器现象} \\
+system prompt & {\ipafont /ˈprɑmpt/} & \zh{系统提示} \\
+test image leakage & {\ipafont /ˈlikədʒ/} & \zh{测试图像泄露} \\
+fuzzy matching & {\ipafont /ˈfʌzi/} & \zh{模糊匹配} \\
+LLM judgment & {\ipafont /ˈdʒʌdʒmənt/} & \zh{大模型判定} \\
+ablation study & {\ipafont /ˌʌˈbleɪʃən/} & \zh{消融实验} \\
+state-of-the-art performance & {\ipafont /pɚˈfɔrməns/} & \zh{最先进性能} \\
+\bottomrule
+\end{tabular*}
+
+\newpage
+
+\begin{center}
+    {\Large\bfseries Vision Language Models Are Biased}
+\end{center}
+
+\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}lll@{}}
+\toprule
+\textbf{English} & \textbf{IPA} & \textbf{Chinese} \\
+\midrule
+prior knowledge bias & {\ipafont /ˈpraɪɚ/} & \zh{先验知识偏差} \\
+vision language model & {\ipafont /ˈvɪʒən/} & \zh{视觉语言模型} \\
+objective visual task & {\ipafont /əbˈdʒɛktɪv/} & \zh{客观视觉任务} \\
+counting accuracy & {\ipafont /ˈækjɚəsi/} & \zh{计数准确率} \\
+object identification & {\ipafont /aɪˌdɛntəfəˈkeɪʃən/} & \zh{目标识别} \\
+counterfactual image & {\ipafont /ˌkaʊntərˈfæktʃuəl/} & \zh{反事实图像} \\
+background visual cue & {\ipafont /ˈkju/} & \zh{背景视觉线索} \\
+biased response & {\ipafont /rɪˈspɑns/} & \zh{偏置回答} \\
+thinking token & {\ipafont /ˈθɪŋkɪŋ/} & \zh{思考词元} \\
+model overthinking & {\ipafont /ˌoʊvərˈθɪŋkɪŋ/} & \zh{模型过度思考} \\
+failure mode & {\ipafont /ˈfeɪljɚ/} & \zh{失效模式} \\
+human-supervised framework & {\ipafont /ˈsupɚˌvaɪzd/} & \zh{人工监督框架} \\
+text-only corpus & {\ipafont /ˈkɔrpəs/} & \zh{纯文本语料库} \\
+early fusion & {\ipafont /ˈfjuʒən/} & \zh{早期融合} \\
+late fusion & {\ipafont /ˈfjuʒən/} & \zh{后期融合} \\
+adversarial prompt & {\ipafont /ˌædvɚˈsɛriəl/} & \zh{对抗性提示} \\
+neutral prompt & {\ipafont /ˈnutrəl/} & \zh{中性提示} \\
+popular subject & {\ipafont /ˈpɑpjəlɚ/} & \zh{热门对象} \\
+patterned grid & {\ipafont /ˈpætɚnd/} & \zh{图案网格} \\
+optical illusion & {\ipafont /ˈɑptɪkəl/} & \zh{视错觉} \\
+dominant pattern & {\ipafont /ˈdɑmənənt/} & \zh{主导模式} \\
+image editor & {\ipafont /ˈɛdətɚ/} & \zh{图像编辑器} \\
+automated enumeration & {\ipafont /ɪˌnuːməˈreɪʃən/} & \zh{自动枚举} \\
+quality review & {\ipafont /ˈkwɑləti/} & \zh{质量审核} \\
+random-chance performance & {\ipafont /ˈrændəm/} & \zh{随机水平表现} \\
+visual bias & {\ipafont /ˈvɪʒəwəl/} & \zh{视觉偏差} \\
+benchmark domain & {\ipafont /ˈbɛntʃˌmɑrk/} & \zh{基准领域} \\
+reasoning pattern & {\ipafont /ˈrizənɪŋ/} & \zh{推理模式} \\
+accuracy decline & {\ipafont /dɪˈklaɪn/} & \zh{准确率下降} \\
+biased statement & {\ipafont /ˈsteɪtmənt/} & \zh{偏置陈述} \\
+\bottomrule
+\end{tabular*}
+
+\newpage
+
+\begin{center}
+    {\Large\bfseries BriLLM}
+\end{center}
+
+\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}lll@{}}
+\toprule
+\textbf{English} & \textbf{IPA} & \textbf{Chinese} \\
+\midrule
+brain-inspired language model & {\ipafont /ˌɪnˈspaɪɚd/} & \zh{脑启发语言模型} \\
+Signal Fully-connected flowing & {\ipafont /kəˈnɛktɪd/} & \zh{信号全连接流动} \\
+neurocognitive principle & {\ipafont /ˌnʊroʊˈkɑːɡnɪtɪv/} & \zh{神经认知原理} \\
+static semantic mapping & {\ipafont /sɪˈmæntɪk/} & \zh{静态语义映射} \\
+specialized node & {\ipafont /ˈspɛʃəˌlaɪzd/} & \zh{专用节点} \\
+cortical region & {\ipafont /ˈkɔrtəkəl/} & \zh{皮层区域} \\
+dynamic signal propagation & {\ipafont /ˌprɑpəˈɡeɪʃən/} & \zh{动态信号传播} \\
+electrophysiological information flow & {\ipafont /ɪˌlɛktroʊˌfɪziəˈlɑːdʒɪkəl/} & \zh{电生理信息流} \\
+model interpretability & {\ipafont /ɪnˌtɝːprətəˈbɪləti/} & \zh{模型可解释性} \\
+context-length-independent scaling & {\ipafont /ˌɪndɪˈpɛndənt/} & \zh{上下文长度无关扩展} \\
+brain-like processing & {\ipafont /ˈprɑsɛsɪŋ/} & \zh{类脑处理} \\
+global-scale simulation & {\ipafont /ˌsɪmjəˈleɪʃən/} & \zh{全局尺度模拟} \\
+black-box opacity & {\ipafont /oʊˈpæsəti/} & \zh{黑箱不透明性} \\
+quadratic complexity & {\ipafont /kwɑˈdrɑtɪk/} & \zh{二次复杂度} \\
+AGI development & {\ipafont /dɪˈvɛləpmənt/} & \zh{通用人工智能发展} \\
+semantic representation & {\ipafont /ˌrɛprəzɛnˈteɪʃən/} & \zh{语义表征} \\
+energy-maximizing signaling & {\ipafont /ˈmæksəˌmaɪzɪŋ/} & \zh{能量最大化信号传递} \\
+directed graph & {\ipafont /dɚˈɛktəd/} & \zh{有向图} \\
+static semantic grounding & {\ipafont /ˈɡraʊndɪŋ/} & \zh{静态语义落地} \\
+bidirectional signaling & {\ipafont /ˌbaɪdəˈrɛkʃənəl/} & \zh{双向信号传递} \\
+least-resistance path & {\ipafont /rɪˈzɪstəns/} & \zh{最小阻力路径} \\
+neural pathway & {\ipafont /ˈnʊrəl/} & \zh{神经通路} \\
+generative prediction & {\ipafont /ˈdʒɛnɚətɪv/} & \zh{生成式预测} \\
+autoregressive prediction & {\ipafont /ˌɔːtoʊrɪˈɡrɛsɪv/} & \zh{自回归预测} \\
+one-hot vector & {\ipafont /ˈvɛktɚ/} & \zh{独热向量} \\
+attention mechanism & {\ipafont /ˈmɛkəˌnɪzəm/} & \zh{注意力机制} \\
+signal dynamics & {\ipafont /daɪˈnæmɪks/} & \zh{信号动力学} \\
+parameter scaling & {\ipafont /pɚˈæmətɚ/} & \zh{参数扩展} \\
+arbitrary context & {\ipafont /ˈɑrbəˌtrɛri/} & \zh{任意长度上下文} \\
+paradigm shift & {\ipafont /ˈpɛrəˌdaɪm/} & \zh{范式转变} \\
+\bottomrule
+\end{tabular*}
+
+\newpage
+
+\begin{center}
+    {\Large\bfseries Scalable Diffusion Models with Transformers}
+\end{center}
+
+\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}lll@{}}
+\toprule
+\textbf{English} & \textbf{IPA} & \textbf{Chinese} \\
+\midrule
+Diffusion Transformer & {\ipafont /dɪˈfjuʒən/} & \zh{扩散 Transformer} \\
+latent diffusion model & {\ipafont /ˈleɪtənt/} & \zh{潜空间扩散模型} \\
+U-Net backbone & {\ipafont /ˈbækˌboʊn/} & \zh{U-Net 主干网络} \\
+latent patch & {\ipafont /ˈpætʃ/} & \zh{潜空间图像块} \\
+forward-pass complexity & {\ipafont /kəmˈplɛksəti/} & \zh{前向过程复杂度} \\
+floating-point operations & {\ipafont /ˈfloʊtɪŋ/} & \zh{浮点运算量} \\
+transformer depth & {\ipafont /ˈdɛpθ/} & \zh{Transformer 深度} \\
+transformer width & {\ipafont /ˈwɪdθ/} & \zh{Transformer 宽度} \\
+input token & {\ipafont /ˈtoʊkən/} & \zh{输入词元} \\
+Fréchet Inception Distance & {\ipafont /freɪˈʃɛ/} & \zh{弗雷歇初始距离} \\
+class-conditional generation & {\ipafont /kənˈdɪʃənəl/} & \zh{类别条件生成} \\
+scalability property & {\ipafont /ˌskeɪləˈbɪləti/} & \zh{可扩展性性质} \\
+state-of-the-art image quality & {\ipafont /ˈkwɑləti/} & \zh{最先进图像质量} \\
+architecture unification & {\ipafont /ˌjunəfəˈkeɪʃən/} & \zh{架构统一} \\
+inductive bias & {\ipafont /ˌɪnˈdʌktɪv/} & \zh{归纳偏置} \\
+cross-domain research & {\ipafont /doʊˈmeɪn/} & \zh{跨领域研究} \\
+Vision Transformer & {\ipafont /ˈvɪʒən/} & \zh{视觉 Transformer} \\
+scaling behavior & {\ipafont /bɪˈheɪvjɚ/} & \zh{扩展规律} \\
+network complexity & {\ipafont /kəmˈplɛksəti/} & \zh{网络复杂度} \\
+sample quality & {\ipafont /ˈkwɑləti/} & \zh{样本质量} \\
+VAE latent space & {\ipafont /ˈleɪtənt/} & \zh{VAE 潜空间} \\
+adaptive normalization & {\ipafont /ˌnɔrməlɪˈzeɪʃən/} & \zh{自适应归一化} \\
+conditional information & {\ipafont /kənˈdɪʃənəl/} & \zh{条件信息} \\
+channel count & {\ipafont /ˈtʃænəl/} & \zh{通道数} \\
+spatial self-attention & {\ipafont /ˈspeɪʃəl/} & \zh{空间自注意力} \\
+ResNet block & {\ipafont /ˈblɑk/} & \zh{ResNet 模块} \\
+compute-efficient model & {\ipafont /ɪˈfɪʃənt/} & \zh{计算高效模型} \\
+image synthesis & {\ipafont /ˈsɪnθəsəs/} & \zh{图像合成} \\
+benchmarking design space & {\ipafont /ˈbɛntʃˌmɑːrkɪŋ/} & \zh{设计空间基准测试} \\
+training iteration & {\ipafont /ˌɪtɚˈeɪʃən/} & \zh{训练迭代} \\
+\bottomrule
+\end{tabular*}
+
+\newpage
+
+\begin{center}
+    {\Large\bfseries DeepSeek-R1: Reinforcement Learning for Reasoning}
+\end{center}
+
+\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}lll@{}}
+\toprule
+\textbf{English} & \textbf{IPA} & \textbf{Chinese} \\
+\midrule
+pure reinforcement learning & {\ipafont /ˌriːɪnˈfɔːrsmənt/} & \zh{纯强化学习} \\
+verifiable reward & {\ipafont /ˈverɪfaɪəbəl/} & \zh{可验证奖励} \\
+reasoning trajectory & {\ipafont /trəˈdʒektəri/} & \zh{推理轨迹} \\
+chain-of-thought prompting & {\ipafont /θɔːt/} & \zh{思维链提示} \\
+emergent reasoning pattern & {\ipafont /ɪˈmɜːrdʒənt/} & \zh{涌现推理模式} \\
+self-reflection & {\ipafont /rɪˈflekʃən/} & \zh{自我反思} \\
+answer verification & {\ipafont /ˌverɪfɪˈkeɪʃən/} & \zh{答案验证} \\
+strategy adaptation & {\ipafont /ˌædæpˈteɪʃən/} & \zh{策略适应} \\
+Group Relative Policy Optimization & {\ipafont /ˌɑːptɪməˈzeɪʃən/} & \zh{组相对策略优化} \\
+rule-based reward & {\ipafont /ruːl/} & \zh{基于规则的奖励} \\
+accuracy reward & {\ipafont /ˈækjərəsi/} & \zh{准确性奖励} \\
+format reward & {\ipafont /ˈfɔːrmæt/} & \zh{格式奖励} \\
+supervised fine-tuning & {\ipafont /ˈsuːpərvaɪzd/} & \zh{监督微调} \\
+rejection sampling & {\ipafont /rɪˈdʒekʃən/} & \zh{拒绝采样} \\
+cold-start data & {\ipafont /stɑːrt/} & \zh{冷启动数据} \\
+language mixing & {\ipafont /ˈmɪksɪŋ/} & \zh{语言混杂} \\
+response readability & {\ipafont /ˌriːdəˈbɪləti/} & \zh{回复可读性} \\
+self-evolution & {\ipafont /ˌevəˈluːʃən/} & \zh{自我演化} \\
+reasoning behavior & {\ipafont /bɪˈheɪvjər/} & \zh{推理行为} \\
+instruction tuning & {\ipafont /ɪnˈstrʌkʃən/} & \zh{指令微调} \\
+model distillation & {\ipafont /ˌdɪstɪˈleɪʃən/} & \zh{模型蒸馏} \\
+single-pass accuracy & {\ipafont /ˈækjərəsi/} & \zh{单次作答准确率} \\
+consensus voting & {\ipafont /kənˈsensəs/} & \zh{共识投票} \\
+response length & {\ipafont /leŋθ/} & \zh{回复长度} \\
+training stability & {\ipafont /stəˈbɪləti/} & \zh{训练稳定性} \\
+reward hacking & {\ipafont /ˈhækɪŋ/} & \zh{奖励投机} \\
+mathematical reasoning & {\ipafont /ˌmæθəˈmætɪkəl/} & \zh{数学推理} \\
+coding competition & {\ipafont /ˌkɑːmpəˈtɪʃən/} & \zh{编程竞赛} \\
+STEM benchmark & {\ipafont /ˈbentʃmɑːrk/} & \zh{STEM 基准测试} \\
+open-source checkpoint & {\ipafont /ˈtʃekpɔɪnt/} & \zh{开源模型检查点} \\
+\bottomrule
+\end{tabular*}
+
+\newpage
+
+\begin{center}
+    {\Large\bfseries Why Language Models Hallucinate}
+\end{center}
+
+\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}lll@{}}
+\toprule
+\textbf{English} & \textbf{IPA} & \textbf{Chinese} \\
+\midrule
+language-model hallucination & {\ipafont /həˌluːsɪˈneɪʃən/} & \zh{语言模型幻觉} \\
+plausible falsehood & {\ipafont /ˈplɔːzəbəl/} & \zh{貌似合理的错误陈述} \\
+uncertainty admission & {\ipafont /ʌnˈsɜːrtənti/} & \zh{承认不确定性} \\
+statistical error & {\ipafont /stəˈtɪstɪkəl/} & \zh{统计误差} \\
+binary classification & {\ipafont /ˈbaɪnəri/} & \zh{二元分类} \\
+valid statement & {\ipafont /ˈvælɪd/} & \zh{有效陈述} \\
+training corpus & {\ipafont /ˈkɔːrpəs/} & \zh{训练语料库} \\
+error-free data & {\ipafont /ˈerər/} & \zh{无错误数据} \\
+error lower bound & {\ipafont /baʊnd/} & \zh{错误率下界} \\
+pretraining objective & {\ipafont /əbˈdʒektɪv/} & \zh{预训练目标} \\
+post-training procedure & {\ipafont /prəˈsiːdʒər/} & \zh{后训练流程} \\
+benchmark scoring & {\ipafont /ˈskɔːrɪŋ/} & \zh{基准评分} \\
+test-taking incentive & {\ipafont /ɪnˈsentɪv/} & \zh{应试激励} \\
+guessing behavior & {\ipafont /ˈɡesɪŋ/} & \zh{猜测行为} \\
+calibrated confidence & {\ipafont /ˈkælɪbreɪtɪd/} & \zh{校准后的置信度} \\
+intrinsic hallucination & {\ipafont /ɪnˈtrɪnsɪk/} & \zh{内在幻觉} \\
+extrinsic hallucination & {\ipafont /ekˈstrɪnsɪk/} & \zh{外在幻觉} \\
+evaluation metric & {\ipafont /ˌiːvæljuˈeɪʃən/} & \zh{评估指标} \\
+leaderboard pressure & {\ipafont /ˈliːdərbɔːrd/} & \zh{排行榜压力} \\
+epistemic uncertainty & {\ipafont /ˌepɪˈstiːmɪk/} & \zh{认知不确定性} \\
+model abstention & {\ipafont /əbˈstenʃən/} & \zh{模型拒答} \\
+factuality & {\ipafont /ˌfæktʃuˈæləti/} & \zh{事实性} \\
+trustworthy system & {\ipafont /ˈtrʌstwɜːrði/} & \zh{可信系统} \\
+socio-technical mitigation & {\ipafont /ˌmɪtɪˈɡeɪʃən/} & \zh{社会技术缓解方案} \\
+grading scheme & {\ipafont /ˈɡreɪdɪŋ/} & \zh{评分方案} \\
+distribution shift & {\ipafont /ˌdɪstrɪˈbjuːʃən/} & \zh{分布偏移} \\
+retrieval model & {\ipafont /rɪˈtriːvəl/} & \zh{检索模型} \\
+sample complexity & {\ipafont /kəmˈpleksəti/} & \zh{样本复杂度} \\
+rare fact & {\ipafont /rer/} & \zh{稀有事实} \\
+error taxonomy & {\ipafont /tækˈsɑːnəmi/} & \zh{错误分类体系} \\
+\bottomrule
+\end{tabular*}
+
+\newpage
+
+\begin{center}
+    {\Large\bfseries Optical Generative Models}
+\end{center}
+
+\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}lll@{}}
+\toprule
+\textbf{English} & \textbf{IPA} & \textbf{Chinese} \\
+\midrule
+optical generative model & {\ipafont /ˈɑːptɪkəl/} & \zh{光学生成模型} \\
+free-space decoder & {\ipafont /dɪˈkoʊdər/} & \zh{自由空间解码器} \\
+digital encoder & {\ipafont /ɪnˈkoʊdər/} & \zh{数字编码器} \\
+phase pattern & {\ipafont /feɪz/} & \zh{相位图案} \\
+generative seed & {\ipafont /siːd/} & \zh{生成种子} \\
+target data distribution & {\ipafont /ˌdɪstrɪˈbjuːʃən/} & \zh{目标数据分布} \\
+all-optical processing & {\ipafont /ˈprɑːsesɪŋ/} & \zh{全光处理} \\
+optical inference & {\ipafont /ˈɪnfərəns/} & \zh{光学推理} \\
+snapshot generation & {\ipafont /ˈsnæpʃɑːt/} & \zh{快照式生成} \\
+illumination power & {\ipafont /ɪˌluːmɪˈneɪʃən/} & \zh{照明功率} \\
+spatial light modulator & {\ipafont /ˈmɑːdʒəleɪtər/} & \zh{空间光调制器} \\
+diffractive layer & {\ipafont /dɪˈfræktɪv/} & \zh{衍射层} \\
+coherent light & {\ipafont /koʊˈhɪrənt/} & \zh{相干光} \\
+wavelength multiplexing & {\ipafont /ˈweɪvleŋθ/} & \zh{波长复用} \\
+monochrome image & {\ipafont /ˈmɑːnəkroʊm/} & \zh{单色图像} \\
+multicolor synthesis & {\ipafont /ˈsɪnθəsɪs/} & \zh{多色图像合成} \\
+optical propagation & {\ipafont /ˌprɑːpəˈɡeɪʃən/} & \zh{光学传播} \\
+phase modulation & {\ipafont /ˌmɑːdʒəˈleɪʃən/} & \zh{相位调制} \\
+Fourier optics & {\ipafont /ˈfʊrieɪ/} & \zh{傅里叶光学} \\
+photonic computing & {\ipafont /foʊˈtɑːnɪk/} & \zh{光子计算} \\
+energy efficiency & {\ipafont /ɪˈfɪʃənsi/} & \zh{能源效率} \\
+scalable inference & {\ipafont /ˈskeɪləbəl/} & \zh{可扩展推理} \\
+random noise vector & {\ipafont /ˈvektər/} & \zh{随机噪声向量} \\
+joint training & {\ipafont /dʒɔɪnt/} & \zh{联合训练} \\
+physical prototype & {\ipafont /ˈproʊtətaɪp/} & \zh{物理原型} \\
+diffraction efficiency & {\ipafont /dɪˈfrækʃən/} & \zh{衍射效率} \\
+optical aberration & {\ipafont /ˌæbəˈreɪʃən/} & \zh{光学像差} \\
+camera sensor & {\ipafont /ˈsensər/} & \zh{相机传感器} \\
+image synthesis & {\ipafont /ˈsɪnθəsɪs/} & \zh{图像合成} \\
+carbon footprint & {\ipafont /ˈfʊtprɪnt/} & \zh{碳足迹} \\
+\bottomrule
+\end{tabular*}
+
+\newpage
+
+\begin{center}
+    {\Large\bfseries DeepSeek-OCR: Contexts Optical Compression}
+\end{center}
+
+\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}lll@{}}
+\toprule
+\textbf{English} & \textbf{IPA} & \textbf{Chinese} \\
+\midrule
+optical context compression & {\ipafont /kəmˈpreʃən/} & \zh{上下文光学压缩} \\
+two-dimensional mapping & {\ipafont /daɪˈmenʃənəl/} & \zh{二维映射} \\
+vision token & {\ipafont /ˈvɪʒən/} & \zh{视觉词元} \\
+text token & {\ipafont /ˈtoʊkən/} & \zh{文本词元} \\
+compression ratio & {\ipafont /ˈreɪʃioʊ/} & \zh{压缩比} \\
+DeepEncoder & {\ipafont /ɪnˈkoʊdər/} & \zh{DeepEncoder 编码器} \\
+mixture-of-experts decoder & {\ipafont /ˈekspɜːrts/} & \zh{混合专家解码器} \\
+high-resolution input & {\ipafont /ˌrezəˈluːʃən/} & \zh{高分辨率输入} \\
+activation memory & {\ipafont /ˌæktɪˈveɪʃən/} & \zh{激活值内存} \\
+OCR precision & {\ipafont /prɪˈsɪʒən/} & \zh{OCR 精确率} \\
+document parsing & {\ipafont /ˈpɑːrsɪŋ/} & \zh{文档解析} \\
+long-context modeling & {\ipafont /ˈkɑːntekst/} & \zh{长上下文建模} \\
+token budget & {\ipafont /ˈbʌdʒɪt/} & \zh{词元预算} \\
+historical context & {\ipafont /hɪˈstɔːrɪkəl/} & \zh{历史上下文} \\
+memory forgetting & {\ipafont /fərˈɡetɪŋ/} & \zh{记忆遗忘} \\
+vision-language model & {\ipafont /ˈlæŋɡwɪdʒ/} & \zh{视觉语言模型} \\
+layout analysis & {\ipafont /ˈleɪaʊt/} & \zh{版面分析} \\
+handwriting recognition & {\ipafont /ˈhændraɪtɪŋ/} & \zh{手写识别} \\
+formula recognition & {\ipafont /ˈfɔːrmjələ/} & \zh{公式识别} \\
+chart parsing & {\ipafont /tʃɑːrt/} & \zh{图表解析} \\
+page-level encoding & {\ipafont /ɪnˈkoʊdɪŋ/} & \zh{页面级编码} \\
+native resolution & {\ipafont /ˈneɪtɪv/} & \zh{原生分辨率} \\
+token efficiency & {\ipafont /ɪˈfɪʃənsi/} & \zh{词元效率} \\
+edit distance & {\ipafont /ˈdɪstəns/} & \zh{编辑距离} \\
+production throughput & {\ipafont /ˈθruːpʊt/} & \zh{生产吞吐量} \\
+training-data generation & {\ipafont /ˌdʒenəˈreɪʃən/} & \zh{训练数据生成} \\
+multimodal corpus & {\ipafont /ˌmʌltiˈmoʊdəl/} & \zh{多模态语料库} \\
+document benchmark & {\ipafont /ˈbentʃmɑːrk/} & \zh{文档基准测试} \\
+dynamic tiling & {\ipafont /ˈtaɪlɪŋ/} & \zh{动态切片} \\
+causal decoding & {\ipafont /ˈkɔːzəl/} & \zh{因果解码} \\
+\bottomrule
+\end{tabular*}
+
+\newpage
+
+\begin{center}
+    {\Large\bfseries FlyLoRA}
+\end{center}
+
+\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}lll@{}}
+\toprule
+\textbf{English} & \textbf{IPA} & \textbf{Chinese} \\
+\midrule
+low-rank adaptation & {\ipafont /ˈædæpˌteɪʃən/} & \zh{低秩适配} \\
+parameter-efficient fine-tuning & {\ipafont /ɪˈfɪʃənt/} & \zh{参数高效微调} \\
+parameter interference & {\ipafont /ˌɪntərˈfɪrəns/} & \zh{参数干扰} \\
+intra-task correlation & {\ipafont /ˌkɔːrəˈleɪʃən/} & \zh{任务内相关性} \\
+inter-task interference & {\ipafont /ˌɪntərˈfɪrəns/} & \zh{任务间干扰} \\
+rank-wise expert & {\ipafont /ræŋk/} & \zh{逐秩专家} \\
+implicit router & {\ipafont /ɪmˈplɪsɪt/} & \zh{隐式路由器} \\
+sparse random projection & {\ipafont /sper/} & \zh{稀疏随机投影} \\
+up-projection matrix & {\ipafont /prəˈdʒekʃən/} & \zh{升维投影矩阵} \\
+down-projection matrix & {\ipafont /ˈmeɪtrɪks/} & \zh{降维投影矩阵} \\
+mixture of experts & {\ipafont /ˈmɪkstʃər/} & \zh{混合专家模型} \\
+expert activation & {\ipafont /ˌæktɪˈveɪʃən/} & \zh{专家激活} \\
+task decoupling & {\ipafont /diːˈkʌplɪŋ/} & \zh{任务解耦} \\
+matrix orthogonality & {\ipafont /ˌɔːrθəɡəˈnæləti/} & \zh{矩阵正交性} \\
+frozen matrix & {\ipafont /ˈfroʊzən/} & \zh{冻结矩阵} \\
+model merging & {\ipafont /ˈmɜːrdʒɪŋ/} & \zh{模型合并} \\
+instruction tuning & {\ipafont /ɪnˈstrʌkʃən/} & \zh{指令微调} \\
+foundation model & {\ipafont /faʊnˈdeɪʃən/} & \zh{基础模型} \\
+trainable parameter & {\ipafont /ˈtreɪnəbəl/} & \zh{可训练参数} \\
+computational overhead & {\ipafont /ˈoʊvərhed/} & \zh{计算开销} \\
+olfactory circuit & {\ipafont /ɑːlˈfæktəri/} & \zh{嗅觉回路} \\
+biological inspiration & {\ipafont /ˌbaɪəˈlɑːdʒɪkəl/} & \zh{生物学启发} \\
+expert routing & {\ipafont /ˈruːtɪŋ/} & \zh{专家路由} \\
+random matrix & {\ipafont /ˈrændəm/} & \zh{随机矩阵} \\
+task decorrelation & {\ipafont /diːˌkɔːrəˈleɪʃən/} & \zh{任务去相关} \\
+multi-task learning & {\ipafont /ˌmʌltiˈtæsk/} & \zh{多任务学习} \\
+code generation & {\ipafont /ˌdʒenəˈreɪʃən/} & \zh{代码生成} \\
+mathematical reasoning & {\ipafont /ˌmæθəˈmætɪkəl/} & \zh{数学推理} \\
+scientific question answering & {\ipafont /ˌsaɪənˈtɪfɪk/} & \zh{科学问答} \\
+ablation study & {\ipafont /əˈbleɪʃən/} & \zh{消融研究} \\
+\bottomrule
+\end{tabular*}
+
+\newpage
+
+\begin{center}
+    {\Large\bfseries Back to Basics: Let Denoising Models Denoise}
+\end{center}
+
+\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}lll@{}}
+\toprule
+\textbf{English} & \textbf{IPA} & \textbf{Chinese} \\
+\midrule
+denoising diffusion model & {\ipafont /diːˈnɔɪzɪŋ/} & \zh{去噪扩散模型} \\
+clean-data prediction & {\ipafont /prɪˈdɪkʃən/} & \zh{干净数据预测} \\
+noise prediction & {\ipafont /nɔɪz/} & \zh{噪声预测} \\
+velocity prediction & {\ipafont /vəˈlɑːsəti/} & \zh{速度预测} \\
+manifold assumption & {\ipafont /ˈmænɪfoʊld/} & \zh{流形假设} \\
+low-dimensional manifold & {\ipafont /daɪˈmenʃənəl/} & \zh{低维流形} \\
+high-dimensional pixel space & {\ipafont /ˈpɪksəl/} & \zh{高维像素空间} \\
+under-capacity network & {\ipafont /kəˈpæsəti/} & \zh{容量不足的网络} \\
+large-patch Transformer & {\ipafont /pætʃ/} & \zh{大图块 Transformer} \\
+raw-pixel modeling & {\ipafont /ˈpɪksəl/} & \zh{原始像素建模} \\
+self-contained paradigm & {\ipafont /ˈperədaɪm/} & \zh{自包含范式} \\
+information bottleneck & {\ipafont /ˈbɑːtəlnek/} & \zh{信息瓶颈} \\
+curse of dimensionality & {\ipafont /ˌdaɪmenʃəˈnæləti/} & \zh{维数灾难} \\
+latent space & {\ipafont /ˈleɪtənt/} & \zh{潜空间} \\
+image tokenizer & {\ipafont /ˈtoʊkənaɪzər/} & \zh{图像分词器} \\
+pretraining-free model & {\ipafont /ˌpriːˈtreɪnɪŋ/} & \zh{免预训练模型} \\
+extra-loss-free training & {\ipafont /lɔːs/} & \zh{无额外损失训练} \\
+prediction target & {\ipafont /ˈtɑːrɡɪt/} & \zh{预测目标} \\
+loss reweighting & {\ipafont /ˌriːˈweɪtɪŋ/} & \zh{损失重加权} \\
+flow matching & {\ipafont /ˈmætʃɪŋ/} & \zh{流匹配} \\
+corrupted image & {\ipafont /kəˈrʌptɪd/} & \zh{受损图像} \\
+data distribution & {\ipafont /ˌdɪstrɪˈbjuːʃən/} & \zh{数据分布} \\
+off-manifold quantity & {\ipafont /ˈkwɑːntəti/} & \zh{流形外量} \\
+patch size & {\ipafont /saɪz/} & \zh{图块尺寸} \\
+Vision Transformer & {\ipafont /ˈvɪʒən/} & \zh{视觉 Transformer} \\
+ImageNet generation & {\ipafont /ˌdʒenəˈreɪʃən/} & \zh{ImageNet 图像生成} \\
+denoiser function & {\ipafont /diːˈnɔɪzər/} & \zh{去噪器函数} \\
+model capacity & {\ipafont /kəˈpæsəti/} & \zh{模型容量} \\
+reconstruction target & {\ipafont /ˌriːkənˈstrʌkʃən/} & \zh{重建目标} \\
+pixel-space diffusion & {\ipafont /dɪˈfjuːʒən/} & \zh{像素空间扩散} \\
+\bottomrule
+\end{tabular*}
+
+\newpage
+
+\begin{center}
+    {\Large\bfseries ARC Is a Vision Problem!}
+\end{center}
+
+\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}lll@{}}
+\toprule
+\textbf{English} & \textbf{IPA} & \textbf{Chinese} \\
+\midrule
+Abstraction and Reasoning Corpus & {\ipafont /æbˈstrækʃən/} & \zh{抽象与推理语料库} \\
+abstract reasoning & {\ipafont /ˈæbstrækt/} & \zh{抽象推理} \\
+vision-centric approach & {\ipafont /ˈsentrɪk/} & \zh{视觉中心方法} \\
+image-to-image translation & {\ipafont /trænzˈleɪʃən/} & \zh{图像到图像转换} \\
+visual prior & {\ipafont /ˈpraɪər/} & \zh{视觉先验} \\
+canvas representation & {\ipafont /ˈkænvəs/} & \zh{画布表示} \\
+Vision Transformer & {\ipafont /ˈvɪʒən/} & \zh{视觉 Transformer} \\
+test-time training & {\ipafont /ˈtreɪnɪŋ/} & \zh{测试时训练} \\
+unseen task & {\ipafont /ˌʌnˈsiːn/} & \zh{未见任务} \\
+few-shot demonstration & {\ipafont /ˌdemənˈstreɪʃən/} & \zh{少样本示例} \\
+task adaptation & {\ipafont /ˌædæpˈteɪʃən/} & \zh{任务适应} \\
+pattern transformation & {\ipafont /ˌtrænsfərˈmeɪʃən/} & \zh{图案变换} \\
+visual reflection & {\ipafont /rɪˈflekʃən/} & \zh{视觉反射} \\
+spatial symmetry & {\ipafont /ˈsɪmətri/} & \zh{空间对称} \\
+physical gravity & {\ipafont /ˈɡrævəti/} & \zh{物理重力} \\
+object correspondence & {\ipafont /ˌkɔːrəˈspɑːndəns/} & \zh{对象对应关系} \\
+spatial reasoning & {\ipafont /ˈspeɪʃəl/} & \zh{空间推理} \\
+color grid & {\ipafont /ɡrɪd/} & \zh{彩色网格} \\
+puzzle solving & {\ipafont /ˈpʌzəl/} & \zh{谜题求解} \\
+human performance & {\ipafont /pərˈfɔːrməns/} & \zh{人类表现} \\
+ARC benchmark & {\ipafont /ˈbentʃmɑːrk/} & \zh{ARC 基准测试} \\
+VARC framework & {\ipafont /ˈfreɪmwɜːrk/} & \zh{VARC 框架} \\
+episodic training & {\ipafont /ˌepɪˈsɑːdɪk/} & \zh{情景式训练} \\
+task encoder & {\ipafont /ɪnˈkoʊdər/} & \zh{任务编码器} \\
+target prediction & {\ipafont /ˈtɑːrɡɪt/} & \zh{目标预测} \\
+visual analogy & {\ipafont /əˈnælədʒi/} & \zh{视觉类比} \\
+compositional rule & {\ipafont /ˌkɑːmpəˈzɪʃənəl/} & \zh{组合规则} \\
+transformation invariance & {\ipafont /ɪnˈveriəns/} & \zh{变换不变性} \\
+ensemble model & {\ipafont /ɑːnˈsɑːmbəl/} & \zh{集成模型} \\
+task generalization & {\ipafont /ˌdʒenərələˈzeɪʃən/} & \zh{任务泛化} \\
+\bottomrule
+\end{tabular*}
+
+\newpage
+
+\begin{center}
+    {\Large\bfseries Kimi K2.5: Visual Agentic Intelligence}
+\end{center}
+
+\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}lll@{}}
+\toprule
+\textbf{English} & \textbf{IPA} & \textbf{Chinese} \\
+\midrule
+multimodal agentic model & {\ipafont /ˌmʌltiˈmoʊdəl/} & \zh{多模态智能体模型} \\
+agentic intelligence & {\ipafont /eɪˈdʒentɪk/} & \zh{智能体智能} \\
+joint text-vision pretraining & {\ipafont /dʒɔɪnt/} & \zh{文本视觉联合预训练} \\
+zero-vision SFT & {\ipafont /ˈzɪroʊ/} & \zh{零视觉监督微调} \\
+joint reinforcement learning & {\ipafont /ˌriːɪnˈfɔːrsmənt/} & \zh{联合强化学习} \\
+Agent Swarm & {\ipafont /swɔːrm/} & \zh{智能体集群} \\
+parallel orchestration & {\ipafont /ˌɔːrkəˈstreɪʃən/} & \zh{并行编排} \\
+task decomposition & {\ipafont /ˌdiːkɑːmpəˈzɪʃən/} & \zh{任务分解} \\
+heterogeneous subproblem & {\ipafont /ˌhetərəˈdʒiːniəs/} & \zh{异构子问题} \\
+concurrent execution & {\ipafont /kənˈkɜːrənt/} & \zh{并发执行} \\
+MoonViT-3D encoder & {\ipafont /ɪnˈkoʊdər/} & \zh{MoonViT-3D 编码器} \\
+native-resolution encoder & {\ipafont /ˈneɪtɪv/} & \zh{原生分辨率编码器} \\
+NaViT packing & {\ipafont /ˈpækɪŋ/} & \zh{NaViT 打包} \\
+video compression & {\ipafont /kəmˈpreʃən/} & \zh{视频压缩} \\
+temporal averaging & {\ipafont /ˈtempərəl/} & \zh{时间平均} \\
+context window & {\ipafont /ˈwɪndoʊ/} & \zh{上下文窗口} \\
+visual token & {\ipafont /ˈtoʊkən/} & \zh{视觉词元} \\
+cross-modal alignment & {\ipafont /əˈlaɪnmənt/} & \zh{跨模态对齐} \\
+tool calling & {\ipafont /ˈkɔːlɪŋ/} & \zh{工具调用} \\
+multi-step planning & {\ipafont /ˈplænɪŋ/} & \zh{多步规划} \\
+sub-agent creation & {\ipafont /kriˈeɪʃən/} & \zh{子智能体创建} \\
+task delegation & {\ipafont /ˌdeləˈɡeɪʃən/} & \zh{任务委派} \\
+agent orchestrator & {\ipafont /ˈɔːrkəstreɪtər/} & \zh{智能体编排器} \\
+parallel-agent RL & {\ipafont /ˈpærəlel/} & \zh{并行智能体强化学习} \\
+credit assignment & {\ipafont /ˈkredɪt/} & \zh{信用分配} \\
+training instability & {\ipafont /ˌɪnstəˈbɪləti/} & \zh{训练不稳定性} \\
+frozen sub-agent & {\ipafont /ˈfroʊzən/} & \zh{冻结的子智能体} \\
+verifiable reward & {\ipafont /ˈverɪfaɪəbəl/} & \zh{可验证奖励} \\
+inference latency & {\ipafont /ˈleɪtənsi/} & \zh{推理延迟} \\
+open-source checkpoint & {\ipafont /ˈtʃekpɔɪnt/} & \zh{开源模型检查点} \\
+\bottomrule
+\end{tabular*}
+
+\newpage
+
+\begin{center}
+    {\Large\bfseries Attention Residuals}
+\end{center}
+
+\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}lll@{}}
+\toprule
+\textbf{English} & \textbf{IPA} & \textbf{Chinese} \\
+\midrule
+residual connection & {\ipafont /rɪˈzɪdʒuəl/} & \zh{残差连接} \\
+PreNorm architecture & {\ipafont /ˈpriːnɔːrm/} & \zh{预归一化架构} \\
+hidden-state growth & {\ipafont /ˈhɪdən/} & \zh{隐藏状态增长} \\
+layer contribution & {\ipafont /ˌkɑːntrɪˈbjuːʃən/} & \zh{层贡献} \\
+depth-wise aggregation & {\ipafont /ˌæɡrɪˈɡeɪʃən/} & \zh{逐深度聚合} \\
+fixed unit weight & {\ipafont /weɪt/} & \zh{固定单位权重} \\
+softmax attention & {\ipafont /ˈsɔːftmæks/} & \zh{Softmax 注意力} \\
+preceding layer output & {\ipafont /prɪˈsiːdɪŋ/} & \zh{先前层输出} \\
+content-dependent weighting & {\ipafont /dɪˈpendənt/} & \zh{内容依赖加权} \\
+Attention Residuals & {\ipafont /əˈtenʃən/} & \zh{注意力残差} \\
+Block AttnRes & {\ipafont /blɑːk/} & \zh{分块注意力残差} \\
+block-level representation & {\ipafont /ˌreprɪzenˈteɪʃən/} & \zh{块级表示} \\
+memory footprint & {\ipafont /ˈfʊtprɪnt/} & \zh{内存占用} \\
+pipeline communication & {\ipafont /ˌpɑːɪplaɪn/} & \zh{流水线通信} \\
+cache-based communication & {\ipafont /kæʃ/} & \zh{基于缓存的通信} \\
+two-phase computation & {\ipafont /feɪz/} & \zh{两阶段计算} \\
+drop-in replacement & {\ipafont /rɪˈpleɪsmənt/} & \zh{即插即用替代方案} \\
+scaling-law experiment & {\ipafont /ˈskeɪlɪŋ/} & \zh{扩展定律实验} \\
+ablation study & {\ipafont /əˈbleɪʃən/} & \zh{消融研究} \\
+gradient distribution & {\ipafont /ˈɡreɪdiənt/} & \zh{梯度分布} \\
+mixture-of-experts layer & {\ipafont /ˈekspɜːrts/} & \zh{混合专家层} \\
+activated parameter & {\ipafont /ˈæktɪveɪtɪd/} & \zh{激活参数} \\
+identity mapping & {\ipafont /aɪˈdentəti/} & \zh{恒等映射} \\
+gradient highway & {\ipafont /ˈhaɪweɪ/} & \zh{梯度高速通道} \\
+early-layer retrieval & {\ipafont /rɪˈtriːvəl/} & \zh{早期层信息检索} \\
+layer pruning & {\ipafont /ˈpruːnɪŋ/} & \zh{层剪枝} \\
+output magnitude & {\ipafont /ˈmæɡnɪtuːd/} & \zh{输出幅值} \\
+communication overhead & {\ipafont /ˈoʊvərhed/} & \zh{通信开销} \\
+selective aggregation & {\ipafont /sɪˈlektɪv/} & \zh{选择性聚合} \\
+model depth & {\ipafont /depθ/} & \zh{模型深度} \\
+\bottomrule
+\end{tabular*}
+
+\newpage
+
+\begin{center}
+    {\Large\bfseries Obscure but Effective: Classical Chinese Jailbreaks}
+\end{center}
+
+\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}lll@{}}
+\toprule
+\textbf{English} & \textbf{IPA} & \textbf{Chinese} \\
+\midrule
+classical Chinese & {\ipafont /ˈklæsɪkəl/} & \zh{文言文} \\
+jailbreak attack & {\ipafont /ˈdʒeɪlbreɪk/} & \zh{越狱攻击} \\
+safety alignment & {\ipafont /əˈlaɪnmənt/} & \zh{安全对齐} \\
+black-box setting & {\ipafont /ˈsetɪŋ/} & \zh{黑盒设置} \\
+adversarial prompt & {\ipafont /ˌædvərˈseriəl/} & \zh{对抗性提示} \\
+CC-BOS framework & {\ipafont /ˈfreɪmwɜːrk/} & \zh{CC-BOS 框架} \\
+fruit-fly optimization & {\ipafont /ˌɑːptɪməˈzeɪʃən/} & \zh{果蝇优化} \\
+strategy dimension & {\ipafont /daɪˈmenʃən/} & \zh{策略维度} \\
+role identity & {\ipafont /aɪˈdentəti/} & \zh{角色身份} \\
+behavioral guidance & {\ipafont /ˈɡaɪdəns/} & \zh{行为引导} \\
+mechanism design & {\ipafont /ˈmekənɪzəm/} & \zh{机制设计} \\
+metaphor mapping & {\ipafont /ˈmetəfɔːr/} & \zh{隐喻映射} \\
+expression style & {\ipafont /ɪkˈspreʃən/} & \zh{表达风格} \\
+knowledge relation & {\ipafont /rɪˈleɪʃən/} & \zh{知识关系} \\
+trigger pattern & {\ipafont /ˈtrɪɡər/} & \zh{触发模式} \\
+contextual setting & {\ipafont /kənˈtekstʃuəl/} & \zh{语境设置} \\
+smell search & {\ipafont /smel/} & \zh{嗅觉搜索} \\
+visual search & {\ipafont /ˈvɪʒuəl/} & \zh{视觉搜索} \\
+Cauchy mutation & {\ipafont /ˈkoʊʃi/} & \zh{柯西变异} \\
+search space & {\ipafont /sper/} & \zh{搜索空间} \\
+prompt encoding & {\ipafont /ɪnˈkoʊdɪŋ/} & \zh{提示编码} \\
+iterative refinement & {\ipafont /rɪˈfaɪnmənt/} & \zh{迭代优化} \\
+safety constraint & {\ipafont /kənˈstreɪnt/} & \zh{安全约束} \\
+malicious query & {\ipafont /məˈlɪʃəs/} & \zh{恶意查询} \\
+refusal behavior & {\ipafont /rɪˈfjuːzəl/} & \zh{拒答行为} \\
+attack success rate & {\ipafont /səkˈses/} & \zh{攻击成功率} \\
+translation module & {\ipafont /trænzˈleɪʃən/} & \zh{翻译模块} \\
+prompt readability & {\ipafont /ˌriːdəˈbɪləti/} & \zh{提示可读性} \\
+evaluation accuracy & {\ipafont /ˌiːvæljuˈeɪʃən/} & \zh{评估准确性} \\
+model vulnerability & {\ipafont /ˌvʌlnərəˈbɪləti/} & \zh{模型脆弱性} \\
+\bottomrule
+\end{tabular*}
+
+\newpage
+
+\begin{center}
+    {\Large\bfseries Vision Transformers Need More Than Registers}
+\end{center}
+
+\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}lll@{}}
+\toprule
+\textbf{English} & \textbf{IPA} & \textbf{Chinese} \\
+\midrule
+Vision Transformer & {\ipafont /ˈvɪʒən/} & \zh{视觉 Transformer} \\
+dense feature & {\ipafont /dens/} & \zh{密集特征} \\
+visual artifact & {\ipafont /ˈɑːrtɪfækt/} & \zh{视觉伪影} \\
+supervision paradigm & {\ipafont /ˈperədaɪm/} & \zh{监督范式} \\
+lazy aggregation & {\ipafont /ˈleɪzi/} & \zh{惰性聚合} \\
+background shortcut & {\ipafont /ˈbækɡraʊnd/} & \zh{背景捷径} \\
+global semantics & {\ipafont /sɪˈmæntɪks/} & \zh{全局语义} \\
+global attention & {\ipafont /əˈtenʃən/} & \zh{全局注意力} \\
+coarse-grained supervision & {\ipafont /ˌkɔːrsˈɡreɪnd/} & \zh{粗粒度监督} \\
+patch feature & {\ipafont /pætʃ/} & \zh{图块特征} \\
+CLS token & {\ipafont /ˈtoʊkən/} & \zh{CLS 词元} \\
+selective integration & {\ipafont /sɪˈlektɪv/} & \zh{选择性整合} \\
+Patch Score & {\ipafont /skɔːr/} & \zh{图块评分} \\
+Point-in-Box metric & {\ipafont /ˈmetrɪk/} & \zh{框内点指标} \\
+high-norm token & {\ipafont /nɔːrm/} & \zh{高范数词元} \\
+semantic consistency & {\ipafont /kənˈsɪstənsi/} & \zh{语义一致性} \\
+foreground region & {\ipafont /ˈfɔːrɡraʊnd/} & \zh{前景区域} \\
+feature alignment & {\ipafont /əˈlaɪnmənt/} & \zh{特征对齐} \\
+object localization & {\ipafont /ˌloʊkələˈzeɪʃən/} & \zh{目标定位} \\
+label supervision & {\ipafont /ˌsuːpərˈvɪʒən/} & \zh{标签监督} \\
+text supervision & {\ipafont /tekst/} & \zh{文本监督} \\
+self-supervision & {\ipafont /self/} & \zh{自监督} \\
+open-vocabulary task & {\ipafont /voʊˈkæbjəleri/} & \zh{开放词汇任务} \\
+object discovery & {\ipafont /dɪˈskʌvəri/} & \zh{目标发现} \\
+semantic segmentation & {\ipafont /ˌseɡmənˈteɪʃən/} & \zh{语义分割} \\
+instance segmentation & {\ipafont /ˈɪnstəns/} & \zh{实例分割} \\
+frequency-aware aggregation & {\ipafont /ˈfriːkwənsi/} & \zh{频率感知聚合} \\
+spatial guidance & {\ipafont /ˈspeɪʃəl/} & \zh{空间引导} \\
+emergent property & {\ipafont /ɪˈmɜːrdʒənt/} & \zh{涌现性质} \\
+foundation model & {\ipafont /faʊnˈdeɪʃən/} & \zh{基础模型} \\
+\bottomrule
+\end{tabular*}
+
+\newpage
+
+\begin{center}
+    {\Large\bfseries DeepSeek LLM}
+\end{center}
+
+\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}lll@{}}
+\toprule
+\textbf{English} & \textbf{IPA} & \textbf{Chinese} \\
+\midrule
+open-source language model & {\ipafont /ˈoʊpən sɔːrs/} & \zh{开源语言模型} \\
+scaling law & {\ipafont /ˈskeɪlɪŋ/} & \zh{扩展定律} \\
+model configuration & {\ipafont /kənˌfɪɡjəˈreɪʃən/} & \zh{模型配置} \\
+long-term perspective & {\ipafont /pərˈspektɪv/} & \zh{长期视角} \\
+pretraining corpus & {\ipafont /ˈkɔːrpəs/} & \zh{预训练语料库} \\
+two-trillion-token dataset & {\ipafont /ˈtrɪljən/} & \zh{两万亿词元数据集} \\
+supervised fine-tuning & {\ipafont /ˈsuːpərvaɪzd/} & \zh{监督微调} \\
+direct preference optimization & {\ipafont /ˈprefrəns/} & \zh{直接偏好优化} \\
+base model & {\ipafont /beɪs/} & \zh{基础模型} \\
+chat model & {\ipafont /tʃæt/} & \zh{对话模型} \\
+decoder-only Transformer & {\ipafont /dɪˈkoʊdər/} & \zh{仅解码器 Transformer} \\
+next-token prediction & {\ipafont /ˈtoʊkən/} & \zh{下一词元预测} \\
+self-supervised learning & {\ipafont /ˈsuːpərvaɪzd/} & \zh{自监督学习} \\
+model architecture & {\ipafont /ˈɑːrkɪtektʃər/} & \zh{模型架构} \\
+hyperparameter scaling & {\ipafont /ˌhaɪpərpəˈræmɪtər/} & \zh{超参数扩展} \\
+data scaling & {\ipafont /ˈskeɪlɪŋ/} & \zh{数据扩展} \\
+compute budget & {\ipafont /ˈbʌdʒɪt/} & \zh{计算预算} \\
+data quality & {\ipafont /ˈkwɑːləti/} & \zh{数据质量} \\
+data deduplication & {\ipafont /diːˌduːplɪˈkeɪʃən/} & \zh{数据去重} \\
+bilingual corpus & {\ipafont /baɪˈlɪŋɡwəl/} & \zh{双语语料库} \\
+model tokenizer & {\ipafont /ˈtoʊkənaɪzər/} & \zh{模型分词器} \\
+training infrastructure & {\ipafont /ˈɪnfrəstrʌktʃər/} & \zh{训练基础设施} \\
+benchmark evaluation & {\ipafont /ˈbentʃmɑːrk/} & \zh{基准评估} \\
+code capability & {\ipafont /ˌkeɪpəˈbɪləti/} & \zh{代码能力} \\
+mathematical reasoning & {\ipafont /ˌmæθəˈmætɪkəl/} & \zh{数学推理} \\
+open-ended evaluation & {\ipafont /ˌoʊpənˈendɪd/} & \zh{开放式评估} \\
+safety evaluation & {\ipafont /ˈseɪfti/} & \zh{安全评估} \\
+instruction following & {\ipafont /ˌɪnˈstrʌkʃən/} & \zh{指令遵循} \\
+preference alignment & {\ipafont /əˈlaɪnmənt/} & \zh{偏好对齐} \\
+held-out test & {\ipafont /held aʊt/} & \zh{留出测试} \\
+\bottomrule
+\end{tabular*}
+
+\newpage
+
+\begin{center}
+    {\Large\bfseries Continuous Thought Machines}
+\end{center}
+
+\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}lll@{}}
+\toprule
+\textbf{English} & \textbf{IPA} & \textbf{Chinese} \\
+\midrule
+neural dynamics & {\ipafont /ˈnʊrəl/} & \zh{神经动力学} \\
+neuron-level processing & {\ipafont /ˈnʊrɑːn/} & \zh{神经元级处理} \\
+neural synchronization & {\ipafont /ˌsɪŋkrənəˈzeɪʃən/} & \zh{神经同步} \\
+temporal history & {\ipafont /ˈtempərəl/} & \zh{时间历史} \\
+latent representation & {\ipafont /ˈleɪtənt/} & \zh{潜在表示} \\
+biological realism & {\ipafont /ˌbaɪəˈlɑːdʒɪkəl/} & \zh{生物真实性} \\
+neuron-level model & {\ipafont /ˈnʊrɑːn/} & \zh{神经元级模型} \\
+adaptive compute & {\ipafont /əˈdæptɪv/} & \zh{自适应计算} \\
+sequential reasoning & {\ipafont /sɪˈkwenʃəl/} & \zh{顺序推理} \\
+internal tick & {\ipafont /tɪk/} & \zh{内部时刻} \\
+temporal correlation & {\ipafont /ˌkɔːrəˈleɪʃən/} & \zh{时间相关性} \\
+neural recurrence & {\ipafont /rɪˈkɜːrəns/} & \zh{神经递归} \\
+maze solving & {\ipafont /meɪz/} & \zh{迷宫求解} \\
+attention trajectory & {\ipafont /trəˈdʒektəri/} & \zh{注意力轨迹} \\
+emergent behavior & {\ipafont /ɪˈmɜːrdʒənt/} & \zh{涌现行为} \\
+positional encoding & {\ipafont /pəˈzɪʃənəl/} & \zh{位置编码} \\
+ImageNet classification & {\ipafont /ˌklæsɪfɪˈkeɪʃən/} & \zh{ImageNet 分类} \\
+parity computation & {\ipafont /ˈpærəti/} & \zh{奇偶性计算} \\
+synchronization matrix & {\ipafont /ˈmeɪtrɪks/} & \zh{同步矩阵} \\
+time-dependent activity & {\ipafont /dɪˈpendənt/} & \zh{时间依赖活动} \\
+computational tractability & {\ipafont /ˌtræktəˈbɪləti/} & \zh{计算可处理性} \\
+biological plausibility & {\ipafont /ˌplɔːzəˈbɪləti/} & \zh{生物合理性} \\
+dynamic representation & {\ipafont /daɪˈnæmɪk/} & \zh{动态表示} \\
+activity history & {\ipafont /hɪˈstɔːri/} & \zh{活动历史} \\
+decision threshold & {\ipafont /ˈθreʃhoʊld/} & \zh{决策阈值} \\
+early stopping & {\ipafont /ˈstɑːpɪŋ/} & \zh{提前停止} \\
+internal map & {\ipafont /mæp/} & \zh{内部地图} \\
+common sense & {\ipafont /ˈkɑːmən/} & \zh{常识} \\
+temporal evolution & {\ipafont /ˌevəˈluːʃən/} & \zh{时间演化} \\
+neural timing & {\ipafont /ˈtaɪmɪŋ/} & \zh{神经时序} \\
+\bottomrule
+\end{tabular*}
+
+\newpage
+
+\begin{center}
+    {\Large\bfseries Improved Representation Autoencoders}
+\end{center}
+
+\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}lll@{}}
+\toprule
+\textbf{English} & \textbf{IPA} & \textbf{Chinese} \\
+\midrule
+representation autoencoder & {\ipafont /ˌreprɪzenˈteɪʃən/} & \zh{表示自编码器} \\
+pretrained vision encoder & {\ipafont /ˌpriːˈtreɪnd/} & \zh{预训练视觉编码器} \\
+variational autoencoder & {\ipafont /ˌveriˈeɪʃənəl/} & \zh{变分自编码器} \\
+encoder-layer summation & {\ipafont /səˈmeɪʃən/} & \zh{编码器层求和} \\
+reconstruction quality & {\ipafont /ˌriːkənˈstrʌkʃən/} & \zh{重建质量} \\
+encoder fine-tuning & {\ipafont /ɪnˈkoʊdər/} & \zh{编码器微调} \\
+representation alignment & {\ipafont /əˈlaɪnmənt/} & \zh{表示对齐} \\
+intermediate layer & {\ipafont /ˌɪntərˈmiːdiət/} & \zh{中间层} \\
+complementary mechanism & {\ipafont /ˌkɑːmpləˈmentəri/} & \zh{互补机制} \\
+diffusion model & {\ipafont /dɪˈfjuːʒən/} & \zh{扩散模型} \\
+x-prediction & {\ipafont /prɪˈdɪkʃən/} & \zh{x 预测} \\
+RAE latent space & {\ipafont /ˈleɪtənt/} & \zh{RAE 潜空间} \\
+output reparameterization & {\ipafont /riːpəˌræmɪtərəˈzeɪʃən/} & \zh{输出重参数化} \\
+classifier-free guidance & {\ipafont /ˈɡaɪdəns/} & \zh{无分类器引导} \\
+AutoGuidance & {\ipafont /ˈɔːtoʊ/} & \zh{自动引导} \\
+convergence speed & {\ipafont /kənˈvɜːrdʒəns/} & \zh{收敛速度} \\
+generation quality & {\ipafont /ˌdʒenəˈreɪʃən/} & \zh{生成质量} \\
+reconstruction metric & {\ipafont /ˈmetrɪk/} & \zh{重建指标} \\
+Fréchet distance & {\ipafont /freɪˈʃeɪ/} & \zh{弗雷歇距离} \\
+training epoch & {\ipafont /ˈepək/} & \zh{训练轮次} \\
+Pareto optimum & {\ipafont /pəˈreɪtoʊ/} & \zh{帕累托最优} \\
+encoder FLOPs & {\ipafont /flɑːps/} & \zh{编码器浮点运算量} \\
+unguided generation & {\ipafont /ʌnˈɡaɪdɪd/} & \zh{无引导生成} \\
+text-to-image generation & {\ipafont /ˈɪmɪdʒ/} & \zh{文生图生成} \\
+navigation world model & {\ipafont /ˌnævɪˈɡeɪʃən/} & \zh{导航世界模型} \\
+feature representation & {\ipafont /ˈfiːtʃər/} & \zh{特征表示} \\
+diffusion Transformer & {\ipafont /trænsˈfɔːrmər/} & \zh{扩散 Transformer} \\
+guidance model & {\ipafont /ˈɡaɪdəns/} & \zh{引导模型} \\
+ablation study & {\ipafont /əˈbleɪʃən/} & \zh{消融研究} \\
+training efficiency & {\ipafont /ɪˈfɪʃənsi/} & \zh{训练效率} \\
+\bottomrule
+\end{tabular*}
+
+\newpage
+
+\begin{center}
+    {\Large\bfseries Image Generators are Generalist Vision Learners}
+\end{center}
+
+\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}lll@{}}
+\toprule
+\textbf{English} & \textbf{IPA} & \textbf{Chinese} \\
+\midrule
+image generator & {\ipafont /ˈdʒenəreɪtər/} & \zh{图像生成器} \\
+generalist vision learner & {\ipafont /ˈdʒenərəlɪst/} & \zh{通用视觉学习器} \\
+generative pretraining & {\ipafont /ˈdʒenərətɪv/} & \zh{生成式预训练} \\
+zero-shot understanding & {\ipafont /ˈzɪroʊ ʃɑːt/} & \zh{零样本理解} \\
+visual representation & {\ipafont /ˌreprɪzenˈteɪʃən/} & \zh{视觉表示} \\
+instruction tuning & {\ipafont /ɪnˈstrʌkʃən/} & \zh{指令微调} \\
+Vision Banana & {\ipafont /bəˈnænə/} & \zh{Vision Banana 模型} \\
+RGB output space & {\ipafont /ˈaʊtpʊt/} & \zh{RGB 输出空间} \\
+perception task & {\ipafont /pərˈsepʃən/} & \zh{感知任务} \\
+image generation & {\ipafont /ˌdʒenəˈreɪʃən/} & \zh{图像生成} \\
+semantic segmentation & {\ipafont /ˌseɡmənˈteɪʃən/} & \zh{语义分割} \\
+instance segmentation & {\ipafont /ˈɪnstəns/} & \zh{实例分割} \\
+referring segmentation & {\ipafont /rɪˈfɜːrɪŋ/} & \zh{指代表达分割} \\
+depth estimation & {\ipafont /ˌestɪˈmeɪʃən/} & \zh{深度估计} \\
+surface normal & {\ipafont /ˈsɜːrfɪs/} & \zh{表面法线} \\
+visual foundation model & {\ipafont /faʊnˈdeɪʃən/} & \zh{视觉基础模型} \\
+domain specialist & {\ipafont /ˈspeʃəlɪst/} & \zh{领域专用模型} \\
+lightweight fine-tuning & {\ipafont /ˈlaɪtweɪt/} & \zh{轻量微调} \\
+generation capability & {\ipafont /ˌkeɪpəˈbɪləti/} & \zh{生成能力} \\
+unified interface & {\ipafont /ˈjuːnɪfaɪd/} & \zh{统一接口} \\
+two-dimensional understanding & {\ipafont /daɪˈmenʃənəl/} & \zh{二维理解} \\
+three-dimensional understanding & {\ipafont /daɪˈmenʃənəl/} & \zh{三维理解} \\
+visual semantics & {\ipafont /sɪˈmæntɪks/} & \zh{视觉语义} \\
+high-fidelity synthesis & {\ipafont /fɪˈdeləti/} & \zh{高保真合成} \\
+contrastive learning & {\ipafont /kənˈtræstɪv/} & \zh{对比学习} \\
+discriminative learning & {\ipafont /dɪˈskrɪmɪnətɪv/} & \zh{判别式学习} \\
+generative vision model & {\ipafont /ˈvɪʒən/} & \zh{生成式视觉模型} \\
+computer-vision benchmark & {\ipafont /ˈbentʃmɑːrk/} & \zh{计算机视觉基准} \\
+task visualization & {\ipafont /ˌvɪʒuələˈzeɪʃən/} & \zh{任务可视化} \\
+emergent capability & {\ipafont /ɪˈmɜːrdʒənt/} & \zh{涌现能力} \\
+\bottomrule
+\end{tabular*}
+
+\newpage
+
+\begin{center}
+    {\Large\bfseries ChordEdit}
+\end{center}
+
+\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}lll@{}}
+\toprule
+\textbf{English} & \textbf{IPA} & \textbf{Chinese} \\
+\midrule
+one-step image editing & {\ipafont /ˈedɪtɪŋ/} & \zh{一步图像编辑} \\
+low-energy transport & {\ipafont /ˈenərdʒi/} & \zh{低能量传输} \\
+text-to-image model & {\ipafont /ˈɪmɪdʒ/} & \zh{文生图模型} \\
+training-free editor & {\ipafont /ˈedɪtər/} & \zh{免训练编辑器} \\
+inversion-free method & {\ipafont /ɪnˈvɜːrʒən/} & \zh{免反演方法} \\
+model-agnostic control & {\ipafont /æɡˈnɑːstɪk/} & \zh{模型无关控制} \\
+dynamic optimal transport & {\ipafont /ˈɑːptɪməl/} & \zh{动态最优传输} \\
+source distribution & {\ipafont /sɔːrs/} & \zh{源分布} \\
+target distribution & {\ipafont /ˈtɑːrɡɪt/} & \zh{目标分布} \\
+control field & {\ipafont /fiːld/} & \zh{控制场} \\
+vector arithmetic & {\ipafont /əˈrɪθmətɪk/} & \zh{向量运算} \\
+editing trajectory & {\ipafont /trəˈdʒektəri/} & \zh{编辑轨迹} \\
+variance reduction & {\ipafont /ˈveriəns/} & \zh{方差降低} \\
+integration step & {\ipafont /ˌɪntɪˈɡreɪʃən/} & \zh{积分步} \\
+semantic change & {\ipafont /sɪˈmæntɪk/} & \zh{语义改变} \\
+content preservation & {\ipafont /ˌprezərˈveɪʃən/} & \zh{内容保留} \\
+non-edited region & {\ipafont /ˈriːdʒən/} & \zh{未编辑区域} \\
+real-time editing & {\ipafont /ˌriːəlˈtaɪm/} & \zh{实时编辑} \\
+image synthesis & {\ipafont /ˈsɪnθəsɪs/} & \zh{图像合成} \\
+prompt guidance & {\ipafont /ˈɡaɪdəns/} & \zh{提示引导} \\
+flow field & {\ipafont /floʊ/} & \zh{流场} \\
+transport path & {\ipafont /trænˈspɔːrt/} & \zh{传输路径} \\
+object distortion & {\ipafont /dɪˈstɔːrʃən/} & \zh{物体畸变} \\
+structural consistency & {\ipafont /ˈstrʌktʃərəl/} & \zh{结构一致性} \\
+single inference step & {\ipafont /ˈɪnfərəns/} & \zh{单次推理步骤} \\
+diffusion distillation & {\ipafont /ˌdɪstɪˈleɪʃən/} & \zh{扩散蒸馏} \\
+stable trajectory & {\ipafont /ˈsteɪbəl/} & \zh{稳定轨迹} \\
+energy minimization & {\ipafont /ˌmɪnɪməˈzeɪʃən/} & \zh{能量最小化} \\
+optimal coupling & {\ipafont /ˈkʌplɪŋ/} & \zh{最优耦合} \\
+editing fidelity & {\ipafont /fɪˈdeləti/} & \zh{编辑保真度} \\
+\bottomrule
+\end{tabular*}
+
+\newpage
+
+\begin{center}
+    {\Large\bfseries Mapping Networks}
+\end{center}
+
+\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}lll@{}}
+\toprule
+\textbf{English} & \textbf{IPA} & \textbf{Chinese} \\
+\midrule
+mapping network & {\ipafont /ˈmæpɪŋ/} & \zh{映射网络} \\
+parameter space & {\ipafont /pəˈræmɪtər/} & \zh{参数空间} \\
+trainable latent vector & {\ipafont /ˈtreɪnəbəl/} & \zh{可训练潜向量} \\
+low-dimensional manifold & {\ipafont /ˈmænɪfoʊld/} & \zh{低维流形} \\
+mapping theorem & {\ipafont /ˈθɪrəm/} & \zh{映射定理} \\
+mapping loss & {\ipafont /lɔːs/} & \zh{映射损失} \\
+target network & {\ipafont /ˈtɑːrɡɪt/} & \zh{目标网络} \\
+model overfitting & {\ipafont /ˌoʊvərˈfɪtɪŋ/} & \zh{模型过拟合} \\
+universal approximation & {\ipafont /ˌjuːnɪˈvɜːrsəl/} & \zh{通用逼近} \\
+high-dimensional weight space & {\ipafont /weɪt/} & \zh{高维权重空间} \\
+smooth parameterization & {\ipafont /ˌpəˌræmɪtərəˈzeɪʃən/} & \zh{平滑参数化} \\
+manifold hypothesis & {\ipafont /haɪˈpɑːθəsɪs/} & \zh{流形假设} \\
+intrinsic dimension & {\ipafont /ɪnˈtrɪnsɪk/} & \zh{内在维度} \\
+training trajectory & {\ipafont /trəˈdʒektəri/} & \zh{训练轨迹} \\
+loss landscape & {\ipafont /ˈlændskeɪp/} & \zh{损失景观} \\
+flat region & {\ipafont /flæt/} & \zh{平坦区域} \\
+low-rank compression & {\ipafont /kəmˈpreʃən/} & \zh{低秩压缩} \\
+singular value decomposition & {\ipafont /ˈsɪŋɡjələr/} & \zh{奇异值分解} \\
+network pruning & {\ipafont /ˈpruːnɪŋ/} & \zh{网络剪枝} \\
+weight quantization & {\ipafont /ˌkwɑːntəˈzeɪʃən/} & \zh{权重量化} \\
+hypernetwork & {\ipafont /ˈhaɪpərnetwɜːrk/} & \zh{超网络} \\
+target weight & {\ipafont /weɪt/} & \zh{目标权重} \\
+latent code & {\ipafont /ˈleɪtənt/} & \zh{潜在编码} \\
+bounded error & {\ipafont /ˈbaʊndɪd/} & \zh{有界误差} \\
+model generalization & {\ipafont /ˌdʒenərələˈzeɪʃən/} & \zh{模型泛化} \\
+parameter reduction & {\ipafont /rɪˈdʌkʃən/} & \zh{参数缩减} \\
+image classification & {\ipafont /ˌklæsɪfɪˈkeɪʃən/} & \zh{图像分类} \\
+deepfake detection & {\ipafont /dɪˈtekʃən/} & \zh{深度伪造检测} \\
+sequence task & {\ipafont /ˈsiːkwəns/} & \zh{序列任务} \\
+weight generation & {\ipafont /ˌdʒenəˈreɪʃən/} & \zh{权重生成} \\
+\bottomrule
+\end{tabular*}
+
+\newpage
+
+\begin{center}
+    {\Large\bfseries DSpark}
+\end{center}
+
+\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}lll@{}}
+\toprule
+\textbf{English} & \textbf{IPA} & \textbf{Chinese} \\
+\midrule
+speculative decoding & {\ipafont /ˈspekjələtɪv/} & \zh{推测解码} \\
+draft model & {\ipafont /dræft/} & \zh{草稿模型} \\
+target model & {\ipafont /ˈtɑːrɡɪt/} & \zh{目标模型} \\
+parallel drafter & {\ipafont /ˈpærəlel/} & \zh{并行草稿器} \\
+semi-autoregressive generation & {\ipafont /ˌɔːtoʊrɪˈɡresɪv/} & \zh{半自回归生成} \\
+inter-token dependency & {\ipafont /dɪˈpendənsi/} & \zh{词元间依赖} \\
+acceptance decay & {\ipafont /əkˈseptəns/} & \zh{接受率衰减} \\
+confidence-scheduled verification & {\ipafont /ˈkɑːnfɪdəns/} & \zh{置信度调度验证} \\
+verification length & {\ipafont /ˌverɪfɪˈkeɪʃən/} & \zh{验证长度} \\
+prefix survival probability & {\ipafont /sərˈvaɪvəl/} & \zh{前缀存活概率} \\
+throughput profile & {\ipafont /ˈθruːpʊt/} & \zh{吞吐量曲线} \\
+high-concurrency serving & {\ipafont /kənˈkɜːrənsi/} & \zh{高并发服务} \\
+batch capacity & {\ipafont /kəˈpæsəti/} & \zh{批处理容量} \\
+rejection risk & {\ipafont /rɪˈdʒekʃən/} & \zh{拒绝风险} \\
+parallel backbone & {\ipafont /ˈbækboʊn/} & \zh{并行主干网络} \\
+sequential module & {\ipafont /sɪˈkwenʃəl/} & \zh{顺序模块} \\
+suffix decay & {\ipafont /ˈsʌfɪks/} & \zh{后缀衰减} \\
+drafting latency & {\ipafont /ˈleɪtənsi/} & \zh{草稿生成延迟} \\
+candidate token & {\ipafont /ˈkændɪdeɪt/} & \zh{候选词元} \\
+rejection sampling & {\ipafont /ˈsæmplɪŋ/} & \zh{拒绝采样} \\
+accepted prefix & {\ipafont /ˈpriːfɪks/} & \zh{已接受前缀} \\
+bonus token & {\ipafont /ˈboʊnəs/} & \zh{奖励词元} \\
+generation speed & {\ipafont /spiːd/} & \zh{生成速度} \\
+load-aware scheduler & {\ipafont /ˈskedʒuːlər/} & \zh{负载感知调度器} \\
+confidence head & {\ipafont /hed/} & \zh{置信度预测头} \\
+hardware-aware routing & {\ipafont /ˈhɑːrdwer/} & \zh{硬件感知路由} \\
+Pareto frontier & {\ipafont /frʌnˈtɪr/} & \zh{帕累托前沿} \\
+production traffic & {\ipafont /ˈtræfɪk/} & \zh{生产流量} \\
+inference latency & {\ipafont /ˈɪnfərəns/} & \zh{推理延迟} \\
+interactive constraint & {\ipafont /ˌɪntərˈæktɪv/} & \zh{交互性约束} \\
+\bottomrule
+\end{tabular*}
+
+\end{document}

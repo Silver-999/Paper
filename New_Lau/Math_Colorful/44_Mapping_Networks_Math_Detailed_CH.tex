@@ -1,0 +1,623 @@
+\documentclass[UTF8,12pt,a4paper,fontset=none]{ctexart}
+\usepackage[a4paper,left=1.82cm,right=1.82cm,top=1.72cm,bottom=1.82cm,headheight=15pt]{geometry}
+\usepackage{fontspec,xeCJK}
+\setmainfont{Liberation Serif}
+\setsansfont{DejaVu Sans}
+\setmonofont{DejaVu Sans Mono}
+\setCJKmainfont[BoldFont=Noto Serif CJK SC Bold]{Noto Serif CJK SC}
+\setCJKsansfont[BoldFont=Noto Sans CJK SC Bold]{Noto Sans CJK SC}
+\setCJKmonofont{Noto Sans Mono CJK SC}
+\usepackage{amsmath,amssymb,mathtools,bm}
+\usepackage{booktabs,longtable,tabularx,array,multirow}
+\usepackage{enumitem,xcolor}
+\usepackage[most]{tcolorbox}
+\usepackage{fancyhdr,titlesec,hyperref,cleveref,lastpage}
+\usepackage{tikz,float,caption,listings}
+\usetikzlibrary{arrows.meta,positioning,calc,fit,backgrounds,shapes.geometric}
+\definecolor{mainblue}{RGB}{39,82,138}
+\definecolor{deepblue}{RGB}{25,55,95}
+\definecolor{softblue}{RGB}{235,243,252}
+\definecolor{softgreen}{RGB}{238,248,241}
+\definecolor{softorange}{RGB}{255,246,232}
+\definecolor{softgray}{RGB}{245,246,248}
+\definecolor{warnred}{RGB}{160,48,48}
+\hypersetup{unicode=true,colorlinks=true,linkcolor=deepblue,urlcolor=mainblue,citecolor=deepblue}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.36em}
+\setlength{\tabcolsep}{5pt}
+\renewcommand{\arraystretch}{1.2}
+\allowdisplaybreaks[4]
+\emergencystretch=3em
+\sloppy
+\pagestyle{fancy}\fancyhf{}\fancyfoot[C]{\small 第 \thepage\ 页，共 \pageref{LastPage} 页}\renewcommand{\headrulewidth}{0.4pt}
+\titleformat{\section}{\Large\bfseries\color{deepblue}}{\thesection}{0.65em}{}
+\titleformat{\subsection}{\large\bfseries\color{mainblue}}{\thesubsection}{0.55em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries}{\thesubsubsection}{0.5em}{}
+\numberwithin{equation}{section}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Prob}{\mathbb{P}}
+\newcommand{\Loss}{\mathcal{L}}
+\newcommand{\norm}[1]{\left\lVert #1\right\rVert}
+\newcommand{\ip}[2]{\left\langle #1,#2\right\rangle}
+\newcommand{\tr}{\operatorname{Tr}}
+\newcommand{\diag}{\operatorname{diag}}
+\newcommand{\rank}{\operatorname{rank}}
+\newcommand{\softmax}{\operatorname{softmax}}
+\newcommand{\argmin}{\operatorname*{arg\,min}}
+\newcommand{\argmax}{\operatorname*{arg\,max}}
+\newcommand{\sg}{\operatorname{sg}}
+\newcommand{\KL}{D_{\mathrm{KL}}}
+\newcommand{\dd}{\mathrm{d}}
+\newtcolorbox{keybox}[1][]{enhanced,breakable,colback=softblue,colframe=mainblue,boxrule=0.8pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\newtcolorbox{examplebox}[1][]{enhanced,breakable,colback=softgreen,colframe=green!45!black,boxrule=0.7pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\newtcolorbox{notebox}[1][]{enhanced,breakable,colback=softorange,colframe=orange!70!black,boxrule=0.7pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\newtcolorbox{criticalbox}[1][]{enhanced,breakable,colback=red!3,colframe=warnred,boxrule=0.8pt,arc=1.5mm,left=2mm,right=2mm,top=1.2mm,bottom=1.2mm,title={#1},fonttitle=\bfseries}
+\lstset{basicstyle=\ttfamily\small,breaklines=true,frame=single,backgroundcolor=\color{softgray},numbers=left,numberstyle=\tiny,showstringspaces=false,columns=fullflexible}
+\hypersetup{pdftitle={44 Mapping Networks 数学过程详解},pdfauthor={OpenAI}}
+\fancyhead[L]{\small 44 Mapping Networks}
+\fancyhead[R]{\small 数学过程详解}
+\setlength{\abovedisplayskip}{0.82em}
+\setlength{\belowdisplayskip}{0.82em}
+\setlength{\abovedisplayshortskip}{0.45em}
+\setlength{\belowdisplayshortskip}{0.45em}
+\begin{document}
+\begin{center}
+{\LARGE\bfseries 44\_Mapping Networks 数学过程详解}\par
+\vspace{0.35em}
+{\large 权重流形、映射定理与 Mapping Loss}
+\end{center}
+\vspace{0.45em}
+\begin{keybox}[本文只处理真正需要推导的部分]
+本文展开权重流形假设、局部坐标图、Lipschitz 误差链、Taylor 可解性、Jacobian 秩约束、梯度投影以及稳定/平滑/对齐正则项。。全文按“公式从哪里来--每个符号是什么--中间步骤为何成立--维度和复杂度如何核对--论文结论依赖哪些假设”的顺序展开；不复述实验表格，也不使用与论文无关的通用背景凑页数。
+\end{keybox}
+\tableofcontents
+\newpage
+
+\section{权重流形假设}
+目标网络参数展平为
+\begin{equation}
+ \theta\in\R^P.
+\end{equation}
+论文假设有效训练解位于低维嵌入流形
+\begin{equation}
+ \mathcal M_\theta\subset\R^P,
+ \qquad d=\dim\mathcal M_\theta\ll P.
+\end{equation}
+因此存在局部坐标图
+\begin{equation}
+ \phi:U\subset\R^d\to V\subset\mathcal M_\theta,
+ \qquad \phi(0)=\theta^*.
+\end{equation}
+这并不意味着任意权重都能由 $d$ 维向量生成，而是只要求最优解附近的有效参数集合具有低内在维度。
+
+\section{Mapping Theorem 的误差链}
+论文使用两个 Lipschitz 条件。网络输出关于参数满足
+\begin{equation}
+ \norm{f_{\theta_1}(x)-f_{\theta_2}(x)}
+ \le L_\theta\norm{\theta_1-\theta_2}_2,
+\end{equation}
+损失关于输出满足
+\begin{equation}
+ |\ell(a,y)-\ell(b,y)|\le L_\ell\norm{a-b}.
+\end{equation}
+复合后
+\begin{align}
+ |\Loss(\theta_1)-\Loss(\theta_2)|
+ &\le L_\ell\norm{f_{\theta_1}-f_{\theta_2}}\\
+ &\le L_\ell L_\theta\norm{\theta_1-\theta_2}_2.
+\end{align}
+给定允许损失误差 $\epsilon$，只需生成参数满足
+\begin{equation}
+ \norm{g(z)-\theta^*}_2<\delta,
+ \qquad
+ \delta=\frac{\epsilon}{L_\ell L_\theta}.
+\end{equation}
+即可推出
+\begin{equation}
+ \boxed{|\Loss(g(z))-\Loss(\theta^*)|<\epsilon.}
+\end{equation}
+这条误差链是 Mapping Theorem 的核心，而不是“低维一定更优”的无条件结论。
+
+\section{局部坐标图扩展为全局平滑映射}
+坐标图 $\phi$ 只在 $U$ 内定义。取光滑 bump 函数
+\begin{equation}
+ \psi:\R^d\to[0,1],
+\end{equation}
+使其在 $U'\Subset U$ 上为 $1$，在 $U$ 外为 $0$。定义
+\begin{equation}
+ \boxed{
+ g(u)=\psi(u)\phi(u)+(1-\psi(u))\theta^*.
+ }
+\end{equation}
+在 $U'$ 内 $g=\phi$，在 $U$ 外 $g=\theta^*$，过渡区由光滑函数拼接，所以 $g\in C^2(\R^d,\R^P)$。由 $\phi$ 在零点连续，存在 $\eta>0$ 使
+\begin{equation}
+ \norm{u}<\eta\Rightarrow\norm{g(u)-\theta^*}<\delta.
+\end{equation}
+于是任选 $z^*\in B(0,\eta)$ 即得到上述损失误差界。这个存在性证明本身并不保证实际小网络容易学到该 $g$。
+
+\section{局部 Taylor 可解性}
+在初始点 $z_0$ 对生成器展开：
+\begin{equation}
+ g(z_0+\Delta z)
+ =g(z_0)+J_g(z_0)\Delta z
+ +\frac12\mathcal H_g[\Delta z,\Delta z]+O(\norm{\Delta z}^3).
+\end{equation}
+令残差
+\begin{equation}
+ r_\theta=\theta^*-g(z_0).
+\end{equation}
+若 $r_\theta$ 落在 Jacobian 的列空间且 $J_g$ 在该子空间满秩，可取最小范数修正
+\begin{equation}
+ \Delta z=J_g(z_0)^+r_\theta,
+\end{equation}
+其中 $^+$ 为 Moore--Penrose 伪逆。于是一次线性项抵消残差，剩余误差
+\begin{equation}
+ \norm{g(z_0+\Delta z)-\theta^*}
+ =O(\norm{\Delta z}^2)
+ =O(\norm{r_\theta}^2).
+\end{equation}
+再用 Lipschitz 误差链得到
+\begin{equation}
+ |\Loss(g(z_0+\Delta z))-\Loss(\theta^*)|
+ =O(\norm{r_\theta}^2).
+\end{equation}
+
+\section{生成参数的 Jacobian 秩}
+生成器
+\begin{equation}
+ g_\phi:\R^d\to\R^P
+\end{equation}
+的 Jacobian 为 $J_g\in\R^{P\times d}$，故
+\begin{equation}
+ \rank(J_g)\le d\ll P.
+\end{equation}
+任意小的潜变量更新引起
+\begin{equation}
+ \Delta\theta\approx J_g\Delta z.
+\end{equation}
+因此训练轨迹的瞬时切空间被限制在至多 $d$ 维，这就是结构性正则化的数学来源。它也说明风险：若最优下降方向在 $\operatorname{col}(J_g)$ 外，映射网络无法表示该方向。
+
+\section{固定映射权重与加性调制}
+论文令基础映射权重为 $\omega_0$，潜变量产生调制
+\begin{equation}
+ \omega(z)=\omega_0+M(z).
+\end{equation}
+线性情形 $M(z)=Bz$ 时
+\begin{equation}
+ \frac{\partial\omega}{\partial z}=B.
+\end{equation}
+论文实现中的逐行调制可写成
+\begin{equation}
+ w_{ij}\leftarrow w_{ij}+\alpha o_i,
+\end{equation}
+即输出调制向量 $o$ 沿每行广播。若 $W\in\R^{m\times n}$，只需生成 $m$ 个调制量，而非直接训练 $mn$ 个元素。
+
+\section{梯度如何穿过生成权重}
+任务输出为
+\begin{equation}
+ \widehat y=f_{g_\phi(z)}(x),
+\end{equation}
+损失对潜变量梯度由链式法则给出
+\begin{equation}
+ \boxed{
+ \nabla_z\Loss
+ =J_g(z)^\top\nabla_\theta\Loss(f_\theta(x),y)
+ \big|_{\theta=g(z)}.
+ }
+\end{equation}
+因此高维权重梯度先投影到 $d$ 维切空间。若映射参数 $\phi$ 也训练，则
+\begin{equation}
+ \nabla_\phi\Loss
+ =\left(\frac{\partial g_\phi(z)}{\partial\phi}\right)^\top
+ \nabla_\theta\Loss.
+\end{equation}
+论文强调目标网络不直接优化，实质是通过可微生成器间接更新其参数。
+
+\section{参数量与压缩比}
+直接训练目标网络需要 $P$ 个参数。若只训练潜变量 $z\in\R^d$，训练参数比例为
+\begin{equation}
+ r=\frac dP,
+ \qquad
+ \text{reduction}=1-r.
+\end{equation}
+例如 $d/P=0.005$ 时，训练参数减少 $99.5\%$。但固定映射权重仍需存储和前向计算，所以“trainable parameter reduction”不等于同等比例的推理内存或 FLOPs 降低。
+
+\section{Mapping Loss 的四项}
+论文总目标为
+\begin{equation}
+ \boxed{
+ \Loss_{\mathrm{map}}
+ =\Loss_{\mathrm{task}}
+ +\lambda_{\mathrm{st}}\Loss_{\mathrm{stab}}
+ +\lambda_{\mathrm{sm}}\Loss_{\mathrm{smooth}}
+ +\lambda_{\mathrm{al}}\Loss_{\mathrm{align}}.
+ }
+\end{equation}
+分类任务项为
+\begin{equation}
+ \Loss_{\mathrm{task}}
+ =-\frac1B\sum_{i=1}^{B}\sum_{c=1}^{C}
+ y_{ic}\log p_{ic}.
+\end{equation}
+以下三项分别约束局部鲁棒性、映射曲率/敏感度和潜变量与生成权重方向。
+
+\section{稳定性项的二阶近似}
+论文定义
+\begin{equation}
+ \Loss_{\mathrm{stab}}
+ =\E_{\varepsilon}\norm{f_{g(z+\varepsilon)}(x)-f_{g(z)}(x)}_2^2.
+\end{equation}
+对复合函数 $F(z)=f_{g(z)}(x)$ 一阶展开
+\begin{equation}
+ F(z+\varepsilon)-F(z)\approx J_F(z)\varepsilon.
+\end{equation}
+若 $\varepsilon\sim\mathcal N(0,\sigma^2I)$，则
+\begin{align}
+ \E\norm{J_F\varepsilon}^2
+ &=\E\tr(J_F\varepsilon\varepsilon^\top J_F^\top)\\
+ &=\sigma^2\tr(J_FJ_F^\top)
+ =\sigma^2\norm{J_F}_F^2.
+\end{align}
+因此稳定性项近似惩罚复合映射的 Jacobian Frobenius 范数，直接降低潜空间的局部 Lipschitz 常数。
+
+\section{平滑性项}
+论文使用
+\begin{equation}
+ \boxed{\Loss_{\mathrm{smooth}}=\norm{\nabla_zM_\phi(z)}_F^2.}
+\end{equation}
+若 $M(z)=Bz$，则
+\begin{equation}
+ \Loss_{\mathrm{smooth}}=\norm{B}_F^2,
+\end{equation}
+等价于权重衰减。一般非线性映射下，它惩罚局部伸缩：对小扰动
+\begin{equation}
+ \norm{M(z+\Delta z)-M(z)}
+ \le\norm{J_M(z)}_2\norm{\Delta z}+O(\norm{\Delta z}^2).
+\end{equation}
+Frobenius 范数上界谱范数，故该项给出可计算的 Lipschitz 上界代理。
+
+\section{对齐项及其几何意义}
+论文定义
+\begin{equation}
+ \Loss_{\mathrm{align}}
+ =1-\cos(z,W^m)
+ =1-\frac{z^\top W^m}{\norm z\norm{W^m}}.
+\end{equation}
+令 $a=W^m/\norm{W^m}$，则对 $z$ 的梯度
+\begin{equation}
+ \nabla_z\Loss_{\mathrm{align}}
+ =-\frac{a}{\norm z}
+ +\frac{(a^\top z)z}{\norm z^3}.
+\end{equation}
+该梯度与 $z$ 正交：
+\begin{equation}
+ z^\top\nabla_z\Loss_{\mathrm{align}}=0,
+\end{equation}
+说明余弦项主要旋转方向而不直接改变一阶范数。它鼓励潜向量与映射权重摘要方向一致，但并不保证功能上最优；权重过大时可能与任务梯度冲突。
+
+\section{理论边界}
+Mapping Theorem 是局部存在性结果。它依赖：最优解确实在 $C^2$ 低维流形上；损失局部 Lipschitz；实际生成器有足够容量；优化能找到相应 $z^*$。其中任何一项失败，低维训练都可能出现不可消除的表示偏差
+\begin{equation}
+ \inf_z\norm{g(z)-\theta^*}>0.
+\end{equation}
+因此理论证明支持“存在低维参数化”，但不等价于任意随机初始化的 Mapping Network 都能稳定达到全量训练最优点。
+% AUGMENTED_DETAILED_MATH_2
+
+\section{局部坐标与切空间}
+嵌入流形坐标图
+\begin{equation}
+ \phi:U\subset\R^d\to\mathcal M\subset\R^P
+\end{equation}
+的 Jacobian
+\begin{equation}
+ J_\phi(z)\in\R^{P\times d}
+\end{equation}
+在正则点满列秩 $d$。切空间
+\begin{equation}
+ T_{\phi(z)}\mathcal M=\operatorname{col}(J_\phi(z)).
+\end{equation}
+潜变量梯度更新 $\Delta z$ 在权重空间的一阶效果
+\begin{equation}
+ \Delta\theta=J_\phi\Delta z
+\end{equation}
+只能沿切空间移动；法向方向由模型结构直接排除。
+
+\section{曲率导致的二阶偏离}
+局部 Taylor
+\begin{equation}
+ \phi(z+\Delta z)=\phi(z)+J\Delta z+\frac12H[\Delta z,\Delta z]+O(\norm{\Delta z}^3).
+\end{equation}
+二阶项的法向分量定义第二基本形式，衡量流形曲率。若
+\begin{equation}
+ \norm{H[\Delta z,\Delta z]}\le\kappa\norm{\Delta z}^2,
+\end{equation}
+则线性切空间近似误差受曲率 $\kappa$ 控制。Mapping Theorem 的局部近似要求步长足够小，使该二阶误差小于目标容差。
+
+\section{潜变量最速下降是投影梯度}
+权重空间梯度 $g_\theta=\nabla_\theta\Loss$。潜变量梯度
+\begin{equation}
+ g_z=J^\top g_\theta.
+\end{equation}
+一步 $\Delta z=-\eta g_z$ 对权重的变化
+\begin{equation}
+ \Delta\theta=-\eta JJ^\top g_\theta.
+\end{equation}
+若列向量正交归一，$JJ^\top$ 是切空间正交投影；一般情况下它还按奇异值平方缩放。自然的最小范数切空间下降可用
+\begin{equation}
+ \Delta z=-\eta(J^\top J)^{-1}J^\top g_\theta,
+\end{equation}
+对应权重投影 $-\eta J(J^\top J)^{-1}J^\top g_\theta$。
+
+\section{不可辨识性}
+若存在不同潜变量
+\begin{equation}
+ g(z_1)=g(z_2),
+\end{equation}
+映射不是单射，潜空间有平坦方向。局部不可辨识对应
+\begin{equation}
+ \ker J_g(z)\ne\{0\}.
+\end{equation}
+这些方向不改变目标权重，却可能被优化器无意义移动。对 $J_g^\top J_g$ 加条件数正则或约束潜向量范数，可改善局部数值稳定性。
+
+\section{加性调制的表达秩}
+若映射权重调制
+\begin{equation}
+ \omega(z)=\omega_0+Bz,
+\end{equation}
+则所有可达映射权重位于仿射子空间
+\begin{equation}
+ \omega_0+\operatorname{col}(B),
+\end{equation}
+维度最多 $d$。生成目标参数 $g_{\omega(z)}(z)$ 因网络非线性可形成弯曲流形，但其局部自由度仍受 $z$ 与调制维度限制。
+
+\section{稳定性项与随机平滑}
+定义复合预测 $F(z)=f_{g(z)}(x)$，噪声平滑目标
+\begin{equation}
+ \E_\epsilon\norm{F(z+\epsilon)-F(z)}^2.
+\end{equation}
+二阶展开不仅有 Jacobian 项：
+\begin{equation}
+ F(z+\epsilon)-F(z)
+ =J_F\epsilon+\frac12H_F[\epsilon,\epsilon]+O(\norm\epsilon^3).
+\end{equation}
+高斯对称性使一阶与二阶交叉期望为零，主项
+\begin{equation}
+ \sigma^2\norm{J_F}_F^2+O(\sigma^4\norm{H_F}^2).
+\end{equation}
+小噪声控制一阶敏感度，大噪声还惩罚曲率。
+
+\section{smoothness 正则的 Hutchinson 估计}
+直接计算 $J_M\in\R^{W\times d}$ 的 Frobenius 范数昂贵。Hutchinson 恒等式
+\begin{equation}
+ \norm{J_M}_F^2
+ =\E_{v\sim\mathcal N(0,I)}\norm{J_Mv}^2.
+\end{equation}
+可用一两个随机向量和 JVP 无偏估计，而不显式构造 Jacobian。若论文实现直接 autograd 求小潜变量 Jacobian，复杂度取决于 $d$；大 $d$ 时随机估计更实用。
+
+\section{余弦对齐的尺度不辨识}
+对齐损失
+\begin{equation}
+ 1-\frac{z^\top w}{\norm z\norm w}
+\end{equation}
+满足
+\begin{equation}
+ L(cz,w)=L(z,w),
+ \qquad c>0.
+\end{equation}
+所以它不约束潜变量范数。若任务损失也对缩放近似不敏感，$\norm z$ 可能漂移；需配合 $\norm z^2$ 正则或归一化。负缩放 $c<0$ 会把余弦符号翻转，因此方向仍有符号辨识。
+
+\section{训练参数少不等于生成器便宜}
+假设 latent 大小 $d$，固定 mapping network 参数 $W_g$，目标网络参数 $P$。训练状态只需为 $d$（以及少量调制参数）保存优化器，但每次前向仍需
+\begin{equation}
+ C_g+ C_f(P)
+\end{equation}
+计算生成器和目标网络。若每一步重新生成全部 $P$ 个权重，还需 $O(P)$ 写入带宽。方法最直接节省的是梯度/优化器状态，而非必然减少目标网络前向 FLOPs。
+
+\section{存在性定理与可训练性的差别}
+理论证明存在 $z^*$ 使
+\begin{equation}
+ \norm{g(z^*)-\theta^*}<\delta.
+\end{equation}
+优化成功还要求损失复合函数
+\begin{equation}
+ F(z)=\Loss(g(z))
+\end{equation}
+具有可达盆地。其 Hessian
+\begin{equation}
+ \nabla_z^2F
+ =J_g^\top H_\theta J_g
+ +\sum_{p=1}^{P}\frac{\partial\Loss}{\partial\theta_p}\nabla_z^2g_p.
+\end{equation}
+第一项是权重 Hessian 在切空间的投影，第二项来自生成器曲率。即使 $\theta^*$ 可表示，病态 Jacobian 或非凸曲率仍可能使梯度下降难以到达。
+\clearpage
+\section{参数流形与局部坐标}
+设目标网络参数 $\theta\in\R^P$，假设优秀解附近位于 $d$ 维光滑流形 $\mathcal M$，$d\ll P$。局部坐标图
+\begin{equation}
+ \phi:U\subset\R^d\to\mathcal M\subset\R^P,
+ \qquad \phi(0)=\theta^*.
+\end{equation}
+Jacobian
+\begin{equation}
+ J_\phi(0)\in\R^{P\times d}
+\end{equation}
+的列空间是切空间
+\begin{equation}
+ T_{\theta^*}\mathcal M=
+ \operatorname{Col}(J_\phi(0)).
+\end{equation}
+局部参数变化
+\begin{equation}
+ \theta(z)=\theta^*+J_\phi(0)z+O(\|z\|^2).
+\end{equation}
+
+\section{Mapping Theorem 的误差链}
+假设网络输出关于参数 Lipschitz：
+\begin{equation}
+ \|f_{\theta_1}(x)-f_{\theta_2}(x)\|
+ \le L_\theta\|\theta_1-\theta_2\|.
+\end{equation}
+损失关于输出 Lipschitz：
+\begin{equation}
+ |\ell(f_1,y)-\ell(f_2,y)|
+ \le L_\ell\|f_1-f_2\|.
+\end{equation}
+组合得
+\begin{equation}
+ |L(\theta_1)-L(\theta_2)|
+ \le L_\ell L_\theta
+ \|\theta_1-\theta_2\|.
+\end{equation}
+若 mapping network 找到 $z$ 使
+\begin{equation}
+ \|g(z)-\theta^*\|
+ \le\delta=\frac\epsilon{L_\ell L_\theta},
+\end{equation}
+则
+\begin{equation}
+ |L(g(z))-L(\theta^*)|\le\epsilon.
+\end{equation}
+定理的核心是“参数逼近误差通过两个 Lipschitz 常数传到任务损失误差”。
+
+\section{局部坐标扩展为全局平滑映射}
+局部图 $\phi$ 只在 $U$ 内定义。取光滑 bump function $\psi:\R^d\to[0,1]$，在原点邻域等于 1，离开 $U$ 后等于 0。定义
+\begin{equation}
+ g(z)=\psi(z)\phi(z)+(1-\psi(z))\theta^*.
+\end{equation}
+在原点附近 $g=\phi$，远处 $g=\theta^*$，过渡区由 $\psi$ 平滑连接。因此 $g$ 可扩展到全 $\R^d$，且
+\begin{equation}
+ g(0)=\theta^*.
+\end{equation}
+这是存在性构造，并不说明一个有限宽度神经网络容易训练到该 $g$。
+
+\section{潜变量梯度是参数梯度的切空间投影}
+目标
+\begin{equation}
+ \widetilde L(z)=L(g(z)).
+\end{equation}
+链式法则
+\begin{equation}
+ \nabla_z\widetilde L=J_g(z)^\top\nabla_\theta L.
+\end{equation}
+参数空间中的实际更新
+\begin{equation}
+ \delta\theta=J_g\delta z
+ =-\eta J_gJ_g^\top\nabla_\theta L.
+\end{equation}
+若 $J_g$ 列正交，$J_gJ_g^\top$ 是切空间投影。一般情况下它是带度量的低秩预条件器。mapping training 自动把全参数梯度限制在可生成子空间。
+
+\section{Jacobian 秩限制与表达维度}
+因为
+\begin{equation}
+ J_g(z)\in\R^{P\times d},
+\end{equation}
+有
+\begin{equation}
+ \rank J_g(z)\le d.
+\end{equation}
+局部一阶可达方向最多 $d$ 维。即使 $g$ 非线性，单点邻域的自由度仍受 $d$ 限制。非线性允许不同区域拥有不同切空间，但不能在同一点瞬间提供超过 $d$ 个独立方向。
+
+\section{曲率导致的二阶偏离}
+Taylor 展开
+\begin{equation}
+ g(z+\delta z)=g(z)+J_g\delta z+
+ \frac12\mathcal H_g[\delta z,\delta z]+O(\|\delta z\|^3).
+\end{equation}
+一阶项位于切空间，二阶项包含法向分量，描述流形曲率。若 Hessian 范数上界 $\|\mathcal H_g\|\le K$，则线性近似误差
+\begin{equation}
+ \|g(z+\delta z)-g(z)-J_g\delta z\|
+ \le\frac K2\|\delta z\|^2+O(\|\delta z\|^3).
+\end{equation}
+学习率过大时会离开局部平坦区域，定理中的局部 Lipschitz 和坐标近似可能失效。
+
+\section{不可辨识性与潜空间对称}
+若存在可逆变换 $T:\R^d\to\R^d$，定义
+\begin{equation}
+ \widetilde g(z)=g(Tz),
+ \qquad \widetilde z=T^{-1}z,
+\end{equation}
+则生成参数相同：
+\begin{equation}
+ \widetilde g(\widetilde z)=g(z).
+\end{equation}
+所以潜坐标没有唯一语义，旋转、缩放、置换都可产生等价表示。只约束任务损失无法确定唯一 mapping geometry，需要额外正则固定尺度和光滑性。
+
+\section{加性调制映射的表达秩}
+若 mapping network 采用
+\begin{equation}
+ \theta(z)=\theta_0+Az,
+ \qquad A\in\R^{P\times d},
+\end{equation}
+它只能生成仿射子空间，Jacobian 恒为 $A$。若加入逐层非线性
+\begin{equation}
+ g(z)=W_2\sigma(W_1z+b_1)+b_2,
+\end{equation}
+Jacobian
+\begin{equation}
+ J_g=W_2\operatorname{diag}(\sigma'(W_1z+b_1))W_1,
+\end{equation}
+仍有秩不超过 $d$，但切空间随 $z$ 改变，可描述弯曲流形。
+
+\section{随机平滑稳定性项}
+对潜变量扰动 $\epsilon\sim\mathcal N(0,\sigma^2I)$，稳定性损失
+\begin{equation}
+ \Loss_{\rm stab}=\E_\epsilon
+ \|g(z+\epsilon)-g(z)\|^2.
+\end{equation}
+小噪声下
+\begin{equation}
+ g(z+\epsilon)-g(z)
+ \approx J_g\epsilon.
+\end{equation}
+于是
+\begin{align}
+ \Loss_{\rm stab}
+ &\approx\E\epsilon^\top J_g^\top J_g\epsilon\\
+ &=\sigma^2\tr(J_g^\top J_g)
+ =\sigma^2\|J_g\|_F^2.
+\end{align}
+所以随机扰动稳定性等价于 Jacobian Frobenius 正则，抑制 mapping 对潜变量过度敏感。
+
+\section{Hutchinson 迹估计}
+显式计算 $\|J_g\|_F^2=\tr(J_g^\top J_g)$ 代价高。取随机向量 $v$ 满足 $\E[vv^\top]=I$，
+\begin{equation}
+ \E\|J_gv\|^2
+ =\E v^\top J_g^\top J_gv
+ =\tr(J_g^\top J_g).
+\end{equation}
+因此一次 JVP 即可无偏估计 Jacobian 范数。多个随机向量平均降低方差。
+
+\section{参数量与生成成本}
+潜变量本身只有 $d$ 个可训练参数，但 mapping network 若固定，也需要前向生成 $P$ 个目标权重。输出层至少有 $O(P)$ 写出成本。若显式生成完整参数，内存仍需存储 $P$ 个权重用于目标网络前向。训练参数少不等于训练 FLOPs 和显存按同样比例下降。
+
+\section{一个曲线流形例子}
+令二维参数
+\begin{equation}
+ \theta(z)=(z,z^2)\in\R^2,
+\end{equation}
+潜维度 $d=1$。Jacobian
+\begin{equation}
+ J_g(z)=\begin{pmatrix}1\\2z\end{pmatrix}.
+\end{equation}
+切线方向随 $z$ 改变。若参数梯度 $g_\theta=(g_1,g_2)$，潜梯度
+\begin{equation}
+ \frac{\dd L}{\dd z}=g_1+2zg_2.
+\end{equation}
+实际参数更新沿切线
+\begin{equation}
+ \delta\theta=-\eta
+ \begin{pmatrix}1\\2z\end{pmatrix}(g_1+2zg_2),
+\end{equation}
+无法直接沿法向方向 $( -2z,1)$ 移动。
+
+\section{存在性与可训练性的区别}
+Mapping Theorem 表明“存在某个 $z^*$ 使损失接近最优”，但优化还需要：
+\begin{equation}
+ \min_z L(g(z))
+\end{equation}
+的景观可搜索。若 $J_g$ 在某区域奇异值很小，
+\begin{equation}
+ \|\nabla_zL\|=\|J_g^\top\nabla_\theta L\|
+\end{equation}
+可能接近零，即使参数空间梯度很大。存在一个好点不保证梯度下降能到达，因此需要分析 Jacobian 条件数、初始化和全局非凸性。
+\end{document}

@@ -1,0 +1,426 @@
+\documentclass[11pt]{article}
+\usepackage{fontspec}
+\setmainfont[
+  Path=fonts/,
+  Extension=.ttf,
+  UprightFont=*-400,
+  BoldFont=*-700
+]{NotoSerifSC}
+\setsansfont[
+  Path=fonts/,
+  Extension=.ttf,
+  UprightFont=*-400,
+  BoldFont=*-700
+]{NotoSerifSC}
+\XeTeXlinebreaklocale "zh"
+\XeTeXlinebreakskip=0pt plus 1pt
+\usepackage[a4paper,margin=1.70cm]{geometry}
+\usepackage{amsmath,amssymb,mathtools,bm}
+\usepackage{booktabs,longtable,array}
+\usepackage{enumitem}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\setlist{nosep,leftmargin=2em}
+\allowdisplaybreaks[3]
+\numberwithin{equation}{section}
+\pagestyle{plain}
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Pp}{\mathbb{P}}
+\newcommand{\1}{\mathbf{1}}
+\newcommand{\T}{\mathsf{T}}
+\newcommand{\F}{\mathrm{F}}
+\newcommand{\cN}{\mathcal{N}}
+\newcommand{\cL}{\mathcal{L}}
+\newcommand{\cS}{\mathcal{S}}
+\newcommand{\cH}{\mathcal{H}}
+\newcommand{\cA}{\mathcal{A}}
+\newcommand{\cM}{\mathcal{M}}
+\newcommand{\cT}{\mathcal{T}}
+\newcommand{\diag}{\operatorname{diag}}
+\newcommand{\tr}{\operatorname{tr}}
+\newcommand{\Var}{\operatorname{Var}}
+\newcommand{\Cov}{\operatorname{Cov}}
+\newcommand{\softmax}{\operatorname{softmax}}
+\newcommand{\KL}{D_{\mathrm{KL}}}
+\newcommand{\sg}{\operatorname{sg}}
+\begin{document}
+    \begin{center}
+      {\LARGE\bfseries 27\_Optical generative models}
+    \end{center}
+    \vspace{0.8em}
+
+    \section{符号与维度}
+    \begin{longtable}{>{$}l<{$} >{$}l<{$} p{10cm}}
+    \toprule
+    \text{符号} & \text{维度} & \text{含义}\\
+    \midrule
+    U & \mathbb C^{H\times W} & 相干光场复振幅。\\
+        \lambda,k & \R_{>0} & 波长与波数 $2\pi/\lambda$。\\
+        H_z & \mathbb C^{H\times W} & 自由空间传播传递函数。\\
+        \phi & \R^{H\times W} & 可训练相位调制。\\
+        I=|U|^2 & \R_{\ge0}^{H\times W} & 探测器强度。\\
+    \bottomrule
+    \end{longtable}
+
+    所有向量默认是列向量；未特别说明时，期望同时对数据、噪声和采样时刻取值。下文只展开论文中承担方法逻辑的公式，并把所需假设写在推导发生的位置。
+
+\section{自由空间传播的角谱表示}
+
+单色标量场 $U(x,y,z)$ 满足 Helmholtz 方程
+\begin{equation}
+ (\nabla^2+k^2)U=0,
+ \qquad k=2\pi/\lambda.
+\end{equation}
+对横向坐标作二维 Fourier 变换
+\begin{equation}
+ \widehat U(f_x,f_y,z)=
+ \iint U(x,y,z)e^{-i2\pi(f_xx+f_yy)}dxdy.
+\end{equation}
+因 $\partial_x^2$ 变为 $-(2\pi f_x)^2$，方程化为
+\begin{equation}
+ \partial_z^2\widehat U+k_z^2\widehat U=0,
+ \quad
+ k_z=2\pi\sqrt{\lambda^{-2}-f_x^2-f_y^2}.
+\end{equation}
+取向前传播解，距离 $d$ 的传递函数
+\begin{equation}
+ H_d(f_x,f_y)=e^{ik_zd}.
+\end{equation}
+因此传播算子
+\begin{equation}
+ \boxed{\mathcal P_d[U]=\mathcal F^{-1}
+ (H_d\,\mathcal F[U]).}
+\end{equation}
+当 $f_x^2+f_y^2>\lambda^{-2}$，$k_z$ 为虚数，对应倏逝波指数衰减；
+远场数值模型通常截去这些频率。
+
+\section{近轴 Fresnel 近似}
+
+若横向频率远小于 $1/\lambda$，令
+$q=\lambda^2(f_x^2+f_y^2)\ll1$，使用
+$\sqrt{1-q}=1-q/2+O(q^2)$：
+\begin{align}
+ k_z
+ &=\frac{2\pi}{\lambda}\sqrt{1-q}\\
+ &\approx\frac{2\pi}{\lambda}
+ -\pi\lambda(f_x^2+f_y^2).
+\end{align}
+于是
+\begin{equation}
+ H_d\approx e^{i2\pi d/\lambda}
+ e^{-i\pi\lambda d(f_x^2+f_y^2)}.
+\end{equation}
+第一个是全局相位，不影响强度；第二个是二次相位低通传播核。
+
+\section{相位调制层与级联解码器}
+
+相位板像素参数 $\phi_\ell(x,y)$ 的透射函数
+\begin{equation}
+ M_\ell(x,y)=e^{i\phi_\ell(x,y)},\qquad |M_\ell|=1.
+\end{equation}
+若层间传播 $\mathcal P_\ell$，级联场
+\begin{equation}
+ U_{\ell+1}=\mathcal P_\ell[M_\ell\odot U_\ell].
+\end{equation}
+离散化后 $\mathcal P_\ell$ 是复值线性算子 $P_\ell$，而相位板是对角矩阵
+$D_\ell=\diag(e^{i\phi_\ell})$：
+\begin{equation}
+ u_L=P_{L-1}D_{L-1}\cdots P_1D_1P_0u_0.
+\end{equation}
+对固定相位，光学解码器关于输入场是线性的；探测强度
+\begin{equation}
+ I=|u_L|^2=u_L\odot u_L^*
+\end{equation}
+引入二次非线性。浅数字编码器把随机噪声映射为输入相位/振幅，
+自由空间网络再以物理传播完成大部分生成计算。
+
+\section{复值反向传播与相位梯度}
+
+对某层相位，调制后场 $v=e^{i\phi}\odot u$，逐像素微分
+\begin{equation}
+ dv=i(e^{i\phi}\odot u)\odot d\phi=i v\odot d\phi.
+\end{equation}
+令实损失对复场的 Wirtinger 伴随梯度为 $g_v$，实微分可写
+\begin{equation}
+ d\cL=2\operatorname{Re}(g_v^Hdv).
+\end{equation}
+代入得
+\begin{align}
+ d\cL
+ &=2\operatorname{Re}\sum_jg_{v,j}^*iv_jd\phi_j\\
+ &=-2\sum_j\operatorname{Im}(g_{v,j}^*v_j)d\phi_j,
+\end{align}
+所以
+\begin{equation}
+ \boxed{\frac{\partial\cL}{\partial\phi_j}
+ =-2\operatorname{Im}(g_{v,j}^*v_j).}
+\end{equation}
+传播层 $u'=Pu$ 的伴随反传是
+\begin{equation}
+ g_u=P^Hg_{u'}.
+\end{equation}
+若无损离散传播为酉矩阵，$P^H=P^{-1}$；实际孔径、采样和材料损耗使其不完全酉。
+
+\section{强度损失的梯度}
+
+探测像素 $I_j=|u_j|^2=u_ju_j^*$。对实损失
+$\cL(I)$，
+\begin{equation}
+ dI_j=u_j^*du_j+u_jdu_j^*=2\operatorname{Re}(u_j^*du_j).
+\end{equation}
+所以
+\begin{equation}
+ d\cL=2\operatorname{Re}\sum_j
+ \frac{\partial\cL}{\partial I_j}u_j^*du_j,
+\end{equation}
+伴随梯度可取
+\begin{equation}
+ g_u=\frac{\partial\cL}{\partial I}\odot u.
+\end{equation}
+若像素 MSE
+\begin{equation}
+ \cL=\frac12\sum_j(I_j-I_j^*)^2,
+\end{equation}
+则 $g_u=(I-I^*)\odot u$。暗像素 $u\approx0$ 时强度梯度也小，
+可解释从全暗初始化学习困难的现象。
+
+\section{能量守恒、孔径与效率}
+
+若传播 $P$ 酉且相位板 $D$ 满足 $D^HD=I$，则
+\begin{equation}
+ \|PDu\|_2^2=u^HD^HP^HPDu=\|u\|_2^2.
+\end{equation}
+因此理想相位系统只重排能量。有限孔径可表示为振幅掩码
+$A=\diag(a_j)$、$0\le a_j\le1$，于是
+\begin{equation}
+ \|APDu\|_2\le\|u\|_2.
+\end{equation}
+若目标图像归一化时忽略总光功率，模型可能在形状指标很好但衍射效率很低。
+可定义效率
+\begin{equation}
+ \eta=\frac{\sum_{j\in\Omega_{\rm target}}I_j}
+ {\sum_jI_j}
+\end{equation}
+作为独立评价或正则项。
+
+\section{探测噪声与似然}
+
+光子计数更自然地建模为
+\begin{equation}
+ Y_j\sim\operatorname{Poisson}(\lambda_j),
+ \qquad \lambda_j=\eta_d I_j+b_j.
+\end{equation}
+负对数似然（去常数）
+\begin{equation}
+ \cL_{\rm Pois}=\sum_j[\lambda_j-Y_j\log\lambda_j].
+\end{equation}
+对强度的梯度
+\begin{equation}
+ \frac{\partial\cL_{\rm Pois}}{\partial I_j}
+ =\eta_d\left(1-\frac{Y_j}{\lambda_j}\right).
+\end{equation}
+高光子数时 Poisson 近似高斯，MSE 较合理；低光子数时方差等于均值，
+同方差 MSE 会错误加权暗区与亮区。
+
+\section{相位量化的误差界}
+
+若器件仅支持 $B$ bit 相位，量化步长
+\begin{equation}
+ \Delta=\frac{2\pi}{2^B},\qquad |\widehat\phi-\phi|\le\Delta/2.
+\end{equation}
+单像素复透射误差
+\begin{align}
+ |e^{i\widehat\phi}-e^{i\phi}|
+ &=2\left|\sin\frac{\widehat\phi-\phi}{2}\right|\\
+ &\le|\widehat\phi-\phi|\le\frac\Delta2.
+\end{align}
+若输入场为 $u$，调制误差
+\begin{equation}
+ \|(\widehat D-D)u\|_2\le\frac\Delta2\|u\|_2.
+\end{equation}
+多层误差可用逐层 telescoping 展开并结合各传播算子谱范数求和控制。
+
+\section{分布推送与可测生成器}
+
+潜变量 $z\sim p_Z$，生成器 $x=G_\theta(z)$ 诱导推送分布
+\begin{equation}
+ p_\theta=(G_\theta)_\#p_Z,
+\end{equation}
+其定义是任意可测集合 $A$ 满足
+\begin{equation}
+ p_\theta(A)=p_Z(G_\theta^{-1}(A)).
+\end{equation}
+等价地，对任意可积测试函数 $\varphi$，
+\begin{equation}
+ \E_{x\sim p_\theta}\varphi(x)
+ =\E_{z\sim p_Z}\varphi(G_\theta(z)).
+\end{equation}
+若 $G:\R^d\to\R^d$ 是可逆微分同胚，变量替换给出显式密度
+\begin{equation}
+ p_\theta(x)=p_Z(G^{-1}(x))
+ \left|\det J_{G^{-1}}(x)\right|.
+\end{equation}
+取对数并用 $J_{G^{-1}}(x)=J_G(z)^{-1}$：
+\begin{equation}
+ \log p_\theta(x)=\log p_Z(z)-\log|\det J_G(z)|.
+\end{equation}
+VAE、GAN、扩散和隐式光学生成器通常不同时满足同维可逆条件，
+因此分别使用变分界、判别散度、score/flow 或样本级目标绕开直接行列式。
+
+\section{KL、JS 与总变差的关系}
+
+KL 非负可由 $-\log$ 的凸性证明：
+\begin{align}
+ D_{\rm KL}(p\|q)
+ &=\E_p\left[-\log\frac{q(X)}{p(X)}\right]\\
+ &\ge-\log\E_p\frac{q(X)}{p(X)}=-\log1=0.
+\end{align}
+等号当且仅当 $p=q$ 几乎处处。KL 不对称且当 $q=0,p>0$ 时为无穷。
+
+Jensen--Shannon 散度
+\begin{equation}
+ D_{\rm JS}(p\|q)=\frac12D_{\rm KL}(p\|m)
+ +\frac12D_{\rm KL}(q\|m),\qquad m=(p+q)/2
+\end{equation}
+总是有限，$0\le D_{\rm JS}\le\log2$。当支撑不相交时取上界，
+却对支撑间几何距离不敏感。
+
+总变差
+\begin{equation}
+ \operatorname{TV}(p,q)=\frac12\int|p-q|
+ =\sup_A|p(A)-q(A)|.
+\end{equation}
+Pinsker 不等式
+\begin{equation}
+ \operatorname{TV}(p,q)
+ \le\sqrt{\frac12D_{\rm KL}(p\|q)}
+\end{equation}
+说明小正向 KL 保证事件概率接近；逆命题没有无条件形式，因为很小区域上的密度比可极大。
+
+\section{Wasserstein 距离与 Lipschitz 测试函数}
+
+一阶 Wasserstein 距离
+\begin{equation}
+ W_1(p,q)=\inf_{\gamma\in\Pi(p,q)}
+ \E_{(X,Y)\sim\gamma}\|X-Y\|
+\end{equation}
+显式考虑搬运距离。Kantorovich--Rubinstein 对偶
+\begin{equation}
+ W_1(p,q)=\sup_{\|f\|_{\rm Lip}\le1}
+ [\E_pf(X)-\E_qf(Y)].
+\end{equation}
+因此任意 $L$-Lipschitz 评价函数满足
+\begin{equation}
+ |\E_pf-\E_qf|\le L W_1(p,q).
+\end{equation}
+如果下游感知损失近似 Lipschitz，Wasserstein 小可以控制其期望差；
+但高维下从有限样本估计 Wasserstein 有较慢的维数依赖。
+
+\section{最大均值差异}
+
+在再生核 Hilbert 空间 $\mathcal H$ 中，均值嵌入
+\begin{equation}
+ \mu_p=\E_{X\sim p}k(X,\cdot).
+\end{equation}
+MMD 定义
+\begin{equation}
+ \operatorname{MMD}^2(p,q)=\|\mu_p-\mu_q\|_{\mathcal H}^2.
+\end{equation}
+利用再生性质展开
+\begin{align}
+ \operatorname{MMD}^2
+ &=\E_{X,X'\sim p}k(X,X')
+ +\E_{Y,Y'\sim q}k(Y,Y')\\
+ &\quad-2\E_{X\sim p,Y\sim q}k(X,Y).
+\end{align}
+样本 $x_{1:n},y_{1:m}$ 的无偏估计
+\begin{align}
+ \widehat{\operatorname{MMD}}_u^2
+ &=\frac1{n(n-1)}\sum_{i\ne j}k(x_i,x_j)\\
+ &\quad+\frac1{m(m-1)}\sum_{i\ne j}k(y_i,y_j)
+ -\frac2{nm}\sum_{i,j}k(x_i,y_j).
+\end{align}
+特征核选择决定它关注的尺度；特征空间中的 MMD 小不保证像素空间逐点接近。
+
+\section{高斯特征距离与 FID}
+
+将真实、生成图像经固定特征提取器映射并近似为高斯
+$\cN(\mu_r,\Sigma_r)$、$\cN(\mu_g,\Sigma_g)$。二阶 Wasserstein 距离闭式
+\begin{equation}
+ \operatorname{FID}=
+ \|\mu_r-\mu_g\|_2^2
+ +\tr\left(\Sigma_r+\Sigma_g
+ -2(\Sigma_r^{1/2}\Sigma_g\Sigma_r^{1/2})^{1/2}\right).
+\end{equation}
+若协方差可交换，可同时对角化，第二项简化为
+\begin{equation}
+ \sum_j(\sqrt{\lambda_{r,j}}-\sqrt{\lambda_{g,j}})^2.
+\end{equation}
+样本均值和协方差是有限样本估计，矩阵平方根的非线性导致 FID 有偏；
+比较模型时必须使用相同样本数、预处理和特征网络。
+
+\section{Monte Carlo 估计与控制变量}
+
+生成目标常写成 $J(\theta)=\E_Z f_\theta(Z)$。独立样本估计
+\begin{equation}
+ \widehat J_N=\frac1N\sum_{i=1}^{N}f_\theta(Z_i)
+\end{equation}
+无偏且
+\begin{equation}
+ \Var(\widehat J_N)=\frac1N\Var(f_\theta(Z)).
+\end{equation}
+若有已知期望 $\E C=\mu_C$ 的控制变量，
+\begin{equation}
+ \widehat J_\beta=\widehat J_N-\beta(\widehat C_N-\mu_C)
+\end{equation}
+仍无偏。方差是
+\begin{equation}
+ \Var(\widehat J_\beta)
+ =\Var(\widehat J_N)+\beta^2\Var(\widehat C_N)
+ -2\beta\Cov(\widehat J_N,\widehat C_N).
+\end{equation}
+最优
+\begin{equation}
+ \beta^*=\frac{\Cov(f,C)}{\Var(C)}.
+\end{equation}
+扩散中的已知噪声、RL 中的基线和光学中的参考传播都可视为利用相关结构降方差的不同形式。
+
+\section{score matching 的分部积分}
+
+数据 score 为 $s_p(x)=\nabla_x\log p(x)$。显式 score matching
+\begin{equation}
+ J(\theta)=\frac12\E_p\|s_\theta(x)-s_p(x)\|^2.
+\end{equation}
+展开并去掉与 $\theta$ 无关的 $\E\|s_p\|^2/2$：
+\begin{equation}
+ J(\theta)=\frac12\E_p\|s_\theta\|^2-E_p[s_\theta^Ts_p]+C.
+\end{equation}
+交叉项
+\begin{align}
+ \E_p[s_\theta^Ts_p]
+ &=\int s_\theta(x)^T\nabla p(x)dx\\
+ &=-\int p(x)\nabla\cdot s_\theta(x)dx
+\end{align}
+在边界项消失时成立。故
+\begin{equation}
+ J(\theta)=\E_p\left[
+ \frac12\|s_\theta(x)\|^2+\nabla\cdot s_\theta(x)
+ \right]+C.
+\end{equation}
+去噪 score matching通过已知高斯条件 score 避免计算模型散度，并在条件期望意义下恢复边缘 score。
+
+\section{模型误差到期望指标误差}
+
+若生成样本耦合为 $X=G(Z)$、$\widehat X=\widehat G(Z)$，且评价函数
+$f$ 为 $L_f$-Lipschitz，则
+\begin{align}
+ |\E f(X)-\E f(\widehat X)|
+ &\le\E|f(X)-f(\widehat X)|\\
+ &\le L_f\E\|G(Z)-\widehat G(Z)\|.
+\end{align}
+这给出点对点生成误差控制分布指标的充分条件。但无条件生成中通常不存在已知语义配对，
+逐样本 MSE 可能强迫平均化；分布距离允许不同耦合，因而更适合多模态目标。
+
+\end{document}
