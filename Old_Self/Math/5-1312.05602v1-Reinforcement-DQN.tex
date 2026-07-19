@@ -1,0 +1,389 @@
+\documentclass[11pt]{article}
+\usepackage{fontspec}
+\setmainfont[
+  Path=fonts/,
+  Extension=.ttf,
+  UprightFont=*-400,
+  BoldFont=*-700
+]{NotoSerifSC}
+\setsansfont[
+  Path=fonts/,
+  Extension=.ttf,
+  UprightFont=*-400,
+  BoldFont=*-700
+]{NotoSerifSC}
+\XeTeXlinebreaklocale "zh"
+\XeTeXlinebreakskip=0pt plus 1pt
+\usepackage[a4paper,margin=1.70cm]{geometry}
+\usepackage{amsmath,amssymb,mathtools,bm}
+\usepackage{booktabs,longtable,array}
+\usepackage{enumitem}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\setlist{nosep,leftmargin=2em}
+\allowdisplaybreaks[3]
+\numberwithin{equation}{section}
+\pagestyle{plain}
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Pp}{\mathbb{P}}
+\newcommand{\1}{\mathbf{1}}
+\newcommand{\T}{\mathsf{T}}
+\newcommand{\F}{\mathrm{F}}
+\newcommand{\cN}{\mathcal{N}}
+\newcommand{\cL}{\mathcal{L}}
+\newcommand{\cS}{\mathcal{S}}
+\newcommand{\cH}{\mathcal{H}}
+\newcommand{\cA}{\mathcal{A}}
+\newcommand{\cM}{\mathcal{M}}
+\newcommand{\cT}{\mathcal{T}}
+\newcommand{\diag}{\operatorname{diag}}
+\newcommand{\tr}{\operatorname{tr}}
+\newcommand{\Var}{\operatorname{Var}}
+\newcommand{\Cov}{\operatorname{Cov}}
+\newcommand{\softmax}{\operatorname{softmax}}
+\newcommand{\KL}{D_{\mathrm{KL}}}
+\newcommand{\sg}{\operatorname{sg}}
+\begin{document}
+    \begin{center}
+      {\LARGE\bfseries 5-1312.05602v1-Reinforcement-DQN}
+    \end{center}
+    \vspace{0.8em}
+
+    \section{符号与维度}
+    \begin{longtable}{>{$}l<{$} >{$}l<{$} p{10cm}}
+    \toprule
+    \text{符号} & \text{维度} & \text{含义}\\
+    \midrule
+    s,a,r,s' & -- & 状态、动作、奖励与下一状态。\\
+        Q_\theta,Q_{\theta^-} & \R & 在线与目标动作价值网络。\\
+        \gamma & [0,1) & 折扣因子。\\
+        d & \{0,1\} & 终止标记。\\
+    \bottomrule
+    \end{longtable}
+
+    所有向量默认是列向量；未特别说明时，期望同时对数据、噪声和采样时刻取值。下文只展开论文中承担方法逻辑的公式，并把所需假设写在推导发生的位置。
+
+\section{Bellman 最优算子的压缩映射证明}
+
+对有界动作价值函数 $Q$，定义
+\begin{equation}
+ (T^*Q)(s,a)=r(s,a)+\gamma
+ \E_{s'\mid s,a}\max_{a'}Q(s',a').
+\end{equation}
+取任意 $Q_1,Q_2$。利用
+\begin{equation}
+ |\max_i x_i-\max_i y_i|\le\max_i|x_i-y_i|,
+\end{equation}
+逐状态动作有
+\begin{align}
+ |(T^*Q_1-T^*Q_2)(s,a)|
+ &\le\gamma\E_{s'}
+ \left|\max_{a'}Q_1(s',a')-\max_{a'}Q_2(s',a')\right|\\
+ &\le\gamma\|Q_1-Q_2\|_\infty.
+\end{align}
+取上确界得到
+\begin{equation}
+ \boxed{\|T^*Q_1-T^*Q_2\|_\infty
+ \le\gamma\|Q_1-Q_2\|_\infty.}
+\end{equation}
+因 $0\le\gamma<1$，Banach 不动点定理保证唯一 $Q^*$ 且精确值迭代收敛。
+神经网络 DQN 并非精确表格迭代，函数逼近、离策略采样和移动目标会破坏这一直接保证。
+
+\section{TD 平方损失与半梯度}
+
+固定目标网络参数 $\bar\theta$，单样本目标
+\begin{equation}
+ y=r+\gamma(1-d)\max_{a'}Q_{\bar\theta}(s',a')
+\end{equation}
+以及损失
+\begin{equation}
+ \ell(\theta)=\frac12(y-Q_\theta(s,a))^2.
+\end{equation}
+因 $y$ 对在线参数停止梯度，
+\begin{equation}
+ \nabla_\theta\ell
+ =-(y-Q_\theta(s,a))\nabla_\theta Q_\theta(s,a).
+\end{equation}
+这称为半梯度。若目标也用同一 $\theta$ 且不停止梯度，则
+\begin{align}
+ \nabla_\theta\ell
+ &=(Q_\theta-y_\theta)
+ \left(\nabla Q_\theta(s,a)
+ -\gamma\nabla Q_\theta(s',a^*)\right),
+\end{align}
+其中 $a^*=\arg\max_{a'}Q_\theta(s',a')$ 在唯一最大值处局部常数。
+这不是通常 DQN 的更新，并会让目标与预测同时移动。
+
+设 Bellman 误差 $\delta=y-Q_\theta(s,a)$。一次梯度下降后，对小步长 $\eta$，
+\begin{align}
+ Q_{\theta^+}(s,a)
+ &\approx Q_\theta(s,a)+
+ \nabla Q_\theta(s,a)^T(\theta^+-\theta)\\
+ &=Q_\theta(s,a)+\eta\delta
+ \|\nabla Q_\theta(s,a)\|_2^2.
+\end{align}
+所以 $\delta>0$ 时该动作价值局部上升，步幅还受网络 Jacobian 范数调制。
+
+\section{目标网络作为时间尺度分离}
+
+硬更新每 $C$ 步令 $\bar\theta\leftarrow\theta$。软更新为
+\begin{equation}
+ \bar\theta_{k+1}=(1-\tau)\bar\theta_k+\tau\theta_k.
+\end{equation}
+递归展开
+\begin{equation}
+ \bar\theta_k=(1-\tau)^k\bar\theta_0
+ +\tau\sum_{j=0}^{k-1}(1-\tau)^{k-1-j}\theta_j.
+\end{equation}
+因此目标网络是在线参数的指数移动平均，有效记忆长度约为 $1/\tau$。
+它减少目标抖动，但过小 $\tau$ 会增加滞后偏差。
+
+\section{经验回放改变的采样分布}
+
+在线相邻转移通常相关；回放缓冲区中均匀抽样近似经验分布
+\begin{equation}
+ \widehat\mu(s,a,r,s')=\frac1N\sum_{i=1}^{N}
+ \delta_{(s_i,a_i,r_i,s_i')}.
+\end{equation}
+小批梯度
+\begin{equation}
+ \widehat g=\frac1B\sum_{i\in\mathcal B}\nabla\ell_i
+\end{equation}
+在相对缓冲经验分布下无偏，但一般不相对当前策略占用分布无偏。
+Q-learning 的 Bellman 最优目标允许离策略数据，前提仍需足够覆盖相关状态动作。
+
+优先回放令采样概率
+\begin{equation}
+ P(i)=\frac{p_i^\alpha}{\sum_jp_j^\alpha},
+\end{equation}
+为校正到均匀经验目标，重要性权重可取
+\begin{equation}
+ w_i=\left(\frac1{NP(i)}\right)^\beta.
+\end{equation}
+$\beta=1$ 完全校正，$\beta<1$ 在偏差与方差之间折衷。归一化
+$w_i/\max_jw_j$ 进一步改变整体梯度尺度，但不改变方向的相对加权。
+
+\section{最大值造成的过估计偏差}
+
+设估计 $\widehat Q_a=Q_a+\epsilon_a$ 且 $\E\epsilon_a=0$。由最大值是凸函数，
+Jensen 不等式给出
+\begin{equation}
+ \E\max_a\widehat Q_a
+ \ge\max_a\E\widehat Q_a
+ =\max_aQ_a.
+\end{equation}
+Double DQN 用在线网络选动作、目标网络估值：
+\begin{equation}
+ a^*=\arg\max_a Q_\theta(s',a),
+ \qquad y=r+\gamma Q_{\bar\theta}(s',a^*).
+\end{equation}
+当两网络误差不完全相关时，选择噪声与评估噪声被部分解耦，从而降低而非必然消除过估计。
+
+\section{n 步目标的偏差与传播}
+
+$n$ 步目标为
+\begin{equation}
+ y_t^{(n)}=\sum_{k=0}^{n-1}\gamma^kr_{t+k}
+ +\gamma^n\max_aQ_{\bar\theta}(s_{t+n},a).
+\end{equation}
+若 bootstrap 估计误差为 $e_{t+n}$，它进入目标的幅度为 $\gamma^ne_{t+n}$；
+增大 $n$ 会指数削弱 bootstrap 偏差，却累积更多随机奖励方差。
+令奖励独立、方差 $\sigma_r^2$，仅奖励和的方差为
+\begin{equation}
+ \Var\left(\sum_{k=0}^{n-1}\gamma^kr_{t+k}\right)
+ =\sigma_r^2\sum_{k=0}^{n-1}\gamma^{2k}
+ =\sigma_r^2\frac{1-\gamma^{2n}}{1-\gamma^2}.
+\end{equation}
+这给出 $n$ 步回报经典的偏差--方差权衡。
+
+\section{Bellman 期望方程与优势恒等式}
+
+对策略 $\pi$，定义
+\begin{align}
+ V^\pi(s)&=\E_\pi\left[\sum_{t=0}^{\infty}\gamma^tr_t\mid s_0=s\right],\\
+ Q^\pi(s,a)&=\E_\pi\left[\sum_{t=0}^{\infty}\gamma^tr_t
+ \mid s_0=s,a_0=a\right].
+\end{align}
+分离首步奖励：
+\begin{align}
+ Q^\pi(s,a)&=r(s,a)+\gamma\E_{s'}V^\pi(s'),\\
+ V^\pi(s)&=\E_{a\sim\pi(\cdot\mid s)}Q^\pi(s,a).
+\end{align}
+优势
+\begin{equation}
+ A^\pi(s,a)=Q^\pi(s,a)-V^\pi(s)
+\end{equation}
+在策略动作分布下均值为零：
+\begin{equation}
+ \E_{a\sim\pi}A^\pi(s,a)=0.
+\end{equation}
+这不表示每个动作优势小，只表示正负改进机会按当前策略加权抵消。
+
+\section{性能差异引理}
+
+令新旧策略为 $\pi',\pi$。沿 $\pi'$ 轨迹，
+\begin{align}
+ \E_{\pi'}\sum_{t=0}^{\infty}\gamma^tA^\pi(s_t,a_t)
+ &=\E_{\pi'}\sum_t\gamma^t
+ [r_t+\gamma V^\pi(s_{t+1})-V^\pi(s_t)]\\
+ &=J(\pi')-\E V^\pi(s_0),
+\end{align}
+其中价值项望远镜消去，且有界价值使末项
+$\gamma^{T+1}V(s_{T+1})\to0$。若初始分布相同，
+$\E V^\pi(s_0)=J(\pi)$，故
+\begin{equation}
+ \boxed{J(\pi')-J(\pi)
+ =\frac1{1-\gamma}
+ \E_{s\sim d_{\pi'},a\sim\pi'}A^\pi(s,a).}
+\end{equation}
+策略优化代理常把难采样的 $d_{\pi'}$ 替换为旧占用分布 $d_\pi$；
+信赖域或比率裁剪的目标是限制这一步替换造成的误差。
+
+\section{KL 信赖域的二阶局部形式}
+
+对小参数变化 $\Delta\theta$，
+\begin{equation}
+ D_{\rm KL}(\pi_{\theta}\|\pi_{\theta+\Delta})
+ =\frac12\Delta^TF(\theta)\Delta+O(\|\Delta\|^3),
+\end{equation}
+其中 Fisher 信息
+\begin{equation}
+ F(\theta)=\E_{s,a}
+ [\nabla\log\pi_\theta(a\mid s)
+ \nabla\log\pi_\theta(a\mid s)^T].
+\end{equation}
+一阶目标改进 $g^T\Delta$，约束
+$\frac12\Delta^TF\Delta\le\delta$。拉格朗日法：
+\begin{equation}
+ \mathcal J=g^T\Delta-\lambda
+ \left(\frac12\Delta^TF\Delta-\delta\right).
+\end{equation}
+驻点
+\begin{equation}
+ g-\lambda F\Delta=0
+ \Rightarrow \Delta=\lambda^{-1}F^{-1}g.
+\end{equation}
+代回约束得到
+\begin{equation}
+ \boxed{\Delta=\sqrt{\frac{2\delta}{g^TF^{-1}g}}F^{-1}g.}
+\end{equation}
+自然梯度 $F^{-1}g$ 是概率分布几何下最陡方向；PPO 裁剪是更易实现但不严格等价的近似。
+
+\section{离策略序列比率的方差}
+
+轨迹前 $T$ 步重要性比率
+\begin{equation}
+ W_T=\prod_{t=0}^{T-1}
+ \frac{\pi(a_t\mid s_t)}{\mu(a_t\mid s_t)}.
+\end{equation}
+在行为策略 $\mu$ 下若支撑相容，$\E_\mu W_T=1$。
+对数比率是和
+\begin{equation}
+ \log W_T=\sum_t\ell_t,\qquad
+ \ell_t=\log\pi(a_t\mid s_t)-\log\mu(a_t\mid s_t).
+\end{equation}
+若粗略假设 $\ell_t$ 独立、均值 $m$、方差 $v$，则
+$W_T$ 近似 log-normal，
+\begin{equation}
+ \frac{\Var(W_T)}{(\E W_T)^2}\approx e^{Tv}-1.
+\end{equation}
+方差随长度指数增长，这解释了 token/step 级截断、V-trace 或短视野校正的必要性。
+
+截断 $\bar w_t=\min(c,w_t)$ 产生偏差，但单步权重有界，
+能控制乘积和梯度爆炸。偏差精确来自尾部
+\begin{equation}
+ \E_\mu[(w_t-c)_+f_t].
+\end{equation}
+
+\section{熵正则的策略梯度}
+
+状态熵
+\begin{equation}
+ \mathcal H(\pi_\theta)=-\sum_a\pi_\theta(a)\log\pi_\theta(a).
+\end{equation}
+求导
+\begin{align}
+ \nabla\mathcal H
+ &=-\sum_a\nabla\pi(a)[1+\log\pi(a)]\\
+ &=-\E_{a\sim\pi}
+ [(1+\log\pi(a))\nabla\log\pi(a)].
+\end{align}
+因 $\E\nabla\log\pi=0$，常数 $1$ 可去掉：
+\begin{equation}
+ \nabla\mathcal H
+ =-\E[\log\pi(a)\nabla\log\pi(a)].
+\end{equation}
+加入 $+\alpha\mathcal H$ 会提高低概率动作的相对激励，防止策略过早坍缩；
+但在可验证答案任务中，过强熵也会降低正确答案集中度。
+
+\section{奖励平移、缩放与归一化}
+
+若所有奖励加常数 $c$，无限折扣回报
+\begin{equation}
+ G_t'=G_t+\frac{c}{1-\gamma}.
+\end{equation}
+精确优势不变，因为 $Q,V$ 同时加 $c/(1-\gamma)$。用采样回报而无正确基线时，
+常数会增加梯度方差但期望 score 项仍抵消。
+
+奖励乘正数 $a$ 时，优势和策略梯度乘 $a$，等价于改变有效学习率；
+PPO 的裁剪边界不随 $a$ 变，所以裁剪区域不变但目标梯度尺度变。
+组内标准化
+\begin{equation}
+ \widehat A_i=\frac{R_i-\bar R}{s_R+\epsilon}
+\end{equation}
+同时消除平移并近似消除尺度，但 $s_R$ 很小时会放大噪声，故需要 $\epsilon$ 或跳过全同奖励组。
+
+\section{KL 正则与奖励塑形}
+
+目标
+\begin{equation}
+ J(\pi)=\E_\pi[R]-\beta D_{\rm KL}(\pi\|\pi_{\rm ref})
+\end{equation}
+可写为每步塑形奖励
+\begin{equation}
+ r_t'=r_t-\beta
+ \left[\log\pi(a_t\mid s_t)-\log\pi_{\rm ref}(a_t\mid s_t)\right].
+\end{equation}
+固定状态、给定动作价值 $Q(a)$ 时，最优非参数策略由拉格朗日法得到
+\begin{equation}
+ \pi^*(a)=\frac{\pi_{\rm ref}(a)e^{Q(a)/\beta}}
+ {\sum_b\pi_{\rm ref}(b)e^{Q(b)/\beta}}.
+\end{equation}
+$\beta\to0$ 时集中到高价值动作，$\beta\to\infty$ 时回到参考策略。
+参考策略为零概率的动作在正向 KL 约束下永远不可选，故支撑选择很重要。
+
+\section{拒答动作与错误成本}
+
+设回答正确收益 $u_c$、错误收益 $u_e$、拒答收益 $u_a$，模型置信度
+$p=\Pp(\text{correct}\mid s)$。回答期望效用
+\begin{equation}
+ U_{\rm ans}(p)=pu_c+(1-p)u_e,
+\end{equation}
+拒答效用 $U_{\rm abstain}=u_a$。当
+\begin{equation}
+ p\ge\frac{u_a-u_e}{u_c-u_e}
+\end{equation}
+时回答更优（假设 $u_c>u_e$）。因此最优置信阈值由错误和拒答的相对成本决定，
+不是固定的 $1/2$。RL 后训练若隐含奖励给拒答过低分，就会系统性鼓励猜测。
+
+\section{有限 horizon 的回报界}
+
+若 $|r_t|\le R_{\max}$，无限折扣回报有界
+\begin{equation}
+ |G_t|\le\sum_{k=0}^{\infty}\gamma^kR_{\max}
+ =\frac{R_{\max}}{1-\gamma}.
+\end{equation}
+截断到 $H$ 步的尾部误差
+\begin{equation}
+ \left|G_t-\sum_{k=0}^{H-1}\gamma^kr_{t+k}\right|
+ \le\frac{\gamma^HR_{\max}}{1-\gamma}.
+\end{equation}
+要使其不超过 $\epsilon$，充分条件
+\begin{equation}
+ H\ge\frac{\log[\epsilon(1-\gamma)/R_{\max}]}{\log\gamma},
+\end{equation}
+注意 $\log\gamma<0$，除法会反转不等号，右端为正。
+
+\end{document}

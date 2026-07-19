@@ -1,0 +1,382 @@
+\documentclass[11pt]{article}
+\usepackage{fontspec}
+\setmainfont[
+  Path=fonts/,
+  Extension=.ttf,
+  UprightFont=*-400,
+  BoldFont=*-700
+]{NotoSerifSC}
+\setsansfont[
+  Path=fonts/,
+  Extension=.ttf,
+  UprightFont=*-400,
+  BoldFont=*-700
+]{NotoSerifSC}
+\XeTeXlinebreaklocale "zh"
+\XeTeXlinebreakskip=0pt plus 1pt
+\usepackage[a4paper,margin=1.70cm]{geometry}
+\usepackage{amsmath,amssymb,mathtools,bm}
+\usepackage{booktabs,longtable,array}
+\usepackage{enumitem}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\setlist{nosep,leftmargin=2em}
+\allowdisplaybreaks[3]
+\numberwithin{equation}{section}
+\pagestyle{plain}
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Pp}{\mathbb{P}}
+\newcommand{\1}{\mathbf{1}}
+\newcommand{\T}{\mathsf{T}}
+\newcommand{\F}{\mathrm{F}}
+\newcommand{\cN}{\mathcal{N}}
+\newcommand{\cL}{\mathcal{L}}
+\newcommand{\cS}{\mathcal{S}}
+\newcommand{\cH}{\mathcal{H}}
+\newcommand{\cA}{\mathcal{A}}
+\newcommand{\cM}{\mathcal{M}}
+\newcommand{\cT}{\mathcal{T}}
+\newcommand{\diag}{\operatorname{diag}}
+\newcommand{\tr}{\operatorname{tr}}
+\newcommand{\Var}{\operatorname{Var}}
+\newcommand{\Cov}{\operatorname{Cov}}
+\newcommand{\softmax}{\operatorname{softmax}}
+\newcommand{\KL}{D_{\mathrm{KL}}}
+\newcommand{\sg}{\operatorname{sg}}
+\begin{document}
+    \begin{center}
+      {\LARGE\bfseries 3-1406.0266v1-Generate-GAN}
+    \end{center}
+    \vspace{0.8em}
+
+    \section{符号与维度}
+    \begin{longtable}{>{$}l<{$} >{$}l<{$} p{10cm}}
+    \toprule
+    \text{符号} & \text{维度} & \text{含义}\\
+    \midrule
+    p_{\rm data},p_g & -- & 真实数据与生成器分布。\\
+        z & \R^d & 生成器输入噪声。\\
+        G,D & -- & 生成器与判别器。\\
+        m & -- & 两分布的等权混合。\\
+    \bottomrule
+    \end{longtable}
+
+    所有向量默认是列向量；未特别说明时，期望同时对数据、噪声和采样时刻取值。下文只展开论文中承担方法逻辑的公式，并把所需假设写在推导发生的位置。
+
+\section{固定生成器时最优判别器}
+
+原始极小极大目标
+\begin{equation}
+ V(D,G)=\E_{x\sim p_{\rm data}}\log D(x)
+ +\E_{x\sim p_g}\log(1-D(x)).
+\end{equation}
+写成逐点积分
+\begin{equation}
+ V=\int\left[p_d(x)\log D(x)+p_g(x)\log(1-D(x))\right]dx.
+\end{equation}
+对每个 $x$，令 $a=p_d(x)$、$b=p_g(x)$，函数
+$f(D)=a\log D+b\log(1-D)$。一阶与二阶导数
+\begin{equation}
+ f'(D)=\frac aD-\frac b{1-D},\qquad
+ f''(D)=-\frac a{D^2}-\frac b{(1-D)^2}<0.
+\end{equation}
+故唯一最大点满足
+\begin{equation}
+ \boxed{D^*(x)=\frac{p_d(x)}{p_d(x)+p_g(x)}}
+\end{equation}
+（分母为零的零测集可任意定义）。
+
+\section{代回后得到 Jensen--Shannon 散度}
+
+令混合分布 $m=(p_d+p_g)/2$。代入 $D^*$：
+\begin{align}
+ V(D^*,G)
+ &=\int p_d\log\frac{p_d}{p_d+p_g}\,dx
+ +\int p_g\log\frac{p_g}{p_d+p_g}\,dx\\
+ &=\int p_d\log\frac{p_d}{2m}\,dx
+ +\int p_g\log\frac{p_g}{2m}\,dx\\
+ &=-2\log2+D_{\rm KL}(p_d\|m)+D_{\rm KL}(p_g\|m)\\
+ &=-\log4+2D_{\rm JS}(p_d\|p_g).
+\end{align}
+因 JS 散度非负，理论全局最优值为 $-\log4$，当且仅当
+$p_g=p_d$（几乎处处）达到。
+
+此结论假设每一步都把判别器优化到函数空间最优。有限网络、有限数据和交替少步更新时，
+生成器实际跟随的是当前判别器梯度，不等同于直接最小化精确 JS。
+
+\section{饱和生成器与非饱和替代}
+
+设判别器输出 $D(x)=\sigma(a(x))$，$x=G_\theta(z)$。
+极小极大生成器损失
+\begin{equation}
+ \cL_G^{\rm sat}=\E_z\log(1-D(G_\theta(z))).
+\end{equation}
+对 logit 的导数为
+\begin{equation}
+ \frac{d}{da}\log(1-\sigma(a))=-\sigma(a)=-D.
+\end{equation}
+训练初期若假样本易辨认，$D(G(z))\approx0$，梯度接近零。非饱和损失
+\begin{equation}
+ \cL_G^{\rm ns}=-\E_z\log D(G_\theta(z))
+\end{equation}
+满足
+\begin{equation}
+ \frac{d}{da}[-\log\sigma(a)]=-(1-\sigma(a))=D-1,
+\end{equation}
+当 $D\approx0$ 时梯度幅值接近 $1$。二者固定点相同，但远离平衡点的梯度场不同。
+
+完整链式法则为
+\begin{equation}
+ \nabla_\theta\cL_G^{\rm ns}
+ =\E_z[(D(G(z))-1)
+ J_{G_\theta}(z)^T\nabla_xa(x)|_{x=G(z)}].
+\end{equation}
+
+\section{支撑不相交时的梯度问题}
+
+若 $p_d$ 与 $p_g$ 支撑不相交，理想判别器在数据支撑取 $1$、生成支撑取 $0$，
+此时
+\begin{equation}
+ D_{\rm JS}(p_d\|p_g)=\log2
+\end{equation}
+为常数。即使生成流形在环境空间中发生小移动，只要仍不相交，精确 JS 不变，
+它不给出把两个流形拉近的平滑方向。
+
+这也是后来使用 Wasserstein 距离的动机。Kantorovich--Rubinstein 对偶为
+\begin{equation}
+ W_1(p_d,p_g)=\sup_{\|f\|_{\rm Lip}\le1}
+ \E_{p_d}f(x)-\E_{p_g}f(x).
+\end{equation}
+当生成支撑平滑移动时，$W_1$ 通常连续；代价是 critic 必须满足 Lipschitz 约束。
+
+\section{判别器逐样本梯度}
+
+对真实样本标签 $y=1$、假样本 $y=0$，二元交叉熵
+\begin{equation}
+ \ell(a,y)=-y\log\sigma(a)-(1-y)\log(1-\sigma(a))
+\end{equation}
+满足
+\begin{equation}
+ \frac{\partial\ell}{\partial a}=\sigma(a)-y.
+\end{equation}
+所以真实样本贡献 $D(x)-1$，假样本贡献 $D(G(z))$。
+若判别器参数为 $\phi$，
+\begin{equation}
+ \nabla_\phi\ell=(D-y)\nabla_\phi a_\phi(x).
+\end{equation}
+当判别器完全正确时，自己的交叉熵梯度也趋近零；继续多步训练可能只增加 logit 幅度，
+却使生成器获得的局部几何信号变差。
+
+\section{交替优化不是联合梯度下降}
+
+记判别器最大化、生成器最小化同一个值函数，连续时间理想动力学为
+\begin{equation}
+ \dot\phi=+\nabla_\phi V(\phi,\theta),
+ \qquad
+ \dot\theta=-\nabla_\theta V(\phi,\theta).
+\end{equation}
+在简单双线性博弈 $V(\phi,\theta)=\phi\theta$ 中，
+\begin{equation}
+ \dot\phi=\theta,\qquad \dot\theta=-\phi.
+\end{equation}
+因此
+\begin{equation}
+ \frac d{dt}(\phi^2+\theta^2)=2\phi\theta-2\theta\phi=0,
+\end{equation}
+轨迹绕原点旋转而不收敛。这说明零和博弈的向量场可含旋转分量，不能用普通标量最小化直觉判断。
+
+\section{模式坍塌的梯度聚合解释}
+
+生成器对多个噪声样本的梯度平均为
+\begin{equation}
+ \nabla_\theta\cL_G
+ =\E_z[J_G(z)^Tg_x(G(z))].
+\end{equation}
+若当前判别器在某个高分区域给出相似方向 $g_x$，许多不同 $z$ 的更新可能同时把输出推向该区域。
+目标本身只比较边缘分布，没有显式的一一对应约束来保持 $z$ 的多样性。
+这不是模式坍塌的单一充分条件，但展示了共享参数下梯度合并造成输出聚集的一条机制。
+
+\section{分布推送与可测生成器}
+
+潜变量 $z\sim p_Z$，生成器 $x=G_\theta(z)$ 诱导推送分布
+\begin{equation}
+ p_\theta=(G_\theta)_\#p_Z,
+\end{equation}
+其定义是任意可测集合 $A$ 满足
+\begin{equation}
+ p_\theta(A)=p_Z(G_\theta^{-1}(A)).
+\end{equation}
+等价地，对任意可积测试函数 $\varphi$，
+\begin{equation}
+ \E_{x\sim p_\theta}\varphi(x)
+ =\E_{z\sim p_Z}\varphi(G_\theta(z)).
+\end{equation}
+若 $G:\R^d\to\R^d$ 是可逆微分同胚，变量替换给出显式密度
+\begin{equation}
+ p_\theta(x)=p_Z(G^{-1}(x))
+ \left|\det J_{G^{-1}}(x)\right|.
+\end{equation}
+取对数并用 $J_{G^{-1}}(x)=J_G(z)^{-1}$：
+\begin{equation}
+ \log p_\theta(x)=\log p_Z(z)-\log|\det J_G(z)|.
+\end{equation}
+VAE、GAN、扩散和隐式光学生成器通常不同时满足同维可逆条件，
+因此分别使用变分界、判别散度、score/flow 或样本级目标绕开直接行列式。
+
+\section{KL、JS 与总变差的关系}
+
+KL 非负可由 $-\log$ 的凸性证明：
+\begin{align}
+ D_{\rm KL}(p\|q)
+ &=\E_p\left[-\log\frac{q(X)}{p(X)}\right]\\
+ &\ge-\log\E_p\frac{q(X)}{p(X)}=-\log1=0.
+\end{align}
+等号当且仅当 $p=q$ 几乎处处。KL 不对称且当 $q=0,p>0$ 时为无穷。
+
+Jensen--Shannon 散度
+\begin{equation}
+ D_{\rm JS}(p\|q)=\frac12D_{\rm KL}(p\|m)
+ +\frac12D_{\rm KL}(q\|m),\qquad m=(p+q)/2
+\end{equation}
+总是有限，$0\le D_{\rm JS}\le\log2$。当支撑不相交时取上界，
+却对支撑间几何距离不敏感。
+
+总变差
+\begin{equation}
+ \operatorname{TV}(p,q)=\frac12\int|p-q|
+ =\sup_A|p(A)-q(A)|.
+\end{equation}
+Pinsker 不等式
+\begin{equation}
+ \operatorname{TV}(p,q)
+ \le\sqrt{\frac12D_{\rm KL}(p\|q)}
+\end{equation}
+说明小正向 KL 保证事件概率接近；逆命题没有无条件形式，因为很小区域上的密度比可极大。
+
+\section{Wasserstein 距离与 Lipschitz 测试函数}
+
+一阶 Wasserstein 距离
+\begin{equation}
+ W_1(p,q)=\inf_{\gamma\in\Pi(p,q)}
+ \E_{(X,Y)\sim\gamma}\|X-Y\|
+\end{equation}
+显式考虑搬运距离。Kantorovich--Rubinstein 对偶
+\begin{equation}
+ W_1(p,q)=\sup_{\|f\|_{\rm Lip}\le1}
+ [\E_pf(X)-\E_qf(Y)].
+\end{equation}
+因此任意 $L$-Lipschitz 评价函数满足
+\begin{equation}
+ |\E_pf-\E_qf|\le L W_1(p,q).
+\end{equation}
+如果下游感知损失近似 Lipschitz，Wasserstein 小可以控制其期望差；
+但高维下从有限样本估计 Wasserstein 有较慢的维数依赖。
+
+\section{最大均值差异}
+
+在再生核 Hilbert 空间 $\mathcal H$ 中，均值嵌入
+\begin{equation}
+ \mu_p=\E_{X\sim p}k(X,\cdot).
+\end{equation}
+MMD 定义
+\begin{equation}
+ \operatorname{MMD}^2(p,q)=\|\mu_p-\mu_q\|_{\mathcal H}^2.
+\end{equation}
+利用再生性质展开
+\begin{align}
+ \operatorname{MMD}^2
+ &=\E_{X,X'\sim p}k(X,X')
+ +\E_{Y,Y'\sim q}k(Y,Y')\\
+ &\quad-2\E_{X\sim p,Y\sim q}k(X,Y).
+\end{align}
+样本 $x_{1:n},y_{1:m}$ 的无偏估计
+\begin{align}
+ \widehat{\operatorname{MMD}}_u^2
+ &=\frac1{n(n-1)}\sum_{i\ne j}k(x_i,x_j)\\
+ &\quad+\frac1{m(m-1)}\sum_{i\ne j}k(y_i,y_j)
+ -\frac2{nm}\sum_{i,j}k(x_i,y_j).
+\end{align}
+特征核选择决定它关注的尺度；特征空间中的 MMD 小不保证像素空间逐点接近。
+
+\section{高斯特征距离与 FID}
+
+将真实、生成图像经固定特征提取器映射并近似为高斯
+$\cN(\mu_r,\Sigma_r)$、$\cN(\mu_g,\Sigma_g)$。二阶 Wasserstein 距离闭式
+\begin{equation}
+ \operatorname{FID}=
+ \|\mu_r-\mu_g\|_2^2
+ +\tr\left(\Sigma_r+\Sigma_g
+ -2(\Sigma_r^{1/2}\Sigma_g\Sigma_r^{1/2})^{1/2}\right).
+\end{equation}
+若协方差可交换，可同时对角化，第二项简化为
+\begin{equation}
+ \sum_j(\sqrt{\lambda_{r,j}}-\sqrt{\lambda_{g,j}})^2.
+\end{equation}
+样本均值和协方差是有限样本估计，矩阵平方根的非线性导致 FID 有偏；
+比较模型时必须使用相同样本数、预处理和特征网络。
+
+\section{Monte Carlo 估计与控制变量}
+
+生成目标常写成 $J(\theta)=\E_Z f_\theta(Z)$。独立样本估计
+\begin{equation}
+ \widehat J_N=\frac1N\sum_{i=1}^{N}f_\theta(Z_i)
+\end{equation}
+无偏且
+\begin{equation}
+ \Var(\widehat J_N)=\frac1N\Var(f_\theta(Z)).
+\end{equation}
+若有已知期望 $\E C=\mu_C$ 的控制变量，
+\begin{equation}
+ \widehat J_\beta=\widehat J_N-\beta(\widehat C_N-\mu_C)
+\end{equation}
+仍无偏。方差是
+\begin{equation}
+ \Var(\widehat J_\beta)
+ =\Var(\widehat J_N)+\beta^2\Var(\widehat C_N)
+ -2\beta\Cov(\widehat J_N,\widehat C_N).
+\end{equation}
+最优
+\begin{equation}
+ \beta^*=\frac{\Cov(f,C)}{\Var(C)}.
+\end{equation}
+扩散中的已知噪声、RL 中的基线和光学中的参考传播都可视为利用相关结构降方差的不同形式。
+
+\section{score matching 的分部积分}
+
+数据 score 为 $s_p(x)=\nabla_x\log p(x)$。显式 score matching
+\begin{equation}
+ J(\theta)=\frac12\E_p\|s_\theta(x)-s_p(x)\|^2.
+\end{equation}
+展开并去掉与 $\theta$ 无关的 $\E\|s_p\|^2/2$：
+\begin{equation}
+ J(\theta)=\frac12\E_p\|s_\theta\|^2-E_p[s_\theta^Ts_p]+C.
+\end{equation}
+交叉项
+\begin{align}
+ \E_p[s_\theta^Ts_p]
+ &=\int s_\theta(x)^T\nabla p(x)dx\\
+ &=-\int p(x)\nabla\cdot s_\theta(x)dx
+\end{align}
+在边界项消失时成立。故
+\begin{equation}
+ J(\theta)=\E_p\left[
+ \frac12\|s_\theta(x)\|^2+\nabla\cdot s_\theta(x)
+ \right]+C.
+\end{equation}
+去噪 score matching通过已知高斯条件 score 避免计算模型散度，并在条件期望意义下恢复边缘 score。
+
+\section{模型误差到期望指标误差}
+
+若生成样本耦合为 $X=G(Z)$、$\widehat X=\widehat G(Z)$，且评价函数
+$f$ 为 $L_f$-Lipschitz，则
+\begin{align}
+ |\E f(X)-\E f(\widehat X)|
+ &\le\E|f(X)-f(\widehat X)|\\
+ &\le L_f\E\|G(Z)-\widehat G(Z)\|.
+\end{align}
+这给出点对点生成误差控制分布指标的充分条件。但无条件生成中通常不存在已知语义配对，
+逐样本 MSE 可能强迫平均化；分布距离允许不同耦合，因而更适合多模态目标。
+
+\end{document}

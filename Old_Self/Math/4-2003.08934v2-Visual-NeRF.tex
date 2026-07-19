@@ -1,0 +1,391 @@
+\documentclass[11pt]{article}
+\usepackage{fontspec}
+\setmainfont[
+  Path=fonts/,
+  Extension=.ttf,
+  UprightFont=*-400,
+  BoldFont=*-700
+]{NotoSerifSC}
+\setsansfont[
+  Path=fonts/,
+  Extension=.ttf,
+  UprightFont=*-400,
+  BoldFont=*-700
+]{NotoSerifSC}
+\XeTeXlinebreaklocale "zh"
+\XeTeXlinebreakskip=0pt plus 1pt
+\usepackage[a4paper,margin=1.70cm]{geometry}
+\usepackage{amsmath,amssymb,mathtools,bm}
+\usepackage{booktabs,longtable,array}
+\usepackage{enumitem}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\setlist{nosep,leftmargin=2em}
+\allowdisplaybreaks[3]
+\numberwithin{equation}{section}
+\pagestyle{plain}
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Pp}{\mathbb{P}}
+\newcommand{\1}{\mathbf{1}}
+\newcommand{\T}{\mathsf{T}}
+\newcommand{\F}{\mathrm{F}}
+\newcommand{\cN}{\mathcal{N}}
+\newcommand{\cL}{\mathcal{L}}
+\newcommand{\cS}{\mathcal{S}}
+\newcommand{\cH}{\mathcal{H}}
+\newcommand{\cA}{\mathcal{A}}
+\newcommand{\cM}{\mathcal{M}}
+\newcommand{\cT}{\mathcal{T}}
+\newcommand{\diag}{\operatorname{diag}}
+\newcommand{\tr}{\operatorname{tr}}
+\newcommand{\Var}{\operatorname{Var}}
+\newcommand{\Cov}{\operatorname{Cov}}
+\newcommand{\softmax}{\operatorname{softmax}}
+\newcommand{\KL}{D_{\mathrm{KL}}}
+\newcommand{\sg}{\operatorname{sg}}
+\begin{document}
+    \begin{center}
+      {\LARGE\bfseries 4-2003.08934v2-Visual-NeRF}
+    \end{center}
+    \vspace{0.8em}
+
+    \section{符号与维度}
+    \begin{longtable}{>{$}l<{$} >{$}l<{$} p{10cm}}
+    \toprule
+    \text{符号} & \text{维度} & \text{含义}\\
+    \midrule
+    r(t)=o+td & \R^3 & 相机射线。\\
+        \sigma(t) & \R_{\ge0} & 体密度。\\
+        c(t) & \R^3 & 视角相关颜色。\\
+        T(t) & [0,1] & 从近端到 $t$ 的透射率。\\
+        w_i & [0,1] & 第 $i$ 个离散采样段的终止权重。\\
+    \bottomrule
+    \end{longtable}
+
+    所有向量默认是列向量；未特别说明时，期望同时对数据、噪声和采样时刻取值。下文只展开论文中承担方法逻辑的公式，并把所需假设写在推导发生的位置。
+
+\section{体渲染方程从微分吸收到积分}
+
+沿射线 $r(t)=o+td$，密度 $\sigma(t)\ge0$。设 $T(t)$ 为光从近端 $t_n$ 到 $t$ 未被吸收的概率。
+在长度 $dt$ 内吸收概率约为 $\sigma(t)dt$，故
+\begin{equation}
+ T(t+dt)=T(t)(1-\sigma(t)dt)+o(dt).
+\end{equation}
+移项、除以 $dt$ 并取极限：
+\begin{equation}
+ \frac{dT}{dt}=-\sigma(t)T(t),\qquad T(t_n)=1.
+\end{equation}
+解得
+\begin{equation}
+ \boxed{T(t)=\exp\left(-\int_{t_n}^{t}\sigma(s)ds\right).}
+\end{equation}
+在 $t$ 附近终止的概率密度是 $T(t)\sigma(t)$，所以颜色期望
+\begin{equation}
+ C(r)=\int_{t_n}^{t_f}T(t)\sigma(t)c(r(t),d)dt
+ +T(t_f)c_{\rm bg}.
+\end{equation}
+若积分到无穷且射线必然终止，背景项消失。
+
+\section{分段常数离散化与 alpha 合成}
+
+把区间分为 $[t_i,t_{i+1})$，长度 $\delta_i$，其中密度和颜色近似常数
+$\sigma_i,c_i$。穿过该段而不吸收的条件概率为
+\begin{equation}
+ \exp(-\sigma_i\delta_i),
+\end{equation}
+故段内终止概率
+\begin{equation}
+ \alpha_i=1-e^{-\sigma_i\delta_i}.
+\end{equation}
+到达第 $i$ 段的概率
+\begin{equation}
+ T_i=\prod_{j<i}(1-\alpha_j)
+ =\exp\left(-\sum_{j<i}\sigma_j\delta_j\right).
+\end{equation}
+离散权重与颜色为
+\begin{equation}
+ w_i=T_i\alpha_i,\qquad
+ \widehat C(r)=\sum_{i=1}^{N}w_ic_i+T_{N+1}c_{\rm bg}.
+\end{equation}
+权重和满足望远镜关系
+\begin{align}
+ \sum_{i=1}^{N}w_i
+ &=\sum_iT_i(1-e^{-\sigma_i\delta_i})\\
+ &=\sum_i(T_i-T_{i+1})=1-T_{N+1}.
+\end{align}
+加上背景权重后总和恰为 $1$，所以渲染颜色是凸组合。
+
+\section{颜色和密度的精确梯度}
+
+对颜色直接有
+\begin{equation}
+ \frac{\partial\widehat C}{\partial c_k}=w_kI.
+\end{equation}
+密度 $\sigma_k$ 同时影响当前段 alpha 和所有后续透射率。
+先有
+\begin{equation}
+ \frac{\partial\alpha_k}{\partial\sigma_k}
+ =\delta_ke^{-\sigma_k\delta_k}=\delta_k(1-\alpha_k).
+\end{equation}
+对 $i>k$，
+\begin{equation}
+ \frac{\partial T_i}{\partial\sigma_k}=-\delta_kT_i.
+\end{equation}
+因此（把背景看作第 $N+1$ 项）
+\begin{align}
+ \frac{\partial\widehat C}{\partial\sigma_k}
+ &=T_k\delta_k(1-\alpha_k)c_k
+ -\delta_k\sum_{i>k}w_ic_i\\
+ &=\delta_k\left(T_{k+1}c_k-C_{>k}\right),
+\end{align}
+其中 $C_{>k}=\sum_{i>k}w_ic_i$。当前颜色优于后方合成颜色时，增加密度会让输出更靠近 $c_k$。
+
+若像素损失
+\begin{equation}
+ \ell=\frac12\|\widehat C-C^*\|_2^2,
+\end{equation}
+则
+\begin{equation}
+ \frac{\partial\ell}{\partial\sigma_k}
+ =(\widehat C-C^*)^T
+ \frac{\partial\widehat C}{\partial\sigma_k}.
+\end{equation}
+这展示了一个采样点的密度梯度如何通过整条射线耦合。
+
+\section{位置编码的频率结构}
+
+对标量 $x$ 的 Fourier 位置编码
+\begin{equation}
+ \gamma(x)=(\sin(2^0\pi x),\cos(2^0\pi x),\ldots,
+ \sin(2^{L-1}\pi x),\cos(2^{L-1}\pi x)).
+\end{equation}
+其导数第 $k$ 频带为
+\begin{equation}
+ \frac d{dx}\sin(2^k\pi x)=2^k\pi\cos(2^k\pi x),
+\end{equation}
+高频坐标对位置更敏感。MLP 在这些基函数上形成组合，可表达比直接输入坐标更高频的场。
+但最高频率也放大坐标扰动与离散采样混叠，这解释了位置编码频带数量的折衷。
+
+\section{分层采样的概率构造}
+
+粗网络得到非负权重 $w_i$，将其中间区间归一化为离散概率
+\begin{equation}
+ p_i=\frac{w_i+\varepsilon}{\sum_j(w_j+\varepsilon)}.
+\end{equation}
+构造累计分布 $F_i=\sum_{j\le i}p_j$。采样 $u\sim U[0,1]$，找到
+$F_{i-1}\le u<F_i$，再在区间内线性插值：
+\begin{equation}
+ t=t_i+\frac{u-F_{i-1}}{F_i-F_{i-1}}(t_{i+1}-t_i).
+\end{equation}
+这相当于从粗权重诱导的分段常数密度采样，使精细网络把更多点放在预计贡献大的区域。
+训练中通常对采样位置停止梯度；否则离散 search/sort 和逆 CDF 还会引入额外路径导数。
+
+\section{分层采样为何降低方差}
+
+要估计 $I=\int_a^bf(t)dt$，均匀 Monte Carlo 方差为
+\begin{equation}
+ \Var(\widehat I)=\frac{(b-a)^2}{N}\Var_{U(a,b)}[f(t)].
+\end{equation}
+重要性采样 $t\sim p(t)$ 使用
+\begin{equation}
+ \widehat I=\frac1N\sum_{j=1}^{N}\frac{f(t_j)}{p(t_j)},
+\end{equation}
+方差
+\begin{equation}
+ \Var(\widehat I)=\frac1N
+ \left(\int\frac{f(t)^2}{p(t)}dt-I^2\right).
+\end{equation}
+理论最优 $p^*(t)\propto|f(t)|$。NeRF 的粗权重近似体渲染被积函数贡献，
+因此分层采样是可学习的重要性分布近似，而不是改变渲染方程本身。
+
+\section{射线方向与视角相关颜色}
+
+网络常把密度限制为位置函数 $\sigma(x)$，颜色为 $c(x,d)$。
+同一点从不同方向观察可产生镜面变化，而几何占据不应随视角改变。
+若把方向也输入密度支路，模型可用视角依赖密度拟合训练图像，造成几何不一致。
+这一结构约束虽不是概率定理，却直接限定了函数空间的可辨识性。
+
+\section{分布推送与可测生成器}
+
+潜变量 $z\sim p_Z$，生成器 $x=G_\theta(z)$ 诱导推送分布
+\begin{equation}
+ p_\theta=(G_\theta)_\#p_Z,
+\end{equation}
+其定义是任意可测集合 $A$ 满足
+\begin{equation}
+ p_\theta(A)=p_Z(G_\theta^{-1}(A)).
+\end{equation}
+等价地，对任意可积测试函数 $\varphi$，
+\begin{equation}
+ \E_{x\sim p_\theta}\varphi(x)
+ =\E_{z\sim p_Z}\varphi(G_\theta(z)).
+\end{equation}
+若 $G:\R^d\to\R^d$ 是可逆微分同胚，变量替换给出显式密度
+\begin{equation}
+ p_\theta(x)=p_Z(G^{-1}(x))
+ \left|\det J_{G^{-1}}(x)\right|.
+\end{equation}
+取对数并用 $J_{G^{-1}}(x)=J_G(z)^{-1}$：
+\begin{equation}
+ \log p_\theta(x)=\log p_Z(z)-\log|\det J_G(z)|.
+\end{equation}
+VAE、GAN、扩散和隐式光学生成器通常不同时满足同维可逆条件，
+因此分别使用变分界、判别散度、score/flow 或样本级目标绕开直接行列式。
+
+\section{KL、JS 与总变差的关系}
+
+KL 非负可由 $-\log$ 的凸性证明：
+\begin{align}
+ D_{\rm KL}(p\|q)
+ &=\E_p\left[-\log\frac{q(X)}{p(X)}\right]\\
+ &\ge-\log\E_p\frac{q(X)}{p(X)}=-\log1=0.
+\end{align}
+等号当且仅当 $p=q$ 几乎处处。KL 不对称且当 $q=0,p>0$ 时为无穷。
+
+Jensen--Shannon 散度
+\begin{equation}
+ D_{\rm JS}(p\|q)=\frac12D_{\rm KL}(p\|m)
+ +\frac12D_{\rm KL}(q\|m),\qquad m=(p+q)/2
+\end{equation}
+总是有限，$0\le D_{\rm JS}\le\log2$。当支撑不相交时取上界，
+却对支撑间几何距离不敏感。
+
+总变差
+\begin{equation}
+ \operatorname{TV}(p,q)=\frac12\int|p-q|
+ =\sup_A|p(A)-q(A)|.
+\end{equation}
+Pinsker 不等式
+\begin{equation}
+ \operatorname{TV}(p,q)
+ \le\sqrt{\frac12D_{\rm KL}(p\|q)}
+\end{equation}
+说明小正向 KL 保证事件概率接近；逆命题没有无条件形式，因为很小区域上的密度比可极大。
+
+\section{Wasserstein 距离与 Lipschitz 测试函数}
+
+一阶 Wasserstein 距离
+\begin{equation}
+ W_1(p,q)=\inf_{\gamma\in\Pi(p,q)}
+ \E_{(X,Y)\sim\gamma}\|X-Y\|
+\end{equation}
+显式考虑搬运距离。Kantorovich--Rubinstein 对偶
+\begin{equation}
+ W_1(p,q)=\sup_{\|f\|_{\rm Lip}\le1}
+ [\E_pf(X)-\E_qf(Y)].
+\end{equation}
+因此任意 $L$-Lipschitz 评价函数满足
+\begin{equation}
+ |\E_pf-\E_qf|\le L W_1(p,q).
+\end{equation}
+如果下游感知损失近似 Lipschitz，Wasserstein 小可以控制其期望差；
+但高维下从有限样本估计 Wasserstein 有较慢的维数依赖。
+
+\section{最大均值差异}
+
+在再生核 Hilbert 空间 $\mathcal H$ 中，均值嵌入
+\begin{equation}
+ \mu_p=\E_{X\sim p}k(X,\cdot).
+\end{equation}
+MMD 定义
+\begin{equation}
+ \operatorname{MMD}^2(p,q)=\|\mu_p-\mu_q\|_{\mathcal H}^2.
+\end{equation}
+利用再生性质展开
+\begin{align}
+ \operatorname{MMD}^2
+ &=\E_{X,X'\sim p}k(X,X')
+ +\E_{Y,Y'\sim q}k(Y,Y')\\
+ &\quad-2\E_{X\sim p,Y\sim q}k(X,Y).
+\end{align}
+样本 $x_{1:n},y_{1:m}$ 的无偏估计
+\begin{align}
+ \widehat{\operatorname{MMD}}_u^2
+ &=\frac1{n(n-1)}\sum_{i\ne j}k(x_i,x_j)\\
+ &\quad+\frac1{m(m-1)}\sum_{i\ne j}k(y_i,y_j)
+ -\frac2{nm}\sum_{i,j}k(x_i,y_j).
+\end{align}
+特征核选择决定它关注的尺度；特征空间中的 MMD 小不保证像素空间逐点接近。
+
+\section{高斯特征距离与 FID}
+
+将真实、生成图像经固定特征提取器映射并近似为高斯
+$\cN(\mu_r,\Sigma_r)$、$\cN(\mu_g,\Sigma_g)$。二阶 Wasserstein 距离闭式
+\begin{equation}
+ \operatorname{FID}=
+ \|\mu_r-\mu_g\|_2^2
+ +\tr\left(\Sigma_r+\Sigma_g
+ -2(\Sigma_r^{1/2}\Sigma_g\Sigma_r^{1/2})^{1/2}\right).
+\end{equation}
+若协方差可交换，可同时对角化，第二项简化为
+\begin{equation}
+ \sum_j(\sqrt{\lambda_{r,j}}-\sqrt{\lambda_{g,j}})^2.
+\end{equation}
+样本均值和协方差是有限样本估计，矩阵平方根的非线性导致 FID 有偏；
+比较模型时必须使用相同样本数、预处理和特征网络。
+
+\section{Monte Carlo 估计与控制变量}
+
+生成目标常写成 $J(\theta)=\E_Z f_\theta(Z)$。独立样本估计
+\begin{equation}
+ \widehat J_N=\frac1N\sum_{i=1}^{N}f_\theta(Z_i)
+\end{equation}
+无偏且
+\begin{equation}
+ \Var(\widehat J_N)=\frac1N\Var(f_\theta(Z)).
+\end{equation}
+若有已知期望 $\E C=\mu_C$ 的控制变量，
+\begin{equation}
+ \widehat J_\beta=\widehat J_N-\beta(\widehat C_N-\mu_C)
+\end{equation}
+仍无偏。方差是
+\begin{equation}
+ \Var(\widehat J_\beta)
+ =\Var(\widehat J_N)+\beta^2\Var(\widehat C_N)
+ -2\beta\Cov(\widehat J_N,\widehat C_N).
+\end{equation}
+最优
+\begin{equation}
+ \beta^*=\frac{\Cov(f,C)}{\Var(C)}.
+\end{equation}
+扩散中的已知噪声、RL 中的基线和光学中的参考传播都可视为利用相关结构降方差的不同形式。
+
+\section{score matching 的分部积分}
+
+数据 score 为 $s_p(x)=\nabla_x\log p(x)$。显式 score matching
+\begin{equation}
+ J(\theta)=\frac12\E_p\|s_\theta(x)-s_p(x)\|^2.
+\end{equation}
+展开并去掉与 $\theta$ 无关的 $\E\|s_p\|^2/2$：
+\begin{equation}
+ J(\theta)=\frac12\E_p\|s_\theta\|^2-E_p[s_\theta^Ts_p]+C.
+\end{equation}
+交叉项
+\begin{align}
+ \E_p[s_\theta^Ts_p]
+ &=\int s_\theta(x)^T\nabla p(x)dx\\
+ &=-\int p(x)\nabla\cdot s_\theta(x)dx
+\end{align}
+在边界项消失时成立。故
+\begin{equation}
+ J(\theta)=\E_p\left[
+ \frac12\|s_\theta(x)\|^2+\nabla\cdot s_\theta(x)
+ \right]+C.
+\end{equation}
+去噪 score matching通过已知高斯条件 score 避免计算模型散度，并在条件期望意义下恢复边缘 score。
+
+\section{模型误差到期望指标误差}
+
+若生成样本耦合为 $X=G(Z)$、$\widehat X=\widehat G(Z)$，且评价函数
+$f$ 为 $L_f$-Lipschitz，则
+\begin{align}
+ |\E f(X)-\E f(\widehat X)|
+ &\le\E|f(X)-f(\widehat X)|\\
+ &\le L_f\E\|G(Z)-\widehat G(Z)\|.
+\end{align}
+这给出点对点生成误差控制分布指标的充分条件。但无条件生成中通常不存在已知语义配对，
+逐样本 MSE 可能强迫平均化；分布距离允许不同耦合，因而更适合多模态目标。
+
+\end{document}

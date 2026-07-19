@@ -1,0 +1,544 @@
+\documentclass[11pt]{article}
+\usepackage{fontspec}
+\setmainfont[
+  Path=fonts/,
+  Extension=.ttf,
+  UprightFont=*-400,
+  BoldFont=*-700
+]{NotoSerifSC}
+\setsansfont[
+  Path=fonts/,
+  Extension=.ttf,
+  UprightFont=*-400,
+  BoldFont=*-700
+]{NotoSerifSC}
+\XeTeXlinebreaklocale "zh"
+\XeTeXlinebreakskip=0pt plus 1pt
+\usepackage[a4paper,margin=1.70cm]{geometry}
+\usepackage{amsmath,amssymb,mathtools,bm}
+\usepackage{booktabs,longtable,array}
+\usepackage{enumitem}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\setlist{nosep,leftmargin=2em}
+\allowdisplaybreaks[3]
+\numberwithin{equation}{section}
+\pagestyle{plain}
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Pp}{\mathbb{P}}
+\newcommand{\1}{\mathbf{1}}
+\newcommand{\T}{\mathsf{T}}
+\newcommand{\F}{\mathrm{F}}
+\newcommand{\cN}{\mathcal{N}}
+\newcommand{\cL}{\mathcal{L}}
+\newcommand{\cS}{\mathcal{S}}
+\newcommand{\cH}{\mathcal{H}}
+\newcommand{\cA}{\mathcal{A}}
+\newcommand{\cM}{\mathcal{M}}
+\newcommand{\cT}{\mathcal{T}}
+\newcommand{\diag}{\operatorname{diag}}
+\newcommand{\tr}{\operatorname{tr}}
+\newcommand{\Var}{\operatorname{Var}}
+\newcommand{\Cov}{\operatorname{Cov}}
+\newcommand{\softmax}{\operatorname{softmax}}
+\newcommand{\KL}{D_{\mathrm{KL}}}
+\newcommand{\sg}{\operatorname{sg}}
+\begin{document}
+    \begin{center}
+      {\LARGE\bfseries 5-1712.01815v1-Reinforcement-AlphaGo Zero}
+    \end{center}
+    \vspace{0.8em}
+
+    \section{符号与维度}
+    \begin{longtable}{>{$}l<{$} >{$}l<{$} p{10cm}}
+    \toprule
+    \text{符号} & \text{维度} & \text{含义}\\
+    \midrule
+    P,Q,N & -- & MCTS 先验、均值价值与访问计数。\\
+        \pi,p_\theta & \Delta^{|\cA|-1} & 搜索策略与网络策略。\\
+        v_\theta,z & [-1,1] & 价值预测与最终胜负。\\
+        \tau & \R_{>0} & 访问计数温度。\\
+    \bottomrule
+    \end{longtable}
+
+    所有向量默认是列向量；未特别说明时，期望同时对数据、噪声和采样时刻取值。下文只展开论文中承担方法逻辑的公式，并把所需假设写在推导发生的位置。
+
+\section{PUCT 选择项的来源与尺度}
+
+树中边 $(s,a)$ 维护访问次数 $N(s,a)$、价值和 $W(s,a)$、均值
+\begin{equation}
+ Q(s,a)=\frac{W(s,a)}{N(s,a)}
+\end{equation}
+以及网络先验 $P(s,a)$。PUCT 选择
+\begin{equation}
+ a^*=\arg\max_a\{Q(s,a)+U(s,a)\},
+ \qquad
+ U(s,a)=c_{\rm puct}P(s,a)
+ \frac{\sqrt{\sum_bN(s,b)}}{1+N(s,a)}.
+\end{equation}
+当一条边未访问时分母为 $1$，先验大的动作更先被探索；固定父节点总访问数，
+$U$ 随该边访问次数约按 $1/N(s,a)$ 衰减。若所有动作最终都被无限访问，探索项趋于零，
+选择逐渐由 $Q$ 主导。
+
+对访问次数作连续近似，若多个动作的有效上界在平衡时接近，
+\begin{equation}
+ Q_a+cP_a\frac{\sqrt{N}}{1+N_a}\approx C,
+\end{equation}
+可解出
+\begin{equation}
+ N_a\approx\frac{cP_a\sqrt N}{C-Q_a}-1.
+\end{equation}
+因此访问量同时依赖先验与价值差，不等价于只按策略概率采样。
+
+\section{叶子价值的反向备份}
+
+一次模拟到叶子得到当前玩家视角价值 $v\in[-1,1]$。若玩家每层交替，沿路径反向备份
+\begin{equation}
+ N(s_t,a_t)\leftarrow N(s_t,a_t)+1,
+ \qquad
+ W(s_t,a_t)\leftarrow W(s_t,a_t)+(-1)^{L-t}v.
+\end{equation}
+符号翻转来自零和对弈中双方价值相反。更新后的均值
+\begin{equation}
+ Q^+=\frac{W+z}{N+1}
+ =Q+\frac{z-Q}{N+1}
+\end{equation}
+是在线样本均值递推。若叶子估计 $z$ 条件无偏、方差 $\sigma^2$，独立访问下
+$Q$ 的方差按 $\sigma^2/N$ 衰减。
+
+\section{访问次数形成改进策略}
+
+搜索后策略目标为
+\begin{equation}
+ \pi(a\mid s)=\frac{N(s,a)^{1/\tau}}
+ {\sum_bN(s,b)^{1/\tau}}.
+\end{equation}
+$\tau\to0$ 时集中到最大访问动作，$\tau=1$ 时按访问频率，
+$\tau\to\infty$ 时趋于均匀。令 $z_a=\log N(s,a)$，则
+\begin{equation}
+ \pi(a\mid s)=\operatorname{softmax}(z_a/\tau),
+\end{equation}
+所以温度对分布熵的影响与普通 softmax 完全相同。
+
+网络策略头 $p_\theta$ 拟合搜索策略的交叉熵
+\begin{equation}
+ \cL_p=-\sum_a\pi(a\mid s)\log p_\theta(a\mid s).
+\end{equation}
+若 logits 为 $l$，则
+\begin{equation}
+ \frac{\partial\cL_p}{\partial l_a}=p_\theta(a\mid s)-\pi(a\mid s).
+\end{equation}
+因此搜索不是不可微模块的反向传播对象；它产生一个经规划改进的监督分布。
+
+\section{价值、策略与正则的联合损失}
+
+单个自博弈样本 $(s,\pi,z)$ 的联合目标
+\begin{equation}
+ \cL(\theta)=(z-v_\theta(s))^2
+ -\pi^T\log p_\theta(\cdot\mid s)
+ +c\|\theta\|_2^2.
+\end{equation}
+对应梯度为
+\begin{equation}
+ \nabla\cL
+ =2(v_\theta-z)\nabla v_\theta
+ -\sum_a\pi_a\nabla\log p_{\theta,a}
+ +2c\theta.
+\end{equation}
+价值标签 $z$ 是最终胜负，搜索叶子使用的是当时网络价值 $v$；
+两者处在不同时间尺度。训练使新网络拟合实际结果和搜索策略，再由新网络驱动下一轮搜索，
+形成近似广义策略迭代。
+
+\section{根节点狄利克雷噪声}
+
+探索时根先验常替换为
+\begin{equation}
+ P'(s,a)=(1-\varepsilon)P(s,a)+\varepsilon\eta_a,
+ \qquad \eta\sim\operatorname{Dir}(\alpha,\ldots,\alpha).
+\end{equation}
+对 $K$ 个动作，对称 Dirichlet 的矩为
+\begin{equation}
+ \E\eta_a=\frac1K,\qquad
+ \Var(\eta_a)=\frac{K-1}{K^2(K\alpha+1)}.
+\end{equation}
+$\alpha$ 小时样本更尖锐，鼓励少数随机动作；$\alpha$ 大时接近均匀。
+混合后
+\begin{equation}
+ \E P'_a=(1-\varepsilon)P_a+\frac\varepsilon K,
+ \qquad
+ \Var(P'_a)=\varepsilon^2\Var(\eta_a).
+\end{equation}
+噪声仅在根加入，避免整棵树每层都被独立噪声淹没。
+
+\section{Bellman 期望方程与优势恒等式}
+
+对策略 $\pi$，定义
+\begin{align}
+ V^\pi(s)&=\E_\pi\left[\sum_{t=0}^{\infty}\gamma^tr_t\mid s_0=s\right],\\
+ Q^\pi(s,a)&=\E_\pi\left[\sum_{t=0}^{\infty}\gamma^tr_t
+ \mid s_0=s,a_0=a\right].
+\end{align}
+分离首步奖励：
+\begin{align}
+ Q^\pi(s,a)&=r(s,a)+\gamma\E_{s'}V^\pi(s'),\\
+ V^\pi(s)&=\E_{a\sim\pi(\cdot\mid s)}Q^\pi(s,a).
+\end{align}
+优势
+\begin{equation}
+ A^\pi(s,a)=Q^\pi(s,a)-V^\pi(s)
+\end{equation}
+在策略动作分布下均值为零：
+\begin{equation}
+ \E_{a\sim\pi}A^\pi(s,a)=0.
+\end{equation}
+这不表示每个动作优势小，只表示正负改进机会按当前策略加权抵消。
+
+\section{性能差异引理}
+
+令新旧策略为 $\pi',\pi$。沿 $\pi'$ 轨迹，
+\begin{align}
+ \E_{\pi'}\sum_{t=0}^{\infty}\gamma^tA^\pi(s_t,a_t)
+ &=\E_{\pi'}\sum_t\gamma^t
+ [r_t+\gamma V^\pi(s_{t+1})-V^\pi(s_t)]\\
+ &=J(\pi')-\E V^\pi(s_0),
+\end{align}
+其中价值项望远镜消去，且有界价值使末项
+$\gamma^{T+1}V(s_{T+1})\to0$。若初始分布相同，
+$\E V^\pi(s_0)=J(\pi)$，故
+\begin{equation}
+ \boxed{J(\pi')-J(\pi)
+ =\frac1{1-\gamma}
+ \E_{s\sim d_{\pi'},a\sim\pi'}A^\pi(s,a).}
+\end{equation}
+策略优化代理常把难采样的 $d_{\pi'}$ 替换为旧占用分布 $d_\pi$；
+信赖域或比率裁剪的目标是限制这一步替换造成的误差。
+
+\section{KL 信赖域的二阶局部形式}
+
+对小参数变化 $\Delta\theta$，
+\begin{equation}
+ D_{\rm KL}(\pi_{\theta}\|\pi_{\theta+\Delta})
+ =\frac12\Delta^TF(\theta)\Delta+O(\|\Delta\|^3),
+\end{equation}
+其中 Fisher 信息
+\begin{equation}
+ F(\theta)=\E_{s,a}
+ [\nabla\log\pi_\theta(a\mid s)
+ \nabla\log\pi_\theta(a\mid s)^T].
+\end{equation}
+一阶目标改进 $g^T\Delta$，约束
+$\frac12\Delta^TF\Delta\le\delta$。拉格朗日法：
+\begin{equation}
+ \mathcal J=g^T\Delta-\lambda
+ \left(\frac12\Delta^TF\Delta-\delta\right).
+\end{equation}
+驻点
+\begin{equation}
+ g-\lambda F\Delta=0
+ \Rightarrow \Delta=\lambda^{-1}F^{-1}g.
+\end{equation}
+代回约束得到
+\begin{equation}
+ \boxed{\Delta=\sqrt{\frac{2\delta}{g^TF^{-1}g}}F^{-1}g.}
+\end{equation}
+自然梯度 $F^{-1}g$ 是概率分布几何下最陡方向；PPO 裁剪是更易实现但不严格等价的近似。
+
+\section{离策略序列比率的方差}
+
+轨迹前 $T$ 步重要性比率
+\begin{equation}
+ W_T=\prod_{t=0}^{T-1}
+ \frac{\pi(a_t\mid s_t)}{\mu(a_t\mid s_t)}.
+\end{equation}
+在行为策略 $\mu$ 下若支撑相容，$\E_\mu W_T=1$。
+对数比率是和
+\begin{equation}
+ \log W_T=\sum_t\ell_t,\qquad
+ \ell_t=\log\pi(a_t\mid s_t)-\log\mu(a_t\mid s_t).
+\end{equation}
+若粗略假设 $\ell_t$ 独立、均值 $m$、方差 $v$，则
+$W_T$ 近似 log-normal，
+\begin{equation}
+ \frac{\Var(W_T)}{(\E W_T)^2}\approx e^{Tv}-1.
+\end{equation}
+方差随长度指数增长，这解释了 token/step 级截断、V-trace 或短视野校正的必要性。
+
+截断 $\bar w_t=\min(c,w_t)$ 产生偏差，但单步权重有界，
+能控制乘积和梯度爆炸。偏差精确来自尾部
+\begin{equation}
+ \E_\mu[(w_t-c)_+f_t].
+\end{equation}
+
+\section{熵正则的策略梯度}
+
+状态熵
+\begin{equation}
+ \mathcal H(\pi_\theta)=-\sum_a\pi_\theta(a)\log\pi_\theta(a).
+\end{equation}
+求导
+\begin{align}
+ \nabla\mathcal H
+ &=-\sum_a\nabla\pi(a)[1+\log\pi(a)]\\
+ &=-\E_{a\sim\pi}
+ [(1+\log\pi(a))\nabla\log\pi(a)].
+\end{align}
+因 $\E\nabla\log\pi=0$，常数 $1$ 可去掉：
+\begin{equation}
+ \nabla\mathcal H
+ =-\E[\log\pi(a)\nabla\log\pi(a)].
+\end{equation}
+加入 $+\alpha\mathcal H$ 会提高低概率动作的相对激励，防止策略过早坍缩；
+但在可验证答案任务中，过强熵也会降低正确答案集中度。
+
+\section{奖励平移、缩放与归一化}
+
+若所有奖励加常数 $c$，无限折扣回报
+\begin{equation}
+ G_t'=G_t+\frac{c}{1-\gamma}.
+\end{equation}
+精确优势不变，因为 $Q,V$ 同时加 $c/(1-\gamma)$。用采样回报而无正确基线时，
+常数会增加梯度方差但期望 score 项仍抵消。
+
+奖励乘正数 $a$ 时，优势和策略梯度乘 $a$，等价于改变有效学习率；
+PPO 的裁剪边界不随 $a$ 变，所以裁剪区域不变但目标梯度尺度变。
+组内标准化
+\begin{equation}
+ \widehat A_i=\frac{R_i-\bar R}{s_R+\epsilon}
+\end{equation}
+同时消除平移并近似消除尺度，但 $s_R$ 很小时会放大噪声，故需要 $\epsilon$ 或跳过全同奖励组。
+
+\section{KL 正则与奖励塑形}
+
+目标
+\begin{equation}
+ J(\pi)=\E_\pi[R]-\beta D_{\rm KL}(\pi\|\pi_{\rm ref})
+\end{equation}
+可写为每步塑形奖励
+\begin{equation}
+ r_t'=r_t-\beta
+ \left[\log\pi(a_t\mid s_t)-\log\pi_{\rm ref}(a_t\mid s_t)\right].
+\end{equation}
+固定状态、给定动作价值 $Q(a)$ 时，最优非参数策略由拉格朗日法得到
+\begin{equation}
+ \pi^*(a)=\frac{\pi_{\rm ref}(a)e^{Q(a)/\beta}}
+ {\sum_b\pi_{\rm ref}(b)e^{Q(b)/\beta}}.
+\end{equation}
+$\beta\to0$ 时集中到高价值动作，$\beta\to\infty$ 时回到参考策略。
+参考策略为零概率的动作在正向 KL 约束下永远不可选，故支撑选择很重要。
+
+\section{拒答动作与错误成本}
+
+设回答正确收益 $u_c$、错误收益 $u_e$、拒答收益 $u_a$，模型置信度
+$p=\Pp(\text{correct}\mid s)$。回答期望效用
+\begin{equation}
+ U_{\rm ans}(p)=pu_c+(1-p)u_e,
+\end{equation}
+拒答效用 $U_{\rm abstain}=u_a$。当
+\begin{equation}
+ p\ge\frac{u_a-u_e}{u_c-u_e}
+\end{equation}
+时回答更优（假设 $u_c>u_e$）。因此最优置信阈值由错误和拒答的相对成本决定，
+不是固定的 $1/2$。RL 后训练若隐含奖励给拒答过低分，就会系统性鼓励猜测。
+
+\section{有限 horizon 的回报界}
+
+若 $|r_t|\le R_{\max}$，无限折扣回报有界
+\begin{equation}
+ |G_t|\le\sum_{k=0}^{\infty}\gamma^kR_{\max}
+ =\frac{R_{\max}}{1-\gamma}.
+\end{equation}
+截断到 $H$ 步的尾部误差
+\begin{equation}
+ \left|G_t-\sum_{k=0}^{H-1}\gamma^kr_{t+k}\right|
+ \le\frac{\gamma^HR_{\max}}{1-\gamma}.
+\end{equation}
+要使其不超过 $\epsilon$，充分条件
+\begin{equation}
+ H\ge\frac{\log[\epsilon(1-\gamma)/R_{\max}]}{\log\gamma},
+\end{equation}
+注意 $\log\gamma<0$，除法会反转不等号，右端为正。
+
+\section{光滑损失的下降引理}
+
+若 $L$ 的梯度是 $\beta$-Lipschitz：
+\begin{equation}
+ \|\nabla L(x)-\nabla L(y)\|
+ \le\beta\|x-y\|,
+\end{equation}
+则沿线段积分
+\begin{align}
+ L(y)-L(x)
+ &=\int_0^1\nabla L(x+t(y-x))^T(y-x)dt\\
+ &=\nabla L(x)^T(y-x)+R,
+\end{align}
+余项满足
+\begin{align}
+ |R|
+ &\le\int_0^1\beta t\|y-x\|^2dt
+ =\frac\beta2\|y-x\|^2.
+\end{align}
+故下降引理
+\begin{equation}
+ L(y)\le L(x)+\nabla L(x)^T(y-x)
+ +\frac\beta2\|y-x\|^2.
+\end{equation}
+取梯度步 $y=x-\eta\nabla L(x)$：
+\begin{equation}
+ L(y)\le L(x)-\eta\left(1-\frac{\beta\eta}{2}\right)
+ \|\nabla L(x)\|^2.
+\end{equation}
+当 $0<\eta<2/\beta$ 时每个精确梯度步下降；深网中 $\beta$ 未知且随位置变化，
+这仍解释了学习率过大造成不稳定的局部机制。
+
+\section{二阶近似与曲率方向}
+
+在 $x$ 附近 Taylor 展开
+\begin{equation}
+ L(x+\Delta)=L(x)+g^T\Delta
+ +\frac12\Delta^TH\Delta+O(\|\Delta\|^3).
+\end{equation}
+若 $H=U\diag(\lambda_i)U^T$，在本征方向 $u_i$ 上步长 $a$ 的变化
+\begin{equation}
+ \Delta L\approx a g_i+\frac12\lambda_i a^2.
+\end{equation}
+$\lambda_i>0$ 为局部碗形，$\lambda_i<0$ 是负曲率逃离鞍点方向。
+加阻尼的 Newton 步
+\begin{equation}
+ \Delta=-(H+\lambda I)^{-1}g
+\end{equation}
+在特征方向缩放为 $-g_i/(\lambda_i+\lambda)$，避免接近零或负特征值造成巨大步长。
+
+\section{链式 Jacobian 与条件数}
+
+复合映射 $y=f_L\circ\cdots\circ f_1(x)$ 的 Jacobian
+\begin{equation}
+ J_{y\leftarrow x}=J_LJ_{L-1}\cdots J_1.
+\end{equation}
+谱范数上界
+\begin{equation}
+ \|J_{y\leftarrow x}\|_2\le\prod_{\ell=1}^{L}\|J_\ell\|_2.
+\end{equation}
+若各层最小奇异值存在，
+\begin{equation}
+ \sigma_{\min}(J_{y\leftarrow x})
+ \ge\prod_\ell\sigma_{\min}(J_\ell).
+\end{equation}
+因此条件数至多乘法累积：
+\begin{equation}
+ \kappa(J_{y\leftarrow x})
+ \le\prod_\ell\kappa(J_\ell).
+\end{equation}
+低维映射、递归模块和物理传播都面临同一问题：表示存在不代表反向梯度数值良态。
+
+\section{随机梯度的偏差与方差}
+
+设样本梯度 $g(\theta;\xi)$ 满足
+\begin{equation}
+ \E_\xi g(\theta;\xi)=\nabla L(\theta),
+ \qquad \E\|g-\nabla L\|^2\le\sigma^2.
+\end{equation}
+独立批量 $B$ 的平均
+\begin{equation}
+ \bar g_B=\frac1B\sum_{i=1}^{B}g_i
+\end{equation}
+满足
+\begin{equation}
+ \E\bar g_B=\nabla L,\qquad
+ \E\|\bar g_B-\nabla L\|^2\le\frac{\sigma^2}{B}.
+\end{equation}
+若样本相关，协方差项出现：
+\begin{equation}
+ \Var(\bar g_B)=\frac1{B^2}\left[
+ \sum_i\Var(g_i)+\sum_{i\ne j}\Cov(g_i,g_j)
+ \right].
+\end{equation}
+扩大批量只有在交叉协方差不主导时才近似按 $1/B$ 降噪。
+
+若使用有偏估计 $\E\widehat g=\nabla L+b$，均方误差分解
+\begin{equation}
+ \E\|\widehat g-\nabla L\|^2
+ =\|b\|^2+\tr\Cov(\widehat g).
+\end{equation}
+直通估计、停止梯度目标和截断反传通常以可控偏差换低方差或低内存。
+
+\section{Adam 的尺度归一化}
+
+逐坐标 Adam 更新
+\begin{align}
+ m_t&=\beta_1m_{t-1}+(1-\beta_1)g_t,\\
+ v_t&=\beta_2v_{t-1}+(1-\beta_2)g_t^2,\\
+ \widehat m_t&=m_t/(1-\beta_1^t),\\
+ \widehat v_t&=v_t/(1-\beta_2^t),\\
+ \theta_{t+1}&=\theta_t-\eta
+ \frac{\widehat m_t}{\sqrt{\widehat v_t}+\epsilon}.
+\end{align}
+若梯度长期乘常数 $c>0$，忽略 $\epsilon$ 时
+$\widehat m$ 乘 $c$、$\sqrt{\widehat v}$ 也乘 $c$，更新近似不变。
+但瞬态、符号变化和 $\epsilon$ 会破坏精确尺度不变性。
+
+AdamW 把权重衰减解耦：
+\begin{equation}
+ \theta_{t+1}=(1-\eta\lambda)\theta_t
+ -\eta\frac{\widehat m_t}{\sqrt{\widehat v_t}+\epsilon}.
+\end{equation}
+这不同于把 $\lambda\theta$ 加入梯度后再经过自适应分母；后者会按坐标二阶矩缩放正则化。
+
+\section{范数约束与投影梯度}
+
+约束集合 $\mathcal C$ 上的投影梯度
+\begin{equation}
+ \theta^+=\Pi_{\mathcal C}(\theta-\eta g),
+ \qquad
+ \Pi_{\mathcal C}(x)=\arg\min_{y\in\mathcal C}\|x-y\|^2.
+\end{equation}
+对欧氏球 $\mathcal C=\{x:\|x\|\le R\}$，
+\begin{equation}
+ \Pi_{\mathcal C}(x)=
+ \begin{cases}
+ x,&\|x\|\le R,\\
+ Rx/\|x\|,&\|x\|>R.
+ \end{cases}
+\end{equation}
+对流形约束，局部一阶步先投影到切空间，再用 retraction 回到流形；
+仅把参数写成 $g(z)$ 相当于用参数化隐式满足约束，但会引入 $J_g^TJ_g$ 的坐标度量。
+
+\section{Lipschitz 误差的层间传播}
+
+真实模块 $f_\ell$、近似模块 $\widehat f_\ell$ 满足
+\begin{equation}
+ \|f_\ell(x)-\widehat f_\ell(x)\|\le\epsilon_\ell,
+ \qquad
+ \|f_\ell(x)-f_\ell(y)\|\le L_\ell\|x-y\|.
+\end{equation}
+令真实、近似中间状态差 $e_\ell$。三角不等式给出
+\begin{align}
+ e_{\ell+1}
+ &=\|f_\ell(h_\ell)-\widehat f_\ell(\widehat h_\ell)\|\\
+ &\le L_\ell e_\ell+\epsilon_\ell.
+\end{align}
+递归展开
+\begin{equation}
+ e_L\le
+ \left(\prod_{j=0}^{L-1}L_j\right)e_0
+ +\sum_{\ell=0}^{L-1}
+ \left(\prod_{j=\ell+1}^{L-1}L_j\right)\epsilon_\ell.
+\end{equation}
+早期层误差乘更多后续 Lipschitz 因子，所以量化、低秩近似或局部训练的相同单层误差，
+放在不同深度并不等价。
+
+\section{复杂度必须区分四个量}
+
+参数量、FLOPs、激活内存和通信量是不同指标。以线性层
+$Y=XW$、$X\in\R^{B\times n}$、$W\in\R^{n\times m}$ 为例：
+\begin{align}
+ \text{参数量}&=nm,\\
+ \text{前向乘加量}&\asymp Bnm,\\
+ \text{主要激活量}&=B(n+m),\\
+ \text{数据并行梯度通信}&\asymp nm.
+\end{align}
+低秩因子可同时减少参数与乘法，但动态稀疏若实现仍做稠密 kernel，参数/FLOPs 公式不会自动转化为墙钟加速。
+冻结参数减少梯度和优化器状态，却不一定减少前向计算或输入梯度计算。
+
+\end{document}

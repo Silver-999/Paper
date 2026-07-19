@@ -1,0 +1,405 @@
+\documentclass[11pt]{article}
+\usepackage{fontspec}
+\setmainfont[
+  Path=fonts/,
+  Extension=.ttf,
+  UprightFont=*-400,
+  BoldFont=*-700
+]{NotoSerifSC}
+\setsansfont[
+  Path=fonts/,
+  Extension=.ttf,
+  UprightFont=*-400,
+  BoldFont=*-700
+]{NotoSerifSC}
+\XeTeXlinebreaklocale "zh"
+\XeTeXlinebreakskip=0pt plus 1pt
+\usepackage[a4paper,margin=1.70cm]{geometry}
+\usepackage{amsmath,amssymb,mathtools,bm}
+\usepackage{booktabs,longtable,array}
+\usepackage{enumitem}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\setlist{nosep,leftmargin=2em}
+\allowdisplaybreaks[3]
+\numberwithin{equation}{section}
+\pagestyle{plain}
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Pp}{\mathbb{P}}
+\newcommand{\1}{\mathbf{1}}
+\newcommand{\T}{\mathsf{T}}
+\newcommand{\F}{\mathrm{F}}
+\newcommand{\cN}{\mathcal{N}}
+\newcommand{\cL}{\mathcal{L}}
+\newcommand{\cS}{\mathcal{S}}
+\newcommand{\cH}{\mathcal{H}}
+\newcommand{\cA}{\mathcal{A}}
+\newcommand{\cM}{\mathcal{M}}
+\newcommand{\cT}{\mathcal{T}}
+\newcommand{\diag}{\operatorname{diag}}
+\newcommand{\tr}{\operatorname{tr}}
+\newcommand{\Var}{\operatorname{Var}}
+\newcommand{\Cov}{\operatorname{Cov}}
+\newcommand{\softmax}{\operatorname{softmax}}
+\newcommand{\KL}{D_{\mathrm{KL}}}
+\newcommand{\sg}{\operatorname{sg}}
+\begin{document}
+    \begin{center}
+      {\LARGE\bfseries 5-1801.01290v2-Reinforcement-SAC}
+    \end{center}
+    \vspace{0.8em}
+
+    \section{符号与维度}
+    \begin{longtable}{>{$}l<{$} >{$}l<{$} p{10cm}}
+    \toprule
+    \text{符号} & \text{维度} & \text{含义}\\
+    \midrule
+    \pi,Q,V & -- & 随机策略、软动作价值与软状态价值。\\
+        \alpha & \R_{>0} & 熵温度。\\
+        \cH(\pi) & \R_{\ge0} & 策略熵。\\
+        \gamma & [0,1) & 折扣因子。\\
+    \bottomrule
+    \end{longtable}
+
+    所有向量默认是列向量；未特别说明时，期望同时对数据、噪声和采样时刻取值。下文只展开论文中承担方法逻辑的公式，并把所需假设写在推导发生的位置。
+
+\section{最大熵目标与软 Bellman 方程}
+
+最大熵强化学习优化
+\begin{equation}
+ J(\pi)=\E_\pi\sum_{t=0}^{\infty}\gamma^t
+ \left[r(s_t,a_t)+\alpha\mathcal H(\pi(\cdot\mid s_t))\right].
+\end{equation}
+因
+$\mathcal H(\pi(\cdot\mid s))=-\E_{a\sim\pi}\log\pi(a\mid s)$，
+定义软状态价值
+\begin{equation}
+ V^\pi(s)=\E_{a\sim\pi}
+ [Q^\pi(s,a)-\alpha\log\pi(a\mid s)].
+\end{equation}
+从第一步分离回报，得到软 Bellman 期望方程
+\begin{equation}
+ Q^\pi(s,a)=r(s,a)+\gamma\E_{s'}V^\pi(s').
+\end{equation}
+相应软 Bellman 算子
+\begin{equation}
+ (T^\pi Q)(s,a)=r(s,a)+\gamma\E_{s',a'}
+ [Q(s',a')-\alpha\log\pi(a'\mid s')]
+\end{equation}
+对两个 $Q$ 的差仍是 $\gamma$ 压缩，因为熵项抵消：
+\begin{equation}
+ \|T^\pi Q_1-T^\pi Q_2\|_\infty
+ \le\gamma\|Q_1-Q_2\|_\infty.
+\end{equation}
+
+\section{Boltzmann 最优策略与 KL 投影}
+
+固定状态和 $Q$，策略改进问题为
+\begin{equation}
+ \max_\pi\sum_a\pi(a)Q(a)+\alpha\mathcal H(\pi),
+ \quad\text{s.t.}\quad\sum_a\pi(a)=1.
+\end{equation}
+拉格朗日函数
+\begin{equation}
+ \mathcal J=\sum_a\pi(a)Q(a)-\alpha\sum_a\pi(a)\log\pi(a)
+ +\lambda\left(\sum_a\pi(a)-1\right).
+\end{equation}
+一阶条件为
+\begin{equation}
+ Q(a)-\alpha(1+\log\pi(a))+\lambda=0,
+\end{equation}
+故
+\begin{equation}
+ \pi^*(a\mid s)=\frac{\exp(Q(s,a)/\alpha)}
+ {\sum_b\exp(Q(s,b)/\alpha)}.
+\end{equation}
+连续动作时分母成为配分函数
+$Z(s)=\int\exp(Q(s,a)/\alpha)da$。
+
+对参数化策略，最小化
+\begin{equation}
+ D_{\rm KL}\left(\pi_\theta(\cdot\mid s)\middle\|
+ \frac{\exp(Q(s,\cdot)/\alpha)}{Z(s)}\right)
+\end{equation}
+展开得
+\begin{align}
+ D_{\rm KL}
+ &=\E_{a\sim\pi_\theta}
+ \left[\log\pi_\theta(a\mid s)-\frac1\alpha Q(s,a)+\log Z(s)\right].
+\end{align}
+乘 $\alpha$ 并去掉与 $\theta$ 无关的 $\alpha\log Z(s)$，得到 actor 损失
+\begin{equation}
+ \boxed{J_\pi(\theta)=\E[\alpha\log\pi_\theta(a\mid s)-Q(s,a)].}
+\end{equation}
+
+\section{重参数化策略梯度}
+
+高斯策略通过
+\begin{equation}
+ u=\mu_\theta(s)+\sigma_\theta(s)\odot\epsilon,
+ \quad\epsilon\sim\cN(0,I),\qquad a=\tanh u
+\end{equation}
+重参数化。把随机性移到与 $\theta$ 无关的 $\epsilon$ 后，
+\begin{equation}
+ \nabla_\theta J_\pi
+ =\E_{s,\epsilon}\nabla_\theta
+ [\alpha\log\pi_\theta(f_\theta(\epsilon;s)\mid s)
+ -Q_\phi(s,f_\theta(\epsilon;s))].
+\end{equation}
+第二项的路径导数为
+\begin{equation}
+ -\nabla_aQ_\phi(s,a)\frac{\partial f_\theta}{\partial\theta},
+\end{equation}
+比纯 score-function 估计通常方差更低。
+
+由于 $a=\tanh u$，密度需作变量变换：
+\begin{equation}
+ \log\pi(a\mid s)=\log\cN(u;\mu,\sigma^2)
+ -\sum_j\log(1-\tanh^2u_j).
+\end{equation}
+第二项是 Jacobian 行列式校正；省略会使边界附近的动作密度错误。
+
+\section{双 critic 与最小值偏差}
+
+SAC 常使用两个估计 $Q_{\phi_1},Q_{\phi_2}$，目标取
+\begin{equation}
+ y=r+\gamma(1-d)
+ \left[\min_{i=1,2}Q_{\bar\phi_i}(s',a')
+ -\alpha\log\pi(a'\mid s')\right].
+\end{equation}
+若 $Q_i=Q^*+\epsilon_i$ 且误差独立同分布、均值零，则
+\begin{equation}
+ \E\min(Q_1,Q_2)=Q^*+\E\min(\epsilon_1,\epsilon_2)\le Q^*.
+\end{equation}
+最小值把最大化产生的正偏差换成保守的负偏差。两个 critic 高度相关时，校正效果会减弱。
+
+critic 损失为
+\begin{equation}
+ J_Q(\phi_i)=\frac12\E(Q_{\phi_i}(s,a)-\operatorname{sg}(y))^2,
+\end{equation}
+故
+\begin{equation}
+ \nabla_{\phi_i}J_Q
+ =\E[(Q_{\phi_i}-y)\nabla_{\phi_i}Q_{\phi_i}].
+\end{equation}
+目标动作与目标 critic 都停止梯度，形成稳定的半梯度更新。
+
+\section{温度参数的对偶推导}
+
+希望平均熵不低于目标 $\mathcal H_0$：
+\begin{equation}
+ \E[-\log\pi(a\mid s)]\ge\mathcal H_0.
+\end{equation}
+写成约束
+$g(\pi)=\mathcal H_0+\E\log\pi\le0$，拉格朗日乘子 $\alpha\ge0$。
+对固定策略，温度的对偶目标可写为
+\begin{equation}
+ J(\alpha)=\E_{a\sim\pi}
+ [-\alpha(\log\pi(a\mid s)+\mathcal H_0)].
+\end{equation}
+其梯度
+\begin{equation}
+ \frac{\partial J}{\partial\alpha}
+ =-\E[\log\pi(a\mid s)+\mathcal H_0].
+\end{equation}
+若当前熵 $-\E\log\pi$ 小于目标，括号期望为正，梯度下降增大 $\alpha$，
+从而更重视熵；方向与约束一致。
+
+为自动满足 $\alpha>0$，令 $\alpha=e^\eta$。链式法则给出
+\begin{equation}
+ \frac{\partial J}{\partial\eta}
+ =-\alpha\E[\log\pi(a\mid s)+\mathcal H_0].
+\end{equation}
+实践中也常直接对 $\eta$ 使用去掉前置 $\alpha$ 的等价尺度目标；这会改变步长但保留驻点。
+
+\section{Bellman 期望方程与优势恒等式}
+
+对策略 $\pi$，定义
+\begin{align}
+ V^\pi(s)&=\E_\pi\left[\sum_{t=0}^{\infty}\gamma^tr_t\mid s_0=s\right],\\
+ Q^\pi(s,a)&=\E_\pi\left[\sum_{t=0}^{\infty}\gamma^tr_t
+ \mid s_0=s,a_0=a\right].
+\end{align}
+分离首步奖励：
+\begin{align}
+ Q^\pi(s,a)&=r(s,a)+\gamma\E_{s'}V^\pi(s'),\\
+ V^\pi(s)&=\E_{a\sim\pi(\cdot\mid s)}Q^\pi(s,a).
+\end{align}
+优势
+\begin{equation}
+ A^\pi(s,a)=Q^\pi(s,a)-V^\pi(s)
+\end{equation}
+在策略动作分布下均值为零：
+\begin{equation}
+ \E_{a\sim\pi}A^\pi(s,a)=0.
+\end{equation}
+这不表示每个动作优势小，只表示正负改进机会按当前策略加权抵消。
+
+\section{性能差异引理}
+
+令新旧策略为 $\pi',\pi$。沿 $\pi'$ 轨迹，
+\begin{align}
+ \E_{\pi'}\sum_{t=0}^{\infty}\gamma^tA^\pi(s_t,a_t)
+ &=\E_{\pi'}\sum_t\gamma^t
+ [r_t+\gamma V^\pi(s_{t+1})-V^\pi(s_t)]\\
+ &=J(\pi')-\E V^\pi(s_0),
+\end{align}
+其中价值项望远镜消去，且有界价值使末项
+$\gamma^{T+1}V(s_{T+1})\to0$。若初始分布相同，
+$\E V^\pi(s_0)=J(\pi)$，故
+\begin{equation}
+ \boxed{J(\pi')-J(\pi)
+ =\frac1{1-\gamma}
+ \E_{s\sim d_{\pi'},a\sim\pi'}A^\pi(s,a).}
+\end{equation}
+策略优化代理常把难采样的 $d_{\pi'}$ 替换为旧占用分布 $d_\pi$；
+信赖域或比率裁剪的目标是限制这一步替换造成的误差。
+
+\section{KL 信赖域的二阶局部形式}
+
+对小参数变化 $\Delta\theta$，
+\begin{equation}
+ D_{\rm KL}(\pi_{\theta}\|\pi_{\theta+\Delta})
+ =\frac12\Delta^TF(\theta)\Delta+O(\|\Delta\|^3),
+\end{equation}
+其中 Fisher 信息
+\begin{equation}
+ F(\theta)=\E_{s,a}
+ [\nabla\log\pi_\theta(a\mid s)
+ \nabla\log\pi_\theta(a\mid s)^T].
+\end{equation}
+一阶目标改进 $g^T\Delta$，约束
+$\frac12\Delta^TF\Delta\le\delta$。拉格朗日法：
+\begin{equation}
+ \mathcal J=g^T\Delta-\lambda
+ \left(\frac12\Delta^TF\Delta-\delta\right).
+\end{equation}
+驻点
+\begin{equation}
+ g-\lambda F\Delta=0
+ \Rightarrow \Delta=\lambda^{-1}F^{-1}g.
+\end{equation}
+代回约束得到
+\begin{equation}
+ \boxed{\Delta=\sqrt{\frac{2\delta}{g^TF^{-1}g}}F^{-1}g.}
+\end{equation}
+自然梯度 $F^{-1}g$ 是概率分布几何下最陡方向；PPO 裁剪是更易实现但不严格等价的近似。
+
+\section{离策略序列比率的方差}
+
+轨迹前 $T$ 步重要性比率
+\begin{equation}
+ W_T=\prod_{t=0}^{T-1}
+ \frac{\pi(a_t\mid s_t)}{\mu(a_t\mid s_t)}.
+\end{equation}
+在行为策略 $\mu$ 下若支撑相容，$\E_\mu W_T=1$。
+对数比率是和
+\begin{equation}
+ \log W_T=\sum_t\ell_t,\qquad
+ \ell_t=\log\pi(a_t\mid s_t)-\log\mu(a_t\mid s_t).
+\end{equation}
+若粗略假设 $\ell_t$ 独立、均值 $m$、方差 $v$，则
+$W_T$ 近似 log-normal，
+\begin{equation}
+ \frac{\Var(W_T)}{(\E W_T)^2}\approx e^{Tv}-1.
+\end{equation}
+方差随长度指数增长，这解释了 token/step 级截断、V-trace 或短视野校正的必要性。
+
+截断 $\bar w_t=\min(c,w_t)$ 产生偏差，但单步权重有界，
+能控制乘积和梯度爆炸。偏差精确来自尾部
+\begin{equation}
+ \E_\mu[(w_t-c)_+f_t].
+\end{equation}
+
+\section{熵正则的策略梯度}
+
+状态熵
+\begin{equation}
+ \mathcal H(\pi_\theta)=-\sum_a\pi_\theta(a)\log\pi_\theta(a).
+\end{equation}
+求导
+\begin{align}
+ \nabla\mathcal H
+ &=-\sum_a\nabla\pi(a)[1+\log\pi(a)]\\
+ &=-\E_{a\sim\pi}
+ [(1+\log\pi(a))\nabla\log\pi(a)].
+\end{align}
+因 $\E\nabla\log\pi=0$，常数 $1$ 可去掉：
+\begin{equation}
+ \nabla\mathcal H
+ =-\E[\log\pi(a)\nabla\log\pi(a)].
+\end{equation}
+加入 $+\alpha\mathcal H$ 会提高低概率动作的相对激励，防止策略过早坍缩；
+但在可验证答案任务中，过强熵也会降低正确答案集中度。
+
+\section{奖励平移、缩放与归一化}
+
+若所有奖励加常数 $c$，无限折扣回报
+\begin{equation}
+ G_t'=G_t+\frac{c}{1-\gamma}.
+\end{equation}
+精确优势不变，因为 $Q,V$ 同时加 $c/(1-\gamma)$。用采样回报而无正确基线时，
+常数会增加梯度方差但期望 score 项仍抵消。
+
+奖励乘正数 $a$ 时，优势和策略梯度乘 $a$，等价于改变有效学习率；
+PPO 的裁剪边界不随 $a$ 变，所以裁剪区域不变但目标梯度尺度变。
+组内标准化
+\begin{equation}
+ \widehat A_i=\frac{R_i-\bar R}{s_R+\epsilon}
+\end{equation}
+同时消除平移并近似消除尺度，但 $s_R$ 很小时会放大噪声，故需要 $\epsilon$ 或跳过全同奖励组。
+
+\section{KL 正则与奖励塑形}
+
+目标
+\begin{equation}
+ J(\pi)=\E_\pi[R]-\beta D_{\rm KL}(\pi\|\pi_{\rm ref})
+\end{equation}
+可写为每步塑形奖励
+\begin{equation}
+ r_t'=r_t-\beta
+ \left[\log\pi(a_t\mid s_t)-\log\pi_{\rm ref}(a_t\mid s_t)\right].
+\end{equation}
+固定状态、给定动作价值 $Q(a)$ 时，最优非参数策略由拉格朗日法得到
+\begin{equation}
+ \pi^*(a)=\frac{\pi_{\rm ref}(a)e^{Q(a)/\beta}}
+ {\sum_b\pi_{\rm ref}(b)e^{Q(b)/\beta}}.
+\end{equation}
+$\beta\to0$ 时集中到高价值动作，$\beta\to\infty$ 时回到参考策略。
+参考策略为零概率的动作在正向 KL 约束下永远不可选，故支撑选择很重要。
+
+\section{拒答动作与错误成本}
+
+设回答正确收益 $u_c$、错误收益 $u_e$、拒答收益 $u_a$，模型置信度
+$p=\Pp(\text{correct}\mid s)$。回答期望效用
+\begin{equation}
+ U_{\rm ans}(p)=pu_c+(1-p)u_e,
+\end{equation}
+拒答效用 $U_{\rm abstain}=u_a$。当
+\begin{equation}
+ p\ge\frac{u_a-u_e}{u_c-u_e}
+\end{equation}
+时回答更优（假设 $u_c>u_e$）。因此最优置信阈值由错误和拒答的相对成本决定，
+不是固定的 $1/2$。RL 后训练若隐含奖励给拒答过低分，就会系统性鼓励猜测。
+
+\section{有限 horizon 的回报界}
+
+若 $|r_t|\le R_{\max}$，无限折扣回报有界
+\begin{equation}
+ |G_t|\le\sum_{k=0}^{\infty}\gamma^kR_{\max}
+ =\frac{R_{\max}}{1-\gamma}.
+\end{equation}
+截断到 $H$ 步的尾部误差
+\begin{equation}
+ \left|G_t-\sum_{k=0}^{H-1}\gamma^kr_{t+k}\right|
+ \le\frac{\gamma^HR_{\max}}{1-\gamma}.
+\end{equation}
+要使其不超过 $\epsilon$，充分条件
+\begin{equation}
+ H\ge\frac{\log[\epsilon(1-\gamma)/R_{\max}]}{\log\gamma},
+\end{equation}
+注意 $\log\gamma<0$，除法会反转不等号，右端为正。
+
+\end{document}

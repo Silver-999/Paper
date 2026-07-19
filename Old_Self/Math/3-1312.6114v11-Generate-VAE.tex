@@ -1,0 +1,398 @@
+\documentclass[11pt]{article}
+\usepackage{fontspec}
+\setmainfont[
+  Path=fonts/,
+  Extension=.ttf,
+  UprightFont=*-400,
+  BoldFont=*-700
+]{NotoSerifSC}
+\setsansfont[
+  Path=fonts/,
+  Extension=.ttf,
+  UprightFont=*-400,
+  BoldFont=*-700
+]{NotoSerifSC}
+\XeTeXlinebreaklocale "zh"
+\XeTeXlinebreakskip=0pt plus 1pt
+\usepackage[a4paper,margin=1.70cm]{geometry}
+\usepackage{amsmath,amssymb,mathtools,bm}
+\usepackage{booktabs,longtable,array}
+\usepackage{enumitem}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\setlist{nosep,leftmargin=2em}
+\allowdisplaybreaks[3]
+\numberwithin{equation}{section}
+\pagestyle{plain}
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Pp}{\mathbb{P}}
+\newcommand{\1}{\mathbf{1}}
+\newcommand{\T}{\mathsf{T}}
+\newcommand{\F}{\mathrm{F}}
+\newcommand{\cN}{\mathcal{N}}
+\newcommand{\cL}{\mathcal{L}}
+\newcommand{\cS}{\mathcal{S}}
+\newcommand{\cH}{\mathcal{H}}
+\newcommand{\cA}{\mathcal{A}}
+\newcommand{\cM}{\mathcal{M}}
+\newcommand{\cT}{\mathcal{T}}
+\newcommand{\diag}{\operatorname{diag}}
+\newcommand{\tr}{\operatorname{tr}}
+\newcommand{\Var}{\operatorname{Var}}
+\newcommand{\Cov}{\operatorname{Cov}}
+\newcommand{\softmax}{\operatorname{softmax}}
+\newcommand{\KL}{D_{\mathrm{KL}}}
+\newcommand{\sg}{\operatorname{sg}}
+\begin{document}
+    \begin{center}
+      {\LARGE\bfseries 3-1312.6114v11-Generate-VAE}
+    \end{center}
+    \vspace{0.8em}
+
+    \section{符号与维度}
+    \begin{longtable}{>{$}l<{$} >{$}l<{$} p{10cm}}
+    \toprule
+    \text{符号} & \text{维度} & \text{含义}\\
+    \midrule
+    x & \R^n & 观测样本。\\
+        z & \R^d & 连续潜变量。\\
+        p_\theta(x\mid z) & -- & 生成解码分布。\\
+        q_\phi(z\mid x) & -- & 变分近似后验。\\
+        \mu,\sigma & \R^d,\R_{>0}^d & 后验高斯参数。\\
+    \bottomrule
+    \end{longtable}
+
+    所有向量默认是列向量；未特别说明时，期望同时对数据、噪声和采样时刻取值。下文只展开论文中承担方法逻辑的公式，并把所需假设写在推导发生的位置。
+
+\section{证据下界的两种等价推导}
+
+生成模型 $p_\theta(x,z)=p(z)p_\theta(x\mid z)$，近似后验
+$q_\phi(z\mid x)$。从边缘似然开始，
+\begin{align}
+ \log p_\theta(x)
+ &=\log\int q_\phi(z\mid x)
+ \frac{p_\theta(x,z)}{q_\phi(z\mid x)}dz\\
+ &\ge\E_{q_\phi}\left[
+ \log p_\theta(x,z)-\log q_\phi(z\mid x)\right]
+ =\cL_{\rm ELBO},
+\end{align}
+不等式来自对数的凹性。代入联合分解：
+\begin{equation}
+ \boxed{\cL_{\rm ELBO}
+ =\E_{q_\phi(z\mid x)}\log p_\theta(x\mid z)
+ -D_{\rm KL}(q_\phi(z\mid x)\|p(z)).}
+\end{equation}
+
+另一种推导直接插入真实后验：
+\begin{align}
+ D_{\rm KL}(q_\phi(z\mid x)\|p_\theta(z\mid x))
+ &=\E_q\log\frac{q_\phi(z\mid x)p_\theta(x)}{p_\theta(x,z)}\\
+ &=\log p_\theta(x)-\cL_{\rm ELBO}.
+\end{align}
+因此
+\begin{equation}
+ \log p_\theta(x)=\cL_{\rm ELBO}
+ +D_{\rm KL}(q_\phi(z\mid x)\|p_\theta(z\mid x)).
+\end{equation}
+下界松弛量恰为近似后验到真实后验的 KL；当且仅当二者几乎处处相等时取等号。
+
+\section{对角高斯 KL 的逐坐标计算}
+
+设
+\begin{equation}
+ q(z\mid x)=\cN(\mu,\diag(\sigma_1^2,\ldots,\sigma_d^2)),
+ \qquad p(z)=\cN(0,I).
+\end{equation}
+一维对数密度比为
+\begin{equation}
+ \log\frac{q(z_i)}{p(z_i)}
+ =-\log\sigma_i-\frac{(z_i-\mu_i)^2}{2\sigma_i^2}
+ +\frac{z_i^2}{2}.
+\end{equation}
+在 $q$ 下取期望，使用
+\begin{equation}
+ \E_q(z_i-\mu_i)^2=\sigma_i^2,\qquad
+ \E_qz_i^2=\mu_i^2+\sigma_i^2,
+\end{equation}
+得到
+\begin{align}
+ D_{\rm KL}(q_i\|p_i)
+ &=-\log\sigma_i-\frac12+\frac12(\mu_i^2+\sigma_i^2)\\
+ &=\frac12(\mu_i^2+\sigma_i^2-1-\log\sigma_i^2).
+\end{align}
+独立坐标相加：
+\begin{equation}
+ \boxed{D_{\rm KL}(q\|p)=\frac12\sum_{i=1}^{d}
+ (\mu_i^2+\sigma_i^2-1-\log\sigma_i^2).}
+\end{equation}
+若网络输出 $\ell_i=\log\sigma_i^2$，则
+\begin{equation}
+ D_{\rm KL}=\frac12\sum_i(\mu_i^2+e^{\ell_i}-1-\ell_i),
+\end{equation}
+梯度为
+\begin{equation}
+ \frac{\partial D_{\rm KL}}{\partial\mu_i}=\mu_i,\qquad
+ \frac{\partial D_{\rm KL}}{\partial\ell_i}=\frac12(e^{\ell_i}-1).
+\end{equation}
+
+\section{重参数化梯度为什么可用}
+
+原期望
+\begin{equation}
+ \E_{z\sim q_\phi(z\mid x)}f_\theta(z)
+\end{equation}
+的采样分布依赖 $\phi$。令
+\begin{equation}
+ \epsilon\sim\cN(0,I),\qquad
+ z=g_\phi(x,\epsilon)=\mu_\phi(x)+\sigma_\phi(x)\odot\epsilon.
+\end{equation}
+则期望改写为固定噪声分布下
+\begin{equation}
+ \E_{\epsilon\sim\cN(0,I)}f_\theta(g_\phi(x,\epsilon)).
+\end{equation}
+在可交换微分与积分的正则条件下，
+\begin{equation}
+ \nabla_\phi\E_\epsilon f_\theta(g_\phi)
+ =\E_\epsilon[J_{g_\phi}^T\nabla_zf_\theta(z)].
+\end{equation}
+对均值和对数方差，若 $\sigma=e^{\ell/2}$，
+\begin{equation}
+ \frac{\partial z_i}{\partial\mu_i}=1,\qquad
+ \frac{\partial z_i}{\partial\ell_i}=\frac12e^{\ell_i/2}\epsilon_i
+ =\frac12\sigma_i\epsilon_i.
+\end{equation}
+这就是低方差路径导数；它利用解码器关于 $z$ 的可微性。
+
+\section{重建项的概率尺度}
+
+若连续观测采用固定方差高斯解码器
+\begin{equation}
+ p_\theta(x\mid z)=\cN(f_\theta(z),\sigma_x^2I),
+\end{equation}
+则
+\begin{equation}
+ -\log p_\theta(x\mid z)
+ =\frac1{2\sigma_x^2}\|x-f_\theta(z)\|_2^2
+ +\frac D2\log(2\pi\sigma_x^2).
+\end{equation}
+所以 MSE 权重对应观测噪声方差，不是任意常数。若二值观测用 Bernoulli，
+\begin{equation}
+ -\log p_\theta(x\mid z)
+ =-\sum_j[x_j\log\widehat x_j+(1-x_j)\log(1-\widehat x_j)].
+\end{equation}
+二者隐含不同的数据似然，不应仅因像素范围相同就互换。
+
+\section{$\beta$ 权重、互信息与后验坍塌}
+
+$\beta$-VAE 目标为
+\begin{equation}
+ \E_{p_{\rm data}(x)}\E_{q(z\mid x)}[-\log p_\theta(x\mid z)]
+ +\beta\E_xD_{\rm KL}(q(z\mid x)\|p(z)).
+\end{equation}
+令聚合后验 $q(z)=\int p_{\rm data}(x)q(z\mid x)dx$。KL 项分解为
+\begin{align}
+ \E_xD_{\rm KL}(q(z\mid x)\|p(z))
+ &=\E_{x,z}\log\frac{q(z\mid x)}{q(z)}
+ +\E_z\log\frac{q(z)}{p(z)}\\
+ &=I_q(X;Z)+D_{\rm KL}(q(z)\|p(z)).
+\end{align}
+因此增大 $\beta$ 同时惩罚编码互信息与聚合后验偏离。若解码器无需 $z$ 就能拟合数据，
+$q(z\mid x)=p(z)$ 使 KL 为零且 $I_q(X;Z)=0$，即后验坍塌。
+
+\section{单样本 Monte Carlo 估计的无偏性}
+
+对每个 $x$ 抽一个 $\epsilon$，重建项估计
+\begin{equation}
+ \widehat R=f_\theta(\mu_\phi(x)+\sigma_\phi(x)\odot\epsilon)
+\end{equation}
+满足 $\E_\epsilon\widehat R=\E_{q_\phi}f_\theta(z)$。批量平均
+\begin{equation}
+ \widehat\cL=\frac1B\sum_{i=1}^{B}\widehat R_i
+\end{equation}
+若样本独立，方差为 $\Var(\widehat R)/B$。KL 使用闭式时没有采样方差；
+总梯度噪声主要来自数据小批和重建路径采样。
+
+\section{分布推送与可测生成器}
+
+潜变量 $z\sim p_Z$，生成器 $x=G_\theta(z)$ 诱导推送分布
+\begin{equation}
+ p_\theta=(G_\theta)_\#p_Z,
+\end{equation}
+其定义是任意可测集合 $A$ 满足
+\begin{equation}
+ p_\theta(A)=p_Z(G_\theta^{-1}(A)).
+\end{equation}
+等价地，对任意可积测试函数 $\varphi$，
+\begin{equation}
+ \E_{x\sim p_\theta}\varphi(x)
+ =\E_{z\sim p_Z}\varphi(G_\theta(z)).
+\end{equation}
+若 $G:\R^d\to\R^d$ 是可逆微分同胚，变量替换给出显式密度
+\begin{equation}
+ p_\theta(x)=p_Z(G^{-1}(x))
+ \left|\det J_{G^{-1}}(x)\right|.
+\end{equation}
+取对数并用 $J_{G^{-1}}(x)=J_G(z)^{-1}$：
+\begin{equation}
+ \log p_\theta(x)=\log p_Z(z)-\log|\det J_G(z)|.
+\end{equation}
+VAE、GAN、扩散和隐式光学生成器通常不同时满足同维可逆条件，
+因此分别使用变分界、判别散度、score/flow 或样本级目标绕开直接行列式。
+
+\section{KL、JS 与总变差的关系}
+
+KL 非负可由 $-\log$ 的凸性证明：
+\begin{align}
+ D_{\rm KL}(p\|q)
+ &=\E_p\left[-\log\frac{q(X)}{p(X)}\right]\\
+ &\ge-\log\E_p\frac{q(X)}{p(X)}=-\log1=0.
+\end{align}
+等号当且仅当 $p=q$ 几乎处处。KL 不对称且当 $q=0,p>0$ 时为无穷。
+
+Jensen--Shannon 散度
+\begin{equation}
+ D_{\rm JS}(p\|q)=\frac12D_{\rm KL}(p\|m)
+ +\frac12D_{\rm KL}(q\|m),\qquad m=(p+q)/2
+\end{equation}
+总是有限，$0\le D_{\rm JS}\le\log2$。当支撑不相交时取上界，
+却对支撑间几何距离不敏感。
+
+总变差
+\begin{equation}
+ \operatorname{TV}(p,q)=\frac12\int|p-q|
+ =\sup_A|p(A)-q(A)|.
+\end{equation}
+Pinsker 不等式
+\begin{equation}
+ \operatorname{TV}(p,q)
+ \le\sqrt{\frac12D_{\rm KL}(p\|q)}
+\end{equation}
+说明小正向 KL 保证事件概率接近；逆命题没有无条件形式，因为很小区域上的密度比可极大。
+
+\section{Wasserstein 距离与 Lipschitz 测试函数}
+
+一阶 Wasserstein 距离
+\begin{equation}
+ W_1(p,q)=\inf_{\gamma\in\Pi(p,q)}
+ \E_{(X,Y)\sim\gamma}\|X-Y\|
+\end{equation}
+显式考虑搬运距离。Kantorovich--Rubinstein 对偶
+\begin{equation}
+ W_1(p,q)=\sup_{\|f\|_{\rm Lip}\le1}
+ [\E_pf(X)-\E_qf(Y)].
+\end{equation}
+因此任意 $L$-Lipschitz 评价函数满足
+\begin{equation}
+ |\E_pf-\E_qf|\le L W_1(p,q).
+\end{equation}
+如果下游感知损失近似 Lipschitz，Wasserstein 小可以控制其期望差；
+但高维下从有限样本估计 Wasserstein 有较慢的维数依赖。
+
+\section{最大均值差异}
+
+在再生核 Hilbert 空间 $\mathcal H$ 中，均值嵌入
+\begin{equation}
+ \mu_p=\E_{X\sim p}k(X,\cdot).
+\end{equation}
+MMD 定义
+\begin{equation}
+ \operatorname{MMD}^2(p,q)=\|\mu_p-\mu_q\|_{\mathcal H}^2.
+\end{equation}
+利用再生性质展开
+\begin{align}
+ \operatorname{MMD}^2
+ &=\E_{X,X'\sim p}k(X,X')
+ +\E_{Y,Y'\sim q}k(Y,Y')\\
+ &\quad-2\E_{X\sim p,Y\sim q}k(X,Y).
+\end{align}
+样本 $x_{1:n},y_{1:m}$ 的无偏估计
+\begin{align}
+ \widehat{\operatorname{MMD}}_u^2
+ &=\frac1{n(n-1)}\sum_{i\ne j}k(x_i,x_j)\\
+ &\quad+\frac1{m(m-1)}\sum_{i\ne j}k(y_i,y_j)
+ -\frac2{nm}\sum_{i,j}k(x_i,y_j).
+\end{align}
+特征核选择决定它关注的尺度；特征空间中的 MMD 小不保证像素空间逐点接近。
+
+\section{高斯特征距离与 FID}
+
+将真实、生成图像经固定特征提取器映射并近似为高斯
+$\cN(\mu_r,\Sigma_r)$、$\cN(\mu_g,\Sigma_g)$。二阶 Wasserstein 距离闭式
+\begin{equation}
+ \operatorname{FID}=
+ \|\mu_r-\mu_g\|_2^2
+ +\tr\left(\Sigma_r+\Sigma_g
+ -2(\Sigma_r^{1/2}\Sigma_g\Sigma_r^{1/2})^{1/2}\right).
+\end{equation}
+若协方差可交换，可同时对角化，第二项简化为
+\begin{equation}
+ \sum_j(\sqrt{\lambda_{r,j}}-\sqrt{\lambda_{g,j}})^2.
+\end{equation}
+样本均值和协方差是有限样本估计，矩阵平方根的非线性导致 FID 有偏；
+比较模型时必须使用相同样本数、预处理和特征网络。
+
+\section{Monte Carlo 估计与控制变量}
+
+生成目标常写成 $J(\theta)=\E_Z f_\theta(Z)$。独立样本估计
+\begin{equation}
+ \widehat J_N=\frac1N\sum_{i=1}^{N}f_\theta(Z_i)
+\end{equation}
+无偏且
+\begin{equation}
+ \Var(\widehat J_N)=\frac1N\Var(f_\theta(Z)).
+\end{equation}
+若有已知期望 $\E C=\mu_C$ 的控制变量，
+\begin{equation}
+ \widehat J_\beta=\widehat J_N-\beta(\widehat C_N-\mu_C)
+\end{equation}
+仍无偏。方差是
+\begin{equation}
+ \Var(\widehat J_\beta)
+ =\Var(\widehat J_N)+\beta^2\Var(\widehat C_N)
+ -2\beta\Cov(\widehat J_N,\widehat C_N).
+\end{equation}
+最优
+\begin{equation}
+ \beta^*=\frac{\Cov(f,C)}{\Var(C)}.
+\end{equation}
+扩散中的已知噪声、RL 中的基线和光学中的参考传播都可视为利用相关结构降方差的不同形式。
+
+\section{score matching 的分部积分}
+
+数据 score 为 $s_p(x)=\nabla_x\log p(x)$。显式 score matching
+\begin{equation}
+ J(\theta)=\frac12\E_p\|s_\theta(x)-s_p(x)\|^2.
+\end{equation}
+展开并去掉与 $\theta$ 无关的 $\E\|s_p\|^2/2$：
+\begin{equation}
+ J(\theta)=\frac12\E_p\|s_\theta\|^2-E_p[s_\theta^Ts_p]+C.
+\end{equation}
+交叉项
+\begin{align}
+ \E_p[s_\theta^Ts_p]
+ &=\int s_\theta(x)^T\nabla p(x)dx\\
+ &=-\int p(x)\nabla\cdot s_\theta(x)dx
+\end{align}
+在边界项消失时成立。故
+\begin{equation}
+ J(\theta)=\E_p\left[
+ \frac12\|s_\theta(x)\|^2+\nabla\cdot s_\theta(x)
+ \right]+C.
+\end{equation}
+去噪 score matching通过已知高斯条件 score 避免计算模型散度，并在条件期望意义下恢复边缘 score。
+
+\section{模型误差到期望指标误差}
+
+若生成样本耦合为 $X=G(Z)$、$\widehat X=\widehat G(Z)$，且评价函数
+$f$ 为 $L_f$-Lipschitz，则
+\begin{align}
+ |\E f(X)-\E f(\widehat X)|
+ &\le\E|f(X)-f(\widehat X)|\\
+ &\le L_f\E\|G(Z)-\widehat G(Z)\|.
+\end{align}
+这给出点对点生成误差控制分布指标的充分条件。但无条件生成中通常不存在已知语义配对，
+逐样本 MSE 可能强迫平均化；分布距离允许不同耦合，因而更适合多模态目标。
+
+\end{document}

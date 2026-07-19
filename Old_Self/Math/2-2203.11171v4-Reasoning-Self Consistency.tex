@@ -1,0 +1,391 @@
+\documentclass[11pt]{article}
+\usepackage{fontspec}
+\setmainfont[
+  Path=fonts/,
+  Extension=.ttf,
+  UprightFont=*-400,
+  BoldFont=*-700
+]{NotoSerifSC}
+\setsansfont[
+  Path=fonts/,
+  Extension=.ttf,
+  UprightFont=*-400,
+  BoldFont=*-700
+]{NotoSerifSC}
+\XeTeXlinebreaklocale "zh"
+\XeTeXlinebreakskip=0pt plus 1pt
+\usepackage[a4paper,margin=1.70cm]{geometry}
+\usepackage{amsmath,amssymb,mathtools,bm}
+\usepackage{booktabs,longtable,array}
+\usepackage{enumitem}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\setlist{nosep,leftmargin=2em}
+\allowdisplaybreaks[3]
+\numberwithin{equation}{section}
+\pagestyle{plain}
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Pp}{\mathbb{P}}
+\newcommand{\1}{\mathbf{1}}
+\newcommand{\T}{\mathsf{T}}
+\newcommand{\F}{\mathrm{F}}
+\newcommand{\cN}{\mathcal{N}}
+\newcommand{\cL}{\mathcal{L}}
+\newcommand{\cS}{\mathcal{S}}
+\newcommand{\cH}{\mathcal{H}}
+\newcommand{\cA}{\mathcal{A}}
+\newcommand{\cM}{\mathcal{M}}
+\newcommand{\cT}{\mathcal{T}}
+\newcommand{\diag}{\operatorname{diag}}
+\newcommand{\tr}{\operatorname{tr}}
+\newcommand{\Var}{\operatorname{Var}}
+\newcommand{\Cov}{\operatorname{Cov}}
+\newcommand{\softmax}{\operatorname{softmax}}
+\newcommand{\KL}{D_{\mathrm{KL}}}
+\newcommand{\sg}{\operatorname{sg}}
+\begin{document}
+    \begin{center}
+      {\LARGE\bfseries 2-2203.11171v4-Reasoning-Self Consistency}
+    \end{center}
+    \vspace{0.8em}
+
+    \section{符号与维度}
+    \begin{longtable}{>{$}l<{$} >{$}l<{$} p{10cm}}
+    \toprule
+    \text{符号} & \text{维度} & \text{含义}\\
+    \midrule
+    x,z,a & -- & 问题、推理链与最终答案。\\
+        M & \mathbb N & 独立采样推理链数量。\\
+        p & [0,1] & 单条链得到正确答案的概率。\\
+        \rho & [-1,1] & 不同采样正确性之间的相关系数。\\
+    \bottomrule
+    \end{longtable}
+
+    所有向量默认是列向量；未特别说明时，期望同时对数据、噪声和采样时刻取值。下文只展开论文中承担方法逻辑的公式，并把所需假设写在推导发生的位置。
+
+\section{多数表决的精确错误概率}
+
+设每条独立推理路径给出正确最终答案的概率为 $p>1/2$，采样奇数
+$N=2m+1$ 条。正确票数
+\begin{equation}
+ K\sim\operatorname{Binomial}(N,p).
+\end{equation}
+多数表决错误当且仅当 $K\le m$，所以
+\begin{equation}
+ \boxed{P_{\rm err}(N,p)=
+ \sum_{k=0}^{m}\binom Nk p^k(1-p)^{N-k}.}
+\end{equation}
+该式说明收益取决于路径正确率超过 $1/2$；若 $p<1/2$，更多样本会更稳定地投向错误答案。
+
+比较 $N$ 与 $N+2$ 可得错误概率递减。令 $N=2m+1$，枚举新增两票只在原表决接近边界时改变结果，
+可化为
+\begin{equation}
+ P_{\rm err}(N,p)-P_{\rm err}(N+2,p)
+ =\binom{2m+1}{m}p^{m+1}(1-p)^{m+1}(2p-1)>0.
+\end{equation}
+
+\section{Hoeffding 与 Chernoff 界}
+
+令 $X_i\in\{0,1\}$ 表示第 $i$ 条路径是否正确，
+$\bar X=N^{-1}\sum_iX_i$。Hoeffding 不等式给出
+\begin{align}
+ \Pp(\bar X\le1/2)
+ &=\Pp(\bar X-p\le-(p-1/2))\\
+ &\le\exp[-2N(p-1/2)^2].
+\end{align}
+更紧的二项 Chernoff 界为
+\begin{equation}
+ \Pp(\bar X\le1/2)
+ \le\exp[-N D_{\rm KL}(1/2\|p)],
+\end{equation}
+其中
+\begin{equation}
+ D_{\rm KL}(1/2\|p)
+ =\frac12\log\frac{1/2}{p}+\frac12\log\frac{1/2}{1-p}
+ =-\frac12\log(4p(1-p)).
+\end{equation}
+于是界也可写成 $[4p(1-p)]^{N/2}$。
+
+若希望错误率不超过 $\delta$，Hoeffding 给出充分样本数
+\begin{equation}
+ N\ge\frac{\log(1/\delta)}{2(p-1/2)^2}.
+\end{equation}
+当 $p$ 只略高于 $1/2$ 时，所需样本数按优势平方的倒数增长。
+
+\section{路径相关性与有效样本量}
+
+语言模型样本共享同一提示和参数，正确指示变量通常相关。假设
+\begin{equation}
+ \Var(X_i)=\sigma^2=p(1-p),\qquad
+ \operatorname{Corr}(X_i,X_j)=\rho\quad(i\ne j).
+\end{equation}
+则样本均值方差
+\begin{align}
+ \Var(\bar X)
+ &=\frac1{N^2}\left[N\sigma^2+N(N-1)\rho\sigma^2\right]\\
+ &=\frac{\sigma^2}{N}[1+(N-1)\rho].
+\end{align}
+定义等方差有效样本量
+\begin{equation}
+ \boxed{N_{\rm eff}=\frac{N}{1+(N-1)\rho}.}
+\end{equation}
+若 $\rho>0$ 固定，$N\to\infty$ 时 $N_{\rm eff}\to1/\rho$，收益饱和。
+因此提高温度或改变提示的作用不是“随机性越大越好”，而是尝试降低错误相关，同时不能让单路径 $p$ 降得过多。
+
+\section{多类别答案的表决}
+
+正确答案概率为 $p_*$，最大错误答案概率为
+$p_2=\max_{a\ne *}p_a$。plurality 表决失败意味着某个错误答案计数不低于正确答案。
+对固定错误答案 $a$，定义
+\begin{equation}
+ Y_i=\1\{A_i=*\}-\1\{A_i=a\}\in[-1,1],\qquad
+ \E Y_i=p_*-p_a=\Delta_a.
+\end{equation}
+事件 $N_a\ge N_*$ 等价于 $\sum_iY_i\le0$。Hoeffding 给出
+\begin{equation}
+ \Pp(N_a\ge N_*)\le\exp\left(-\frac{N\Delta_a^2}{2}\right).
+\end{equation}
+对 $M-1$ 个错误类别并合：
+\begin{equation}
+ P_{\rm err}\le\sum_{a\ne *}
+ \exp\left(-\frac{N(p_*-p_a)^2}{2}\right)
+ \le(M-1)e^{-N(p_*-p_2)^2/2}.
+\end{equation}
+关键量是正确答案与最强错误答案的概率间隔，而不是正确率是否超过 $1/2$。
+
+\section{答案规范化是一个商空间映射}
+
+原始输出字符串空间记为 $\mathcal Y$，规范化函数
+$g:\mathcal Y\to\mathcal A$ 把等价表达映射到同一答案。例如约分、去单位或数值格式统一。
+表决计数
+\begin{equation}
+ C(a)=\sum_{i=1}^{N}\1\{g(y_i)=a\},\qquad
+ \widehat a=\arg\max_aC(a).
+\end{equation}
+若两个语义相同答案未合并，其概率质量会被拆开：
+$p(a)=\sum_{y:g(y)=a}p(y)$ 没有在计数中实现，可能让单一错误格式获胜。
+
+另一方面，过强规范化把不同答案错误合并。设真实等价关系为 $\sim$，安全的 $g$ 应满足
+\begin{equation}
+ y_1\sim y_2\Rightarrow g(y_1)=g(y_2),
+\end{equation}
+同时尽量满足逆命题。前者不足造成拆票，后者不足造成误合并。
+
+\section{停止规则与计算预算}
+
+顺序采样时可在某答案票数领先幅度足够大时提前停止。若已采 $n$ 条，领先者票数 $c_1$、次名 $c_2$，
+剩余预算 $R=N_{\max}-n$。若
+\begin{equation}
+ c_1>c_2+R,
+\end{equation}
+则即使剩余全部投给次名，胜者也不会改变，这是确定性安全停止。
+
+概率停止可对各答案概率设置后验。例如二元情形取
+$p\sim\operatorname{Beta}(\alpha_0,\beta_0)$，观察 $k$ 次正确代理票后
+\begin{equation}
+ p\mid k,n\sim\operatorname{Beta}(\alpha_0+k,\beta_0+n-k).
+\end{equation}
+当 $\Pp(p>1/2\mid k,n)$ 超过阈值时停止，可节省容易问题的采样量；
+但这里“正确票”在测试时不可直接观测，只能以当前领先类别构造近似，需注意选择偏差。
+
+\section{条件期望作为 $L^2$ 正交投影}
+
+令随机向量 $Y\in L^2$，观测 $Z$ 生成子空间
+\begin{equation}
+ \mathcal H_Z=\{f(Z):\E\|f(Z)\|^2<\infty\}.
+\end{equation}
+条件期望 $m(Z)=\E[Y\mid Z]$ 满足任意 $h(Z)\in\mathcal H_Z$：
+\begin{equation}
+ \E[(Y-m(Z))^Th(Z)]=0.
+\end{equation}
+因为
+\begin{align}
+ \E[(Y-m)^Th]
+ &=\E\{\E[(Y-m)^Th\mid Z]\}\\
+ &=\E\{h^T\E[Y-m\mid Z]\}=0.
+\end{align}
+于是 Pythagoras 恒等式
+\begin{equation}
+ \E\|Y-f(Z)\|^2
+ =\E\|Y-m(Z)\|^2+\E\|m(Z)-f(Z)\|^2.
+\end{equation}
+多数回归、去噪、流匹配和局部目标的“最优预测器”都由这一投影结论得到。
+
+全方差公式也是同一正交分解：
+\begin{equation}
+ \Var(Y)=\E\Var(Y\mid Z)+\Var(\E[Y\mid Z]).
+\end{equation}
+第一项是观测 $Z$ 后仍不可约的不确定性，第二项是不同 $Z$ 条件均值的变化。
+
+\section{Jensen、对数和与变分界}
+
+对凹函数 $\log$，
+\begin{equation}
+ \log\E X\ge\E\log X,
+ \qquad X>0.
+\end{equation}
+差距可以写成 KL。令未归一权重 $w(z)>0$、提议分布 $q(z)$，
+配分函数 $Z=\E_qw(z)$，定义
+\begin{equation}
+ p^*(z)=\frac{q(z)w(z)}{Z}.
+\end{equation}
+则
+\begin{align}
+ \log Z-\E_q\log w
+ &=\E_q\log\frac{Z}{w(z)}\\
+ &=\E_q\log\frac{q(z)}{p^*(z)}\\
+ &=D_{\rm KL}(q\|p^*)\ge0.
+\end{align}
+因此 Jensen 下界何时紧不只取决于“方差小”，而是提议分布是否等于归一化后的目标分布。
+
+log-sum-exp
+\begin{equation}
+ \operatorname{LSE}(x)=\log\sum_{i=1}^{n}e^{x_i}
+\end{equation}
+满足
+\begin{equation}
+ \max_i x_i\le\operatorname{LSE}(x)
+ \le\max_i x_i+\log n.
+\end{equation}
+减去最大值 $m=\max_ix_i$ 后计算
+\begin{equation}
+ \operatorname{LSE}(x)=m+\log\sum_ie^{x_i-m}
+\end{equation}
+可避免指数上溢且数学等价。
+
+\section{Hoeffding 不等式的矩母函数推导}
+
+设独立 $X_i\in[a_i,b_i]$，$S=\sum_i(X_i-\E X_i)$。
+对任意 $\lambda>0$，Markov 不等式
+\begin{equation}
+ \Pp(S\ge t)=\Pp(e^{\lambda S}\ge e^{\lambda t})
+ \le e^{-\lambda t}\E e^{\lambda S}.
+\end{equation}
+独立性给出矩母函数乘积。Hoeffding 引理
+\begin{equation}
+ \E e^{\lambda(X_i-\E X_i)}
+ \le\exp\left(\frac{\lambda^2(b_i-a_i)^2}{8}\right).
+\end{equation}
+故
+\begin{equation}
+ \Pp(S\ge t)
+ \le\exp\left(-\lambda t+\frac{\lambda^2}{8}
+ \sum_i(b_i-a_i)^2\right).
+\end{equation}
+对 $\lambda$ 最小化，
+\begin{equation}
+ \lambda^*=\frac{4t}{\sum_i(b_i-a_i)^2},
+\end{equation}
+得到
+\begin{equation}
+ \Pp(S\ge t)
+ \le\exp\left(-\frac{2t^2}{\sum_i(b_i-a_i)^2}\right).
+\end{equation}
+对下尾应用于 $-S$，再 union bound 得双侧界。
+
+\section{Bernstein 界利用方差信息}
+
+若独立零均值 $X_i$ 满足 $|X_i|\le M$，总方差
+$v=\sum_i\E X_i^2$，Bernstein 界
+\begin{equation}
+ \Pp\left(\sum_iX_i\ge t\right)
+ \le\exp\left(-\frac{t^2}{2(v+Mt/3)}\right).
+\end{equation}
+当 $t\ll v/M$ 时近似高斯尾 $e^{-t^2/(2v)}$；
+当 $t$ 很大时转为 $e^{-3t/(2M)}$。相比只使用取值区间的 Hoeffding，
+方差远小于最坏范围时 Bernstein 更紧。
+
+对 Bernoulli 均值 $\widehat p=N^{-1}\sum_iX_i$，$v=Np(1-p)$，
+\begin{equation}
+ \Pp(|\widehat p-p|\ge\epsilon)
+ \le2\exp\left(-\frac{N\epsilon^2}
+ {2[p(1-p)+\epsilon/3]}\right).
+\end{equation}
+
+\section{并合界与同时保证}
+
+事件 $E_1,…,E_M$ 不要求独立也有
+\begin{equation}
+ \Pp\left(\bigcup_{j=1}^{M}E_j\right)
+ \le\sum_{j=1}^{M}\Pp(E_j).
+\end{equation}
+若每个失败概率至多 $\delta/M$，则全部结论同时成立的概率至少 $1-\delta$。
+将单点集中界扩展到有限候选集合通常产生 $\log M$ 项。例如
+\begin{equation}
+ 2M e^{-2N\epsilon^2}\le\delta
+\end{equation}
+等价于
+\begin{equation}
+ \epsilon\ge\sqrt{\frac{\log(2M/\delta)}{2N}}.
+\end{equation}
+若候选集合无限，需要覆盖数、VC 维或 Rademacher 复杂度，而不能直接把 $M=\infty$ 代入。
+
+\section{Delta 方法与非线性估计误差}
+
+设 $\sqrt N(\widehat\theta-\theta)\Rightarrow\cN(0,\Sigma)$，
+光滑函数 $g$ 的一阶展开
+\begin{equation}
+ g(\widehat\theta)=g(\theta)+
+ \nabla g(\theta)^T(\widehat\theta-\theta)+o_p(N^{-1/2}).
+\end{equation}
+于是
+\begin{equation}
+ \sqrt N[g(\widehat\theta)-g(\theta)]
+ \Rightarrow\cN(0,\nabla g^T\Sigma\nabla g).
+\end{equation}
+例如 $g(p)=\log p$，方差近似
+\begin{equation}
+ \Var(\log\widehat p)\approx\frac{\Var(\widehat p)}{p^2}.
+\end{equation}
+当 $p$ 很小时误差被 $1/p^2$ 放大，解释了稀有事件对数概率和概率比估计的不稳定。
+
+二阶展开还给非线性偏差
+\begin{equation}
+ \E g(\widehat\theta)-g(\theta)
+ \approx\frac12\tr(H_g(\theta)\Cov(\widehat\theta)).
+\end{equation}
+FID、比率、倒数和归一化优势等即使基础估计无偏，非线性组合也可有有限样本偏差。
+
+\section{重要性采样与有效样本量}
+
+目标期望 $\E_p f(X)$ 用提议 $q$ 采样，权重
+$w(x)=p(x)/q(x)$：
+\begin{equation}
+ \widehat\mu=\frac1N\sum_{i=1}^{N}w(X_i)f(X_i),
+ \qquad X_i\sim q.
+\end{equation}
+若 $p$ 的归一化常数未知，使用自归一估计
+\begin{equation}
+ \widetilde\mu=\frac{\sum_iw_if_i}{\sum_iw_i},
+\end{equation}
+它一般有 $O(1/N)$ 偏差，但常更实用。权重退化可用
+\begin{equation}
+ N_{\rm eff}=\frac{(\sum_iw_i)^2}{\sum_iw_i^2}
+\end{equation}
+衡量；权重相等时为 $N$，单个权重主导时接近 $1$。
+
+比率裁剪 $\widetilde w=\min(w,c)$ 降低方差，但引入偏差
+\begin{equation}
+ \E_q[(w-\widetilde w)f]
+ =\E_q[(w-c)_+f].
+\end{equation}
+若 $|f|\le F$，绝对偏差至多
+\begin{equation}
+ F\E_q[(w-c)_+].
+\end{equation}
+
+\section{校准与 Brier 分解}
+
+二元预测概率 $P\in[0,1]$、标签 $Y\in\{0,1\}$。条件真实频率
+$m(P)=\E[Y\mid P]$。Brier 分数
+\begin{align}
+ \E(P-Y)^2
+ &=\E(P-m(P))^2+\E(m(P)-Y)^2,
+\end{align}
+交叉项因条件期望为零而消失。第一项是校准误差，第二项是给定预测分组后的不可约噪声。
+若模型完美校准，$m(P)=P$，第一项为零，但单次预测仍可错误；
+校准不是零错误率，而是概率与长期频率一致。
+
+\end{document}
